@@ -1,0 +1,337 @@
+"""
+QAT Interface & Implementations.
+
+Three modes:
+  - "none":  standard QLoRA, no quantization-aware training
+  - "full":  fakequant on ALL quantized weights each forward pass
+  - "sqat":  selective salient QAT (only top-k channels by activation 2nd moment)
+
+Fix notes vs previous version
+-----------------------------
+The previous FullQAT installed a forward pre-hook that computed a fakequant
+weight and wrote it into a cache attribute of a dangling Python object. The
+PEFT module's forward kept running against the original NF4-dequantized
+weight, so Full QAT training was silently equivalent to NoQAT. The dequant
+fallback also returned packed uint8 storage instead of real weights for bnb
+Params4bit.
+
+This version:
+  * Replaces each PEFT LoRA module's `base_layer` (a bnb Linear4bit) with
+    a real nn.Module wrapper whose forward dequantizes NF4, applies
+    group-wise symmetric fake-quantization (STE, fp32 rounding), and runs
+    the matmul. LoRA A/B sit on the outer PEFT module unchanged and
+    learn to compensate for the INT4 grid.
+  * Uses `bitsandbytes.functional.dequantize_4bit(w.data, w.quant_state)`
+    to dequantize — the only correct path for bnb 4-bit params.
+  * Restores the original base_layer in `on_train_end` so checkpoint
+    saving and the export pipeline see a normal bnb Linear4bit.
+  * Defaults `group_size` to 128 to match `export.merge_and_export`;
+    the training fakequant grid MUST equal the PTQ grid at export time.
+"""
+
+import math
+from enum import Enum
+from abc import ABC, abstractmethod
+from typing import Dict, Tuple
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class QATMode(Enum):
+    NONE = "none"
+    FULL = "full"
+    SQAT = "sqat"
+
+
+# ============================================================================
+# Core quantization primitives (shared by Full QAT and SQAT)
+# ============================================================================
+
+def round_ste(x: torch.Tensor) -> torch.Tensor:
+    """Straight-Through Estimator: forward = round, backward = identity."""
+    return (torch.round(x) - x).detach() + x
+
+
+def symmetric_fakequant(w: torch.Tensor, scale: torch.Tensor, q_max: float = 7.0) -> torch.Tensor:
+    """Symmetric fake quantization with STE."""
+    return round_ste(torch.clamp(w / scale, -q_max, q_max)) * scale
+
+
+def groupwise_symmetric_fakequant(
+    W: torch.Tensor,
+    group_size: int,
+    q_max: float,
+    eps: float = 1e-7,
+) -> torch.Tensor:
+    """
+    Per-output-row, per-input-group symmetric fakequant.
+
+    W is expected as [out_features, in_features] in fp32. The rounding step
+    MUST run in fp32 — doing it in fp16 can silently collapse to a no-op on
+    tiny magnitudes and defeat the whole point of QAT.
+    """
+    out_f, in_f = W.shape
+    g = group_size
+    num_groups = math.ceil(in_f / g)
+    pad = num_groups * g - in_f
+    Wp = F.pad(W, (0, pad)) if pad > 0 else W
+    Wg = Wp.view(out_f, num_groups, g)
+    scale = (Wg.abs().amax(dim=2, keepdim=True) / q_max).clamp(min=eps)
+    Wfq = round_ste(torch.clamp(Wg / scale, -q_max, q_max)) * scale
+    return Wfq.view(out_f, -1)[:, :in_f]
+
+
+# ============================================================================
+# bnb 4-bit dequant helper
+# ============================================================================
+
+def _dequant_bnb_4bit(base_linear: nn.Module) -> torch.Tensor:
+    """
+    Dequantize a bnb Linear4bit's weight to a dense tensor in compute dtype.
+    Always returns shape [out_features, in_features].
+    """
+    weight = base_linear.weight
+    out_f = base_linear.out_features
+    in_f = base_linear.in_features
+
+    if hasattr(weight, "quant_state") and weight.quant_state is not None:
+        import bitsandbytes.functional as bnbF
+        W = bnbF.dequantize_4bit(weight.data, weight.quant_state)
+    elif hasattr(weight, "dequantize"):
+        # Some bnb variants expose .dequantize() on the param itself.
+        W = weight.dequantize()
+    else:
+        # Do NOT fall through to weight.data.float() — for Params4bit that
+        # returns the packed uint8 storage, not real weights.
+        raise RuntimeError(
+            f"Cannot dequantize base_layer of type {type(base_linear).__name__}; "
+            f"expected a bnb Params4bit with quant_state."
+        )
+
+    if W.shape == (out_f, in_f):
+        return W
+    if W.shape == (in_f, out_f):
+        return W.t().contiguous()
+    if W.numel() == out_f * in_f:
+        return W.reshape(out_f, in_f)
+    raise RuntimeError(
+        f"Dequantized weight shape {tuple(W.shape)} cannot be reshaped to "
+        f"({out_f}, {in_f})."
+    )
+
+
+# ============================================================================
+# Abstract QAT Handler
+# ============================================================================
+
+class QATHandler(ABC):
+    """Base class for QAT strategies. Implementations hook into the training loop."""
+
+    @abstractmethod
+    def prepare_model(self, model: nn.Module, cfg: dict, **kwargs) -> nn.Module:
+        """Called once before training. Patch model if needed."""
+        ...
+
+    @abstractmethod
+    def on_train_begin(self, model: nn.Module):
+        """Called at the start of training."""
+        ...
+
+    @abstractmethod
+    def on_step_end(self, model: nn.Module, step: int):
+        """Called after each optimizer step (for scale refresh, etc.)."""
+        ...
+
+    @abstractmethod
+    def on_train_end(self, model: nn.Module):
+        """Called at the end of training. Cleanup, unwrap, etc."""
+        ...
+
+
+# ============================================================================
+# No QAT (standard QLoRA)
+# ============================================================================
+
+class NoQAT(QATHandler):
+    """Passthrough — standard QLoRA without any QAT."""
+
+    def prepare_model(self, model, cfg, **kwargs):
+        return model
+
+    def on_train_begin(self, model):
+        pass
+
+    def on_step_end(self, model, step):
+        pass
+
+    def on_train_end(self, model):
+        pass
+
+
+# ============================================================================
+# Full QAT — wrapper module that replaces PEFT's base_layer
+# ============================================================================
+
+class FullQATBaseLayer(nn.Module):
+    """
+    Drop-in replacement for a PEFT LoRA module's `base_layer` (bnb Linear4bit).
+
+    On every forward:
+      1) dequantize the NF4 base weight to compute dtype (no grad; base is frozen),
+      2) apply group-wise symmetric fake-quantization (STE, fp32 rounding),
+      3) cast back to activation dtype,
+      4) run F.linear(x, W_fq, bias).
+
+    LoRA A / B live on the OUTER PEFT module and are added as a delta on top
+    of base_layer(x); their gradients are produced normally and learn to
+    compensate for the INT4 quantization grid that now appears in the
+    forward graph.
+    """
+
+    def __init__(
+        self,
+        orig_linear4bit: nn.Module,
+        group_size: int = 128,
+        q_bits: int = 4,
+    ):
+        super().__init__()
+        # Keep the original bnb layer as a submodule so we retain quant_state,
+        # bias, shapes, and so restoring at on_train_end is a single attr swap.
+        self.orig = orig_linear4bit
+        self.group_size = int(group_size)
+        self.q_bits = int(q_bits)
+        self.q_max = float(2 ** (q_bits - 1) - 1)
+        self.in_features = orig_linear4bit.in_features
+        self.out_features = orig_linear4bit.out_features
+
+    # PEFT sometimes reads these directly off base_layer for introspection.
+    @property
+    def weight(self):
+        return self.orig.weight
+
+    @property
+    def bias(self):
+        return getattr(self.orig, "bias", None)
+
+    def _fakequant_weight(self, ref_dtype: torch.dtype) -> torch.Tensor:
+        # Dequant under no_grad — base weight is frozen, no grad target upstream.
+        with torch.no_grad():
+            W = _dequant_bnb_4bit(self.orig)  # [out, in], compute dtype
+        # Rounding MUST be fp32.
+        W_fq_f32 = groupwise_symmetric_fakequant(
+            W.float(), self.group_size, self.q_max
+        )
+        return W_fq_f32.to(ref_dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        W_fq = self._fakequant_weight(x.dtype)
+        return F.linear(x, W_fq, self.bias)
+
+
+class FullQAT(QATHandler):
+    """
+    Full QAT: every target linear's frozen base weight is fakequanted on
+    each forward, so the LoRA adapter is trained against the actual INT4
+    quantization grid rather than the fp16 dequantization of NF4.
+
+    Implementation: replace `module.base_layer` on each PEFT LoRA module
+    with a FullQATBaseLayer wrapper. Restore at on_train_end so
+    checkpoint saving and the export pipeline see a normal bnb Linear4bit.
+    """
+
+    def __init__(self):
+        # name -> (peft_module, original_base_layer)
+        self._originals: Dict[str, Tuple[nn.Module, nn.Module]] = {}
+
+    def prepare_model(self, model, cfg, **kwargs):
+        q_bits = cfg["model"]["quant_bits"]
+        # Default MUST match export.merge_and_export (also 128). If you change
+        # one, change the other — training fakequant grid must equal the PTQ
+        # grid at export time.
+        group_size = cfg["qat"].get("group_size", 128)
+        target_modules = set(cfg["lora"]["target_modules"])
+
+        count = 0
+        skipped_not_quant = 0
+        for name, module in model.named_modules():
+            terminal = name.rsplit(".", 1)[-1] if name else ""
+            if terminal not in target_modules:
+                continue
+            if not (hasattr(module, "base_layer") and hasattr(module, "lora_A")):
+                continue
+
+            orig_base = module.base_layer
+            # Only wrap if the base is actually bnb 4-bit quantized.
+            if not (hasattr(orig_base, "weight")
+                    and hasattr(orig_base.weight, "quant_state")
+                    and orig_base.weight.quant_state is not None):
+                skipped_not_quant += 1
+                continue
+
+            wrapper = FullQATBaseLayer(
+                orig_base, group_size=group_size, q_bits=q_bits,
+            )
+            # Assigning a Module to an attribute of an nn.Module (the PEFT
+            # layer) correctly re-registers the submodule.
+            module.base_layer = wrapper
+            self._originals[name] = (module, orig_base)
+            count += 1
+
+        print(
+            f"[FullQAT] Wrapped {count} PEFT base_layers with fakequant "
+            f"(group_size={group_size}, bits={q_bits})."
+        )
+        if skipped_not_quant:
+            print(
+                f"[FullQAT] Skipped {skipped_not_quant} target modules whose "
+                f"base_layer is not bnb 4-bit (no quant_state)."
+            )
+        if count == 0:
+            print(
+                "[FullQAT] WARNING: no layers wrapped. Check target_modules "
+                "and that the model is loaded in 4-bit."
+            )
+        return model
+
+    def on_train_begin(self, model):
+        pass
+
+    def on_step_end(self, model, step):
+        pass
+
+    def on_train_end(self, model):
+        """
+        Restore the original bnb base_layer on every wrapped PEFT module.
+
+        Essential: if we leave FullQATBaseLayer in place, the wrapper's
+        submodule tree (`.orig.weight`, etc.) leaks into any state_dict and
+        export._dequant_base_weight will no longer find `quant_state` at the
+        expected attribute path.
+        """
+        for name, (peft_mod, orig_base) in self._originals.items():
+            peft_mod.base_layer = orig_base
+        if self._originals:
+            print(f"[FullQAT] Restored {len(self._originals)} base_layers.")
+        self._originals.clear()
+
+
+# ============================================================================
+# Factory
+# ============================================================================
+
+def get_qat_handler(cfg: dict) -> QATHandler:
+    """Factory: return the appropriate QAT handler based on config."""
+    mode_str = cfg["qat"]["mode"]
+    mode = QATMode(mode_str)
+
+    if mode == QATMode.NONE:
+        return NoQAT()
+    elif mode == QATMode.FULL:
+        return FullQAT()
+    elif mode == QATMode.SQAT:
+        from .qat_sqat import SelectiveSalientQAT
+        return SelectiveSalientQAT()
+    else:
+        raise ValueError(f"Unknown QAT mode: {mode_str}")
