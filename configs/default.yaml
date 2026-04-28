@@ -51,11 +51,11 @@ qat:
 # --- Data ---
 data:
   # Fine-tuning dataset
-  train_dataset: "commonsense_qa"  # or "commonsense_qa", "openassistant", custom path
+  train_dataset: "metamath"  # or "math", "openassistant", custom path
   train_split: "train"
   val_split: "validation"
   max_train_samples: 10000          # null = use all
-  prompt_template: "commonsense_qa"  # template name (see data.py)
+  prompt_template: "metamath"  # template name (see data.py)
   
 # --- Training ---
 training:
@@ -63,8 +63,8 @@ training:
   num_epochs: 1
   per_device_train_batch_size: 8
   per_device_eval_batch_size: 8
-  gradient_checkpointing: true
-  gradient_accumulation_steps: 4   # effective batch = 2 GPUs × 8 × 4 = 64
+  gradient_checkpointing: false
+  gradient_accumulation_steps: 4   # effective batch = 2 GPUs × 16 × 2 = 64
   learning_rate: 2.0e-4
   weight_decay: 0.01
   lr_scheduler_type: "cosine"
