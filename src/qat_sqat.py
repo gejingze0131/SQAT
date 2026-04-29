@@ -55,6 +55,16 @@ from tqdm import tqdm
 
 from .qat_base import QATHandler, round_ste
 
+try:
+    from .triton_sqat import (
+        HAS_TRITON,
+        precompute_group_spans,
+        sqat_fakequant_delta,
+        sqat_fused_linear_delta,
+    )
+except Exception:
+    HAS_TRITON = False
+
 
 # ============================================================================
 # Activation 2nd-moment outlier analysis
@@ -581,6 +591,8 @@ class SelectiveSalientQATLinear(nn.Module):
         salient_group_ids: torch.Tensor,       # [K]
         q_bits: int = 4,
         lora_scaling: float = 1.0,
+        group_start: torch.Tensor | None = None,   # [G] int32 — Triton group spans
+        group_len: torch.Tensor | None = None,     # [G] int32
     ):
         super().__init__()
         self.original_module = original_module
@@ -596,6 +608,21 @@ class SelectiveSalientQATLinear(nn.Module):
         self.q_bits = q_bits
         self.q_lvl = 2 ** q_bits - 1
         self.has_lora = hasattr(original_module, 'lora_A')
+
+        # Triton acceleration: group span arrays + padded block size
+        if HAS_TRITON and group_start is not None and group_len is not None:
+            self.register_buffer("_triton_group_start", group_start)
+            self.register_buffer("_triton_group_len", group_len)
+            import triton
+            self._triton_block_sal = triton.next_power_of_2(
+                max(1, int(group_len.max().item()))
+            )
+            self._use_triton = True
+        else:
+            self._triton_group_start = None
+            self._triton_group_len = None
+            self._triton_block_sal = 1
+            self._use_triton = False
 
     def _get_lora_B_weight(self) -> torch.Tensor:
         adapter_name = list(self.original_module.lora_B.keys())[0]
@@ -619,21 +646,41 @@ class SelectiveSalientQATLinear(nn.Module):
 
         # --- Path 3: asymmetric salient residual ---
         X_S = x[..., self.salient_indices]   # [..., K]
+        BA_S = self._get_BA_salient()         # [out, K]
 
-        W_curr_S = (
-            self.W_base_salient + self._get_BA_salient() * self.lora_scaling
-        )                                     # [out, K]
+        if self._use_triton:
+            # Flatten batch/seq dims: [..., K] → [M, K]
+            shape = X_S.shape
+            X_S_2d = X_S.reshape(-1, shape[-1])
+            Y_delta = sqat_fused_linear_delta(
+                X_S=X_S_2d,
+                W_base=self.W_base_salient,
+                BA=BA_S,
+                base_max=self.base_w_max_group,
+                base_min=self.base_w_min_group,
+                group_start=self._triton_group_start,
+                group_len=self._triton_group_len,
+                group_ids=self.salient_group_ids.int(),
+                lora_scaling=self.lora_scaling,
+                q_lvl=self.q_lvl,
+                block_sal=self._triton_block_sal,
+            )
+            Y = Y + Y_delta.reshape(*shape[:-1], Y_delta.shape[-1])
+        else:
+            W_curr_S = (
+                self.W_base_salient + BA_S * self.lora_scaling
+            )                                     # [out, K]
 
-        W_quant_S = selective_salient_fakequant_asym(
-            W_curr=W_curr_S,
-            group_ids=self.salient_group_ids,
-            base_w_max_group=self.base_w_max_group,
-            base_w_min_group=self.base_w_min_group,
-            q_lvl=self.q_lvl,
-        )                                     # [out, K]
+            W_quant_S = selective_salient_fakequant_asym(
+                W_curr=W_curr_S,
+                group_ids=self.salient_group_ids,
+                base_w_max_group=self.base_w_max_group,
+                base_w_min_group=self.base_w_min_group,
+                q_lvl=self.q_lvl,
+            )                                     # [out, K]
 
-        delta_S = W_quant_S - W_curr_S        # [out, K]
-        Y = Y + F.linear(X_S, delta_S)
+            delta_S = W_quant_S - W_curr_S        # [out, K]
+            Y = Y + F.linear(X_S, delta_S)
         return Y
 
 
@@ -737,6 +784,14 @@ class SelectiveSalientQAT(QATHandler):
             base_w_max = base_w_max.to(device)
             base_w_min = base_w_min.to(device)
 
+            # Precompute group spans for Triton kernel (O(K) CPU op)
+            triton_group_start = triton_group_len = None
+            if HAS_TRITON:
+                G = base_w_max.shape[1]
+                triton_group_start, triton_group_len = precompute_group_spans(
+                    group_ids.int(), G
+                )
+
             sqat_linear = SelectiveSalientQATLinear(
                 original_module=module,
                 salient_indices=salient_idx,
@@ -746,6 +801,8 @@ class SelectiveSalientQAT(QATHandler):
                 salient_group_ids=group_ids,
                 q_bits=q_bits,
                 lora_scaling=lora_scaling,
+                group_start=triton_group_start,
+                group_len=triton_group_len,
             ).to(device)
 
             self.patched_layers[name] = sqat_linear
