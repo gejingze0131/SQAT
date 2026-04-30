@@ -55,6 +55,8 @@ def load_config(config_path: str, overrides: dict) -> dict:
         cfg["qat"]["mode"] = overrides["qat_mode"]
     if overrides.get("bits"):
         cfg["model"]["quant_bits"] = overrides["bits"]
+    if overrides.get("symmetric") is not None:
+        cfg["qat"]["symmetric"] = overrides["symmetric"]
     if overrides.get("output_dir"):
         cfg["training"]["output_dir"] = overrides["output_dir"]
     if overrides.get("epochs"):
@@ -98,6 +100,10 @@ def main():
     parser.add_argument("--config", type=str, default="configs/default.yaml")
     parser.add_argument("--qat_mode", type=str, choices=["none", "full", "sqat"], default=None)
     parser.add_argument("--bits", type=int, choices=[3, 4], default=None)
+    parser.add_argument("--symmetric", dest="symmetric", action="store_true", default=None,
+                        help="Use symmetric quantization kernels.")
+    parser.add_argument("--asymmetric", dest="symmetric", action="store_false",
+                        help="Use affine asymmetric quantization kernels with zero_point.")
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--lr", type=float, default=None)
@@ -148,8 +154,9 @@ def main():
 
     qat_mode = cfg["qat"]["mode"]
     bits = cfg["model"]["quant_bits"]
+    symmetric = cfg["qat"].get("symmetric", True)
     print("=" * 70)
-    print(f"  QLoRA Training — {bits}-bit | QAT mode: {qat_mode}")
+    print(f"  QLoRA Training — {bits}-bit | QAT mode: {qat_mode} | symmetric={symmetric}")
     print("=" * 70)
     print(f"  Train dataset:   {cfg['data']['train_dataset']}")
     print(f"  Prompt template: {cfg['data'].get('prompt_template', cfg['data']['train_dataset'])}")

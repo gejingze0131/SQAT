@@ -59,6 +59,48 @@ def symmetric_fakequant(w: torch.Tensor, scale: torch.Tensor, q_max: float = 7.0
     return round_ste(torch.clamp(w / scale, -q_max, q_max)) * scale
 
 
+def asymmetric_scale_zero_from_pos_neg(
+    pos: torch.Tensor,
+    neg: torch.Tensor,
+    q_max: int,
+    eps: float = 1e-7,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Build affine quantizer params from positive and negative ranges.
+
+    zero_point is integer-valued.  For two-sided ranges it is clamped inside
+    [1, q_max - 1] so both signs remain representable.  The scale is then
+    chosen from the active side, which lets at least one range anchor land
+    exactly on qmin or qmax after zero-point rounding.
+    """
+    pos = pos.clamp(min=0.0)
+    neg = neg.clamp(min=0.0)
+
+    has_pos = pos > eps
+    has_neg = neg > eps
+    zp = torch.round(q_max * neg / (pos + neg).clamp(min=eps))
+    zp = torch.where(has_pos & has_neg, zp.clamp(1, q_max - 1), zp)
+    zp = torch.where(has_pos & ~has_neg, torch.zeros_like(zp), zp)
+    zp = torch.where(~has_pos & has_neg, torch.full_like(zp, float(q_max)), zp)
+    zp = zp.clamp(0, q_max)
+
+    pos_scale = pos / (q_max - zp).clamp(min=1.0)
+    neg_scale = neg / zp.clamp(min=1.0)
+    scale = torch.maximum(pos_scale, neg_scale).clamp(min=eps)
+    return scale, zp
+
+
+def asymmetric_fakequant(
+    w: torch.Tensor,
+    scale: torch.Tensor,
+    zero_point: torch.Tensor,
+    q_max: int,
+) -> torch.Tensor:
+    """Affine fake quantization with STE. Quantized values are in [0, q_max]."""
+    q = round_ste(torch.clamp(w / scale + zero_point, 0, q_max))
+    return (q - zero_point) * scale
+
+
 def groupwise_symmetric_fakequant(
     W: torch.Tensor,
     group_size: int,
@@ -80,6 +122,26 @@ def groupwise_symmetric_fakequant(
     Wg = Wp.view(out_f, num_groups, g)
     scale = (Wg.abs().amax(dim=2, keepdim=True) / q_max).clamp(min=eps)
     Wfq = round_ste(torch.clamp(Wg / scale, -q_max, q_max)) * scale
+    return Wfq.view(out_f, -1)[:, :in_f]
+
+
+def groupwise_asymmetric_fakequant(
+    W: torch.Tensor,
+    group_size: int,
+    q_max: int,
+    eps: float = 1e-7,
+) -> torch.Tensor:
+    """Per-output-row, per-input-group affine fakequant."""
+    out_f, in_f = W.shape
+    g = group_size
+    num_groups = math.ceil(in_f / g)
+    pad = num_groups * g - in_f
+    Wp = F.pad(W, (0, pad)) if pad > 0 else W
+    Wg = Wp.view(out_f, num_groups, g)
+    pos = Wg.clamp(min=0).amax(dim=2, keepdim=True)
+    neg = (-Wg).clamp(min=0).amax(dim=2, keepdim=True)
+    scale, zero_point = asymmetric_scale_zero_from_pos_neg(pos, neg, q_max, eps)
+    Wfq = asymmetric_fakequant(Wg, scale, zero_point, q_max)
     return Wfq.view(out_f, -1)[:, :in_f]
 
 
@@ -230,6 +292,27 @@ class FullQATBaseLayer(nn.Module):
         return F.linear(x, W_fq, self.bias)
 
 
+class FullQATBaseLayerAsymmetric(FullQATBaseLayer):
+    """Affine asymmetric variant of FullQATBaseLayer."""
+
+    def __init__(
+        self,
+        orig_linear4bit: nn.Module,
+        group_size: int = 128,
+        q_bits: int = 4,
+    ):
+        super().__init__(orig_linear4bit, group_size=group_size, q_bits=q_bits)
+        self.q_max = 2 ** q_bits - 1
+
+    def _fakequant_weight(self, ref_dtype: torch.dtype) -> torch.Tensor:
+        with torch.no_grad():
+            W = _dequant_bnb_4bit(self.orig)
+        W_fq_f32 = groupwise_asymmetric_fakequant(
+            W.float(), self.group_size, int(self.q_max)
+        )
+        return W_fq_f32.to(ref_dtype)
+
+
 class FullQAT(QATHandler):
     """
     Full QAT: every target linear's frozen base weight is fakequanted on
@@ -251,6 +334,8 @@ class FullQAT(QATHandler):
         # one, change the other — training fakequant grid must equal the PTQ
         # grid at export time.
         group_size = cfg["qat"].get("group_size", 128)
+        symmetric = cfg["qat"].get("symmetric", True)
+        wrapper_cls = FullQATBaseLayer if symmetric else FullQATBaseLayerAsymmetric
         target_modules = set(cfg["lora"]["target_modules"])
 
         count = 0
@@ -270,7 +355,7 @@ class FullQAT(QATHandler):
                 skipped_not_quant += 1
                 continue
 
-            wrapper = FullQATBaseLayer(
+            wrapper = wrapper_cls(
                 orig_base, group_size=group_size, q_bits=q_bits,
             )
             # Assigning a Module to an attribute of an nn.Module (the PEFT
@@ -281,7 +366,7 @@ class FullQAT(QATHandler):
 
         print(
             f"[FullQAT] Wrapped {count} PEFT base_layers with fakequant "
-            f"(group_size={group_size}, bits={q_bits})."
+            f"(group_size={group_size}, bits={q_bits}, symmetric={symmetric})."
         )
         if skipped_not_quant:
             print(

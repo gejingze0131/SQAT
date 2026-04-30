@@ -45,7 +45,12 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from .qat_base import QATHandler, round_ste, symmetric_fakequant
+from .qat_base import (
+    QATHandler,
+    asymmetric_fakequant,
+    asymmetric_scale_zero_from_pos_neg,
+    round_ste,
+)
 
 # statistics for salient channel selection
 def analyze_activation_second_moment_outliers(
@@ -296,7 +301,7 @@ def plot_activation_second_moment_statistics(
 # Core Operator (vectorized, no Python loops)
 # ============================================================================
 
-def selective_salient_fakequant(W_curr, group_ids, base_max_group, q_max=7.0):
+def selective_salient_fakequant_symmetric(W_curr, group_ids, base_max_group, q_max=7.0):
     """
     Dynamic-anchor selective fakequant.  Operates entirely in the amplify-space
     coordinate system: W_curr is always W_amp = W_curr_salient * D.
@@ -341,11 +346,70 @@ def selective_salient_fakequant(W_curr, group_ids, base_max_group, q_max=7.0):
     return torch.where(is_anchor_mask, W_curr, W_quant)
 
 
+def selective_salient_fakequant_asymmetric(
+    W_curr,
+    group_ids,
+    base_pos_group,
+    base_neg_group,
+    q_max: int,
+):
+    """
+    Dynamic-range affine fakequant for salient columns only.
+
+    base_pos_group/base_neg_group are the non-salient range floors. Salient
+    values are scatter-reduced into those floors, then integer zero-points and
+    anchor-preserving scales are computed per affected group.
+    """
+    N, K = W_curr.shape
+    group_indices = group_ids.unsqueeze(0).expand(N, -1)
+
+    pos = base_pos_group.clone()
+    pos.scatter_reduce_(
+        dim=1,
+        index=group_indices,
+        src=W_curr.clamp(min=0),
+        reduce="amax",
+        include_self=True,
+    )
+
+    neg = base_neg_group.clone()
+    neg.scatter_reduce_(
+        dim=1,
+        index=group_indices,
+        src=(-W_curr).clamp(min=0),
+        reduce="amax",
+        include_self=True,
+    )
+
+    pos_expanded = pos.gather(dim=1, index=group_indices)
+    neg_expanded = neg.gather(dim=1, index=group_indices)
+    scale, zero_point = asymmetric_scale_zero_from_pos_neg(
+        pos_expanded, neg_expanded, int(q_max)
+    )
+
+    W_quant = asymmetric_fakequant(W_curr, scale, zero_point, int(q_max))
+
+    # Preserve the active range-defining anchor exactly.  The affine scale is
+    # chosen so either the positive or negative range endpoint lands on a grid
+    # boundary after integer zero-point rounding.
+    pos_scale = pos_expanded / (int(q_max) - zero_point).clamp(min=1.0)
+    neg_scale = neg_expanded / zero_point.clamp(min=1.0)
+    active_pos = pos_scale >= (neg_scale - 1e-12)
+    active_neg = neg_scale >= (pos_scale - 1e-12)
+    pos_anchor = (W_curr > 0) & (W_curr >= (pos_expanded - 1e-5))
+    neg_anchor = (W_curr < 0) & ((-W_curr) >= (neg_expanded - 1e-5))
+    return torch.where((pos_anchor & active_pos) | (neg_anchor & active_neg), W_curr, W_quant)
+
+
+# Backward-compatible name for older callers.
+selective_salient_fakequant = selective_salient_fakequant_symmetric
+
+
 # ============================================================================
 # Saliency-Amplified Quantization Residual (Auxiliary Deployment Coordinate System)
 # ============================================================================
 
-def saliency_amplified_quant_residual(
+def saliency_amplified_quant_residual_symmetric(
     W_curr_salient: torch.Tensor,   # [out, K]  — original coordinate space
     salient_gain: torch.Tensor,     # [K]       — per-channel amplification D
     group_ids: torch.Tensor,        # [K]
@@ -382,12 +446,12 @@ def saliency_amplified_quant_residual(
         delta_salient [out, K]: residual in original weight space.
                                 Inject as  Y += X_S @ delta_salient.T.
     """
-    # Enter amplify-space: salient_gain [K] broadcasts over the out dimension
-    # W_amp = W_curr_salient * salient_gain     # [out, K]
+    D_safe = salient_gain.clamp(min=1e-7)
+    W_amp = W_curr_salient * D_safe
 
     # Quantize in amplify-space; dynamic anchor reflects amp-space magnitudes
-    W_curr_quant = selective_salient_fakequant(
-        W_curr=W_curr_salient,
+    W_amp_quant = selective_salient_fakequant_symmetric(
+        W_curr=W_amp,
         group_ids=group_ids,
         base_max_group=base_max_group,
         q_max=q_max,
@@ -397,9 +461,129 @@ def saliency_amplified_quant_residual(
     # (W_amp_quant - W_amp) is the quantization error expressed in amp-space;
     # dividing by D converts it to original-space error.
     # Do NOT inject the amp-space error (W_amp_quant - W_amp) directly.
-    # D_safe = salient_gain.clamp(min=1e-7)     # [K]; guard for externally-set gains < 1
-    # return (W_amp_quant - W_curr_salient) / D_safe     # [out, K], original space
-    return W_curr_quant - W_curr_salient
+    return (W_amp_quant - W_amp) / D_safe
+
+
+def saliency_amplified_quant_residual_asymmetric(
+    W_curr_salient: torch.Tensor,
+    salient_gain: torch.Tensor,
+    group_ids: torch.Tensor,
+    base_pos_group: torch.Tensor,
+    base_neg_group: torch.Tensor,
+    q_max: int,
+) -> torch.Tensor:
+    """Affine asymmetric version of the SQAT residual."""
+    D_safe = salient_gain.clamp(min=1e-7)
+    W_amp = W_curr_salient * D_safe
+    W_amp_quant = selective_salient_fakequant_asymmetric(
+        W_curr=W_amp,
+        group_ids=group_ids,
+        base_pos_group=base_pos_group,
+        base_neg_group=base_neg_group,
+        q_max=q_max,
+    )
+    return (W_amp_quant - W_amp) / D_safe
+
+
+# Backward-compatible name for older callers.
+saliency_amplified_quant_residual = saliency_amplified_quant_residual_symmetric
+
+
+@torch.no_grad()
+def summarize_initial_salient_anchor_alignment(
+    patched_layers: Dict[str, nn.Module],
+    aligned_tol: float = 1e-6,
+) -> None:
+    """
+    Print overall anchor/aligned ratios for salient weights before training.
+
+    Ratios are element-wise over all salient slices [out_features, K].  "aligned"
+    excludes active anchors and counts non-anchor salient values that already
+    quantize-dequantize to themselves under the current training grid.
+    """
+    total = 0
+    anchor_total = 0
+    aligned_total = 0
+
+    for layer in patched_layers.values():
+        if not getattr(layer, "has_lora", False):
+            continue
+
+        W_curr = layer.W_base_salient + layer._get_BA_salient() * layer.lora_scaling
+        D = layer.salient_gain.clamp(min=1e-7)
+        W_amp = W_curr * D
+        N, K = W_amp.shape
+        group_index = layer.salient_group_ids.unsqueeze(0).expand(N, K)
+
+        if getattr(layer, "symmetric", True):
+            q_max = float(layer.q_max)
+            abs_W = W_amp.abs()
+            anchor = layer.base_max_group.clone()
+            anchor.scatter_reduce_(
+                dim=1,
+                index=group_index,
+                src=abs_W,
+                reduce="amax",
+                include_self=True,
+            )
+            anchor_expanded = anchor.gather(1, group_index)
+            scale = (anchor_expanded / q_max).clamp(min=1e-7)
+            anchor_mask = abs_W >= (anchor_expanded - 1e-5)
+            W_quant = torch.round(torch.clamp(W_amp / scale, -q_max, q_max)) * scale
+        else:
+            q_max = int(layer.q_max)
+            pos = layer.base_pos_group.clone()
+            pos.scatter_reduce_(
+                dim=1,
+                index=group_index,
+                src=W_amp.clamp(min=0),
+                reduce="amax",
+                include_self=True,
+            )
+            neg = layer.base_neg_group.clone()
+            neg.scatter_reduce_(
+                dim=1,
+                index=group_index,
+                src=(-W_amp).clamp(min=0),
+                reduce="amax",
+                include_self=True,
+            )
+            pos_expanded = pos.gather(1, group_index)
+            neg_expanded = neg.gather(1, group_index)
+            scale, zero_point = asymmetric_scale_zero_from_pos_neg(
+                pos_expanded, neg_expanded, q_max
+            )
+            pos_scale = pos_expanded / (q_max - zero_point).clamp(min=1.0)
+            neg_scale = neg_expanded / zero_point.clamp(min=1.0)
+            active_pos = pos_scale >= (neg_scale - 1e-12)
+            active_neg = neg_scale >= (pos_scale - 1e-12)
+            pos_anchor = (W_amp > 0) & (W_amp >= (pos_expanded - 1e-5))
+            neg_anchor = (W_amp < 0) & ((-W_amp) >= (neg_expanded - 1e-5))
+            anchor_mask = (pos_anchor & active_pos) | (neg_anchor & active_neg)
+            q = torch.round(torch.clamp(W_amp / scale + zero_point, 0, q_max))
+            W_quant = (q - zero_point) * scale
+
+        aligned_mask = (~anchor_mask) & ((W_quant - W_amp).abs() <= aligned_tol)
+
+        total += W_amp.numel()
+        anchor_total += int(anchor_mask.sum().item())
+        aligned_total += int(aligned_mask.sum().item())
+
+    if total == 0:
+        print("[SQAT] Initial salient anchor/aligned stats: no salient weights found.")
+        return
+
+    anchor_pct = anchor_total / total * 100.0
+    aligned_pct = aligned_total / total * 100.0
+    covered_pct = (anchor_total + aligned_total) / total * 100.0
+    print(
+        "[SQAT] Initial salient anchor/aligned stats "
+        f"(tol={aligned_tol:g}, elements={total}): "
+        f"anchor={anchor_pct:.2f}% ({anchor_total}), "
+        f"aligned_non_anchor={aligned_pct:.2f}% ({aligned_total}), "
+        f"anchor_or_aligned={covered_pct:.2f}%"
+    )
+
 
 # ============================================================================
 # Calibration: Activation 2nd Moment Estimation
@@ -503,6 +687,34 @@ def compute_base_max_group(
     W_grouped = W_grouped * mask_grouped
 
     return W_grouped.amax(dim=2)
+
+
+def compute_base_range_group(
+    W_dequant: torch.Tensor,
+    salient_indices: torch.Tensor,
+    group_size: int = 128,
+) -> tuple:
+    """Per-group positive and negative-magnitude ranges of non-salient columns."""
+    out_f, in_f = W_dequant.shape
+    num_groups = math.ceil(in_f / group_size)
+
+    mask = torch.ones(in_f, dtype=torch.bool, device=W_dequant.device)
+    mask[salient_indices] = False
+
+    pad = num_groups * group_size - in_f
+    if pad > 0:
+        W_padded = F.pad(W_dequant, (0, pad))
+        mask = F.pad(mask, (0, pad), value=True)
+    else:
+        W_padded = W_dequant
+
+    W_grouped = W_padded.view(out_f, num_groups, group_size)
+    mask_grouped = mask.view(num_groups, group_size).unsqueeze(0).to(W_grouped.dtype)
+    W_grouped = W_grouped * mask_grouped
+
+    base_pos = W_grouped.clamp(min=0).amax(dim=2)
+    base_neg = (-W_grouped).clamp(min=0).amax(dim=2)
+    return base_pos, base_neg
 
 
 def dequantize_layer(module: nn.Module) -> torch.Tensor:
@@ -618,6 +830,7 @@ class SelectiveSalientQATLinear(nn.Module):
         self.register_buffer("salient_gain", salient_gain)
 
         self.q_max = 2 ** (q_bits - 1) - 1
+        self.symmetric = True
         self.has_lora = hasattr(original_module, 'lora_A')
 
     def set_salient_gain(self, gain: torch.Tensor) -> None:
@@ -682,7 +895,7 @@ class SelectiveSalientQATLinear(nn.Module):
         )  # [out, K]
 
         # Compute residual: amplify -> quantize -> map back -> subtract original
-        delta_S = saliency_amplified_quant_residual(
+        delta_S = saliency_amplified_quant_residual_symmetric(
             W_curr_salient=W_curr_S,
             salient_gain=self.salient_gain,     # [K]
             group_ids=self.salient_group_ids,
@@ -692,6 +905,56 @@ class SelectiveSalientQATLinear(nn.Module):
 
         Y = Y + F.linear(X_S, delta_S)  # inject deployment-quantizer residual
         return Y
+
+
+class SelectiveSalientQATLinearAsymmetric(SelectiveSalientQATLinear):
+    """Affine asymmetric SQAT wrapper with a dedicated forward kernel."""
+
+    def __init__(
+        self,
+        original_module: nn.Module,
+        salient_indices: torch.Tensor,
+        W_base_salient: torch.Tensor,
+        base_pos_group: torch.Tensor,
+        base_neg_group: torch.Tensor,
+        salient_group_ids: torch.Tensor,
+        q_bits: int = 4,
+        lora_scaling: float = 1.0,
+        salient_gain: Optional[torch.Tensor] = None,
+    ):
+        super().__init__(
+            original_module=original_module,
+            salient_indices=salient_indices,
+            W_base_salient=W_base_salient,
+            base_max_group=base_pos_group,
+            salient_group_ids=salient_group_ids,
+            q_bits=q_bits,
+            lora_scaling=lora_scaling,
+            salient_gain=salient_gain,
+        )
+        self.register_buffer("base_pos_group", base_pos_group)
+        self.register_buffer("base_neg_group", base_neg_group)
+        self.q_max = 2 ** q_bits - 1
+        self.symmetric = False
+
+    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        Y = self.original_module(x, *args, **kwargs)
+        if not self.has_lora:
+            return Y
+
+        X_S = x[..., self.salient_indices]
+        W_curr_S = (
+            self.W_base_salient + self._get_BA_salient() * self.lora_scaling
+        )
+        delta_S = saliency_amplified_quant_residual_asymmetric(
+            W_curr_salient=W_curr_S,
+            salient_gain=self.salient_gain,
+            group_ids=self.salient_group_ids,
+            base_pos_group=self.base_pos_group,
+            base_neg_group=self.base_neg_group,
+            q_max=self.q_max,
+        )
+        return Y + F.linear(X_S, delta_S)
 
 
 # ============================================================================
@@ -736,6 +999,7 @@ class SelectiveSalientQAT(QATHandler):
         target_modules = cfg["lora"]["target_modules"]
         q_bits = cfg["model"]["quant_bits"]
         group_size = cfg["qat"].get("group_size", 128)
+        symmetric = cfg["qat"].get("symmetric", True)
         top_k_ratio = sqat_cfg["top_k_ratio"]
         device = next(model.parameters()).device
 
@@ -747,8 +1011,9 @@ class SelectiveSalientQAT(QATHandler):
         # stays consistent with what PTQ will see at export.
         self._refresh_interval = sqat_cfg.get("base_max_refresh_interval", 0)
         self._group_size = group_size
+        self._symmetric = symmetric
         if self._refresh_interval > 0:
-            print(f"[SQAT] base_max_group refresh every {self._refresh_interval} steps")
+            print(f"[SQAT] base range refresh every {self._refresh_interval} steps")
 
         # --- Step 1: Calibration ---
         assert calibration_dataloader is not None, (
@@ -865,25 +1130,40 @@ class SelectiveSalientQAT(QATHandler):
             W_base_salient = W_dequant[:, salient_idx].to(device)
 
             group_ids = (salient_idx // group_size).to(device)
-            base_max = compute_base_max_group(
-                W_dequant, salient_idx, group_size
-            ).to(device)
-
             # Optional per-layer salient_gain D; None => all-ones (no amplification)
             gain = None
             if salient_gain_map is not None and name in salient_gain_map:
                 gain = salient_gain_map[name].to(device)
 
-            sqat_linear = SelectiveSalientQATLinear(
-                original_module=module,
-                salient_indices=salient_idx,
-                W_base_salient=W_base_salient,
-                base_max_group=base_max,
-                salient_group_ids=group_ids,
-                q_bits=q_bits,
-                lora_scaling=lora_scaling,
-                salient_gain=gain,
-            ).to(device)
+            if symmetric:
+                base_max = compute_base_max_group(
+                    W_dequant, salient_idx, group_size
+                ).to(device)
+                sqat_linear = SelectiveSalientQATLinear(
+                    original_module=module,
+                    salient_indices=salient_idx,
+                    W_base_salient=W_base_salient,
+                    base_max_group=base_max,
+                    salient_group_ids=group_ids,
+                    q_bits=q_bits,
+                    lora_scaling=lora_scaling,
+                    salient_gain=gain,
+                ).to(device)
+            else:
+                base_pos, base_neg = compute_base_range_group(
+                    W_dequant, salient_idx, group_size
+                )
+                sqat_linear = SelectiveSalientQATLinearAsymmetric(
+                    original_module=module,
+                    salient_indices=salient_idx,
+                    W_base_salient=W_base_salient,
+                    base_pos_group=base_pos.to(device),
+                    base_neg_group=base_neg.to(device),
+                    salient_group_ids=group_ids,
+                    q_bits=q_bits,
+                    lora_scaling=lora_scaling,
+                    salient_gain=gain,
+                ).to(device)
 
             self.patched_layers[name] = sqat_linear
 
@@ -894,7 +1174,14 @@ class SelectiveSalientQAT(QATHandler):
             else:
                 setattr(model, name, sqat_linear)
 
-        print(f"[SQAT] Patched {len(self.patched_layers)} layers with SQAT wrappers.")
+        print(
+            f"[SQAT] Patched {len(self.patched_layers)} layers with SQAT wrappers "
+            f"(symmetric={symmetric})."
+        )
+        summarize_initial_salient_anchor_alignment(
+            self.patched_layers,
+            aligned_tol=sqat_cfg.get("initial_aligned_tol", 1e-6),
+        )
         return model
 
     def on_train_begin(self, model):
@@ -931,17 +1218,29 @@ class SelectiveSalientQAT(QATHandler):
             lora_delta = (B_full @ A_full) * sqat_layer.lora_scaling
             W_curr = W_base_full + lora_delta
 
-            new_base_max = compute_base_max_group(
-                W_curr,
-                sqat_layer.salient_indices,
-                self._group_size,
-            ).to(sqat_layer.base_max_group.device)
-
-            sqat_layer.base_max_group.copy_(new_base_max)
+            if getattr(sqat_layer, "symmetric", True):
+                new_base_max = compute_base_max_group(
+                    W_curr,
+                    sqat_layer.salient_indices,
+                    self._group_size,
+                ).to(sqat_layer.base_max_group.device)
+                sqat_layer.base_max_group.copy_(new_base_max)
+            else:
+                new_base_pos, new_base_neg = compute_base_range_group(
+                    W_curr,
+                    sqat_layer.salient_indices,
+                    self._group_size,
+                )
+                sqat_layer.base_pos_group.copy_(
+                    new_base_pos.to(sqat_layer.base_pos_group.device)
+                )
+                sqat_layer.base_neg_group.copy_(
+                    new_base_neg.to(sqat_layer.base_neg_group.device)
+                )
             refreshed += 1
 
         if refreshed > 0 and step > 0:
-            print(f"[SQAT] Step {step}: refreshed base_max_group for {refreshed} layers")
+            print(f"[SQAT] Step {step}: refreshed base ranges for {refreshed} layers")
 
     def on_train_end(self, model):
         if hasattr(self, '_refresh_interval') and self._refresh_interval > 0:

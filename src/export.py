@@ -36,6 +36,8 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoModelForCausalLM
 from peft import PeftModel
 
+from .qat_base import asymmetric_scale_zero_from_pos_neg
+
 try:
     from awq.modules.act import ScaledActivation as AWQScaledActivation
 except Exception:
@@ -84,6 +86,24 @@ def _groupwise_quantize(W_grouped: torch.Tensor, scales: torch.Tensor,
     return W_int_grouped.view(W_grouped.shape[0], -1)[:, :in_f].contiguous()
 
 
+def _groupwise_quantize_asymmetric(
+    W_grouped: torch.Tensor,
+    scales: torch.Tensor,
+    zero_points: torch.Tensor,
+    q_max: int,
+    in_f: int,
+):
+    """Round-clamp affine quantize grouped weights, return [out, in_f] uint8."""
+    W_int_grouped = torch.round(
+        torch.clamp(
+            W_grouped / scales.unsqueeze(2) + zero_points.unsqueeze(2),
+            0,
+            q_max,
+        )
+    ).to(torch.uint8)
+    return W_int_grouped.view(W_grouped.shape[0], -1)[:, :in_f].contiguous()
+
+
 def real_quantize_symmetric(
     W: torch.Tensor,
     group_size: int = 128,
@@ -99,6 +119,24 @@ def real_quantize_symmetric(
     W_int = _groupwise_quantize(W_grouped, scales, q_max, in_f)
 
     zeros = torch.full_like(scales, float(AWQ_ZERO_POINT))
+    return W_int, scales, zeros
+
+
+def real_quantize_asymmetric(
+    W: torch.Tensor,
+    group_size: int = 128,
+    q_bits: int = 4,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Standard affine asymmetric group quantization. All work done on CPU."""
+    q_max = 2 ** q_bits - 1
+    W = W.float().cpu()
+    out_f, in_f = W.shape
+
+    W_grouped, _, _ = _pad_and_group(W, group_size)
+    pos = W_grouped.clamp(min=0).amax(dim=2)
+    neg = (-W_grouped).clamp(min=0).amax(dim=2)
+    scales, zeros = asymmetric_scale_zero_from_pos_neg(pos, neg, q_max)
+    W_int = _groupwise_quantize_asymmetric(W_grouped, scales, zeros, q_max, in_f)
     return W_int, scales, zeros
 
 
@@ -166,6 +204,81 @@ def real_quantize_sqat(
     return W_int, scales, zeros
 
 
+def real_quantize_sqat_asymmetric(
+    W_merged: torch.Tensor,
+    salient_indices: torch.Tensor,
+    base_pos_group: torch.Tensor,
+    base_neg_group: torch.Tensor,
+    salient_group_ids: torch.Tensor,
+    salient_gain: Optional[torch.Tensor] = None,
+    group_size: int = 128,
+    q_bits: int = 4,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    SQAT-aware affine PTQ with integer zero-points and anchor-preserving scales.
+
+    Returns (W_uint, scales, zero_points) in the quantizer target coordinate
+    system.  If salient_gain is provided, salient columns are amplified first.
+    """
+    q_max = 2 ** q_bits - 1
+
+    W_merged = W_merged.float().cpu()
+    device = W_merged.device
+    salient_indices = salient_indices.to(device)
+    salient_group_ids = salient_group_ids.to(device)
+    base_pos_group = base_pos_group.to(device).float()
+    base_neg_group = base_neg_group.to(device).float()
+
+    out_f, in_f = W_merged.shape
+    num_groups = math.ceil(in_f / group_size)
+
+    W_target = W_merged.clone()
+    if salient_gain is not None:
+        W_target[:, salient_indices] *= salient_gain.to(device).float()
+
+    W_grouped, _, _ = _pad_and_group(W_target, group_size)
+
+    pos_full = W_grouped.clamp(min=0).amax(dim=2)
+    neg_full = (-W_grouped).clamp(min=0).amax(dim=2)
+    scales_full, zeros_full = asymmetric_scale_zero_from_pos_neg(
+        pos_full, neg_full, q_max
+    )
+
+    K = salient_indices.shape[0]
+    group_indices = salient_group_ids.unsqueeze(0).expand(out_f, K)
+    W_salient = W_target[:, salient_indices]
+
+    pos_train = base_pos_group.clone()
+    pos_train.scatter_reduce_(
+        dim=1,
+        index=group_indices,
+        src=W_salient.clamp(min=0),
+        reduce="amax",
+        include_self=True,
+    )
+    neg_train = base_neg_group.clone()
+    neg_train.scatter_reduce_(
+        dim=1,
+        index=group_indices,
+        src=(-W_salient).clamp(min=0),
+        reduce="amax",
+        include_self=True,
+    )
+    scales_train, zeros_train = asymmetric_scale_zero_from_pos_neg(
+        pos_train, neg_train, q_max
+    )
+
+    affected = salient_group_ids.unique()
+    group_mask = torch.zeros(num_groups, dtype=torch.bool, device=device)
+    group_mask[affected] = True
+    group_mask = group_mask.unsqueeze(0).expand_as(scales_full)
+    scales = torch.where(group_mask, scales_train, scales_full)
+    zeros = torch.where(group_mask, zeros_train, zeros_full)
+
+    W_int = _groupwise_quantize_asymmetric(W_grouped, scales, zeros, q_max, in_f)
+    return W_int, scales, zeros
+
+
 def dequantize_symmetric(
     W_int: torch.Tensor, scales: torch.Tensor,
     group_size: int, in_features: int,
@@ -182,14 +295,42 @@ def dequantize_symmetric(
     return W_deq[:, :in_features]
 
 
+def dequantize_asymmetric(
+    W_int: torch.Tensor,
+    scales: torch.Tensor,
+    zero_points: torch.Tensor,
+    group_size: int,
+    in_features: int,
+) -> torch.Tensor:
+    """Dequantize affine int weights back to float."""
+    out_f = W_int.shape[0]
+    num_groups = scales.shape[1]
+    pad = num_groups * group_size - in_features
+    W_f = W_int.float()
+    W_padded = F.pad(W_f, (0, pad)) if pad > 0 else W_f
+    W_deq = (
+        (W_padded.view(out_f, num_groups, group_size) - zero_points.float().unsqueeze(2))
+        * scales.float().unsqueeze(2)
+    ).view(out_f, -1)
+    return W_deq[:, :in_features]
+
+
 def dequantize_sqat_to_original_space(
     W_int: torch.Tensor, scales: torch.Tensor,
     in_features: int, group_size: int,
     salient_indices: torch.Tensor,
     salient_gain: Optional[torch.Tensor] = None,
+    zero_points: Optional[torch.Tensor] = None,
+    symmetric: bool = True,
 ) -> torch.Tensor:
     """Dequantize and undo salient amplification (divide salient cols by D)."""
-    W_deq = dequantize_symmetric(W_int, scales, group_size, in_features)
+    if symmetric:
+        W_deq = dequantize_symmetric(W_int, scales, group_size, in_features)
+    else:
+        assert zero_points is not None, "asymmetric SQAT dequant requires zero_points"
+        W_deq = dequantize_asymmetric(
+            W_int, scales, zero_points, group_size, in_features
+        )
     if salient_gain is not None:
         idx = salient_indices.to(W_deq.device)
         W_deq[:, idx] /= salient_gain.to(W_deq.device).float()
@@ -231,12 +372,18 @@ def collect_sqat_metadata(model: nn.Module) -> Dict[str, dict]:
     metadata = {}
     for name, module in model.named_modules():
         if isinstance(module, SelectiveSalientQATLinear):
-            metadata[name] = {
+            item = {
                 "salient_indices":   module.salient_indices.cpu().clone(),
-                "base_max_group":    module.base_max_group.cpu().clone(),
                 "salient_group_ids": module.salient_group_ids.cpu().clone(),
                 "salient_gain":      module.salient_gain.cpu().clone(),
+                "symmetric":         bool(getattr(module, "symmetric", True)),
             }
+            if item["symmetric"]:
+                item["base_max_group"] = module.base_max_group.cpu().clone()
+            else:
+                item["base_pos_group"] = module.base_pos_group.cpu().clone()
+                item["base_neg_group"] = module.base_neg_group.cpu().clone()
+            metadata[name] = item
     return metadata
 
 
@@ -504,6 +651,9 @@ def _verify_ptq_consistency(
     weight_targets: Dict[str, torch.Tensor],
     quantized_layers: Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
     group_size: int,
+    symmetric: bool,
+    qat_mode: str = "none",
+    sqat_meta: Optional[Dict[str, dict]] = None,
     max_layers: int = 5,
 ):
     """Spot-check that dequant(quant(W)) ≈ W for a few layers."""
@@ -511,9 +661,25 @@ def _verify_ptq_consistency(
     for name, target in weight_targets.items():
         if checked >= max_layers or name not in quantized_layers:
             continue
-        W_int, scales, _ = quantized_layers[name]
+        W_int, scales, zeros = quantized_layers[name]
         in_f = target.shape[1]
-        W_deq = dequantize_symmetric(W_int, scales, group_size, in_f).to(target.device)
+        if qat_mode == "sqat" and sqat_meta and name in sqat_meta:
+            meta = sqat_meta[name]
+            W_deq = dequantize_sqat_to_original_space(
+                W_int=W_int,
+                scales=scales,
+                in_features=in_f,
+                group_size=group_size,
+                salient_indices=meta["salient_indices"],
+                salient_gain=meta["salient_gain"],
+                zero_points=zeros,
+                symmetric=meta.get("symmetric", symmetric),
+            )
+        elif symmetric:
+            W_deq = dequantize_symmetric(W_int, scales, group_size, in_f)
+        else:
+            W_deq = dequantize_asymmetric(W_int, scales, zeros, group_size, in_f)
+        W_deq = W_deq.to(target.device)
         abs_err = (W_deq - target.float()).abs()
         max_err = abs_err.max().item()
         mean_err = abs_err.mean().item()
@@ -522,6 +688,143 @@ def _verify_ptq_consistency(
         checked += 1
     if checked == 0:
         print("  [Verify] No layers checked.")
+
+
+def _verify_sqat_salient_train_export_grid(
+    weight_targets: Dict[str, torch.Tensor],
+    quantized_layers: Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    sqat_meta: Dict[str, dict],
+    q_bits: int,
+    export_dequant: bool,
+    symmetric: bool,
+    max_layers: int = 8,
+    value_tol: float = 1e-6,
+) -> None:
+    """
+    Verify that training-time SQAT and export-time PTQ choose the same grid.
+
+    This compares Q_train(W_s) against Q_export(W_s), not W_s against Q(W_s).
+    It is intentionally limited to [out, K] salient slices and gathers only the
+    affected deployment scales/zero-points.
+    """
+    if not sqat_meta:
+        return
+
+    qmax_sym = 2 ** (q_bits - 1) - 1
+    qmax_asym = 2 ** q_bits - 1
+    checked = 0
+
+    print("[Export] Verifying SQAT train/export salient grids...")
+    for name, meta in sqat_meta.items():
+        if checked >= max_layers:
+            break
+        if name not in weight_targets or name not in quantized_layers:
+            continue
+
+        W = weight_targets[name].float()
+        W_int, scales, zeros = quantized_layers[name]
+        del W_int  # Only scales/zero-points are needed for this targeted check.
+
+        layer_symmetric = meta.get("symmetric", symmetric)
+        sidx = meta["salient_indices"].to(W.device)
+        gids = meta["salient_group_ids"].to(W.device)
+        group_index = gids.unsqueeze(0).expand(W.shape[0], -1)
+
+        W_salient_orig = W[:, sidx]
+        W_quant_space = W_salient_orig
+        gain = meta.get("salient_gain")
+        if export_dequant and gain is not None:
+            gain = gain.to(W.device).float().clamp(min=1e-7)
+            W_quant_space = W_quant_space * gain
+        else:
+            gain = None
+
+        scale_export = scales.to(W.device).float().gather(1, group_index)
+        if layer_symmetric:
+            base_max = meta["base_max_group"].to(W.device).float()
+            anchor = base_max.clone()
+            anchor.scatter_reduce_(
+                dim=1,
+                index=group_index,
+                src=W_quant_space.abs(),
+                reduce="amax",
+                include_self=True,
+            )
+            scale_train = (anchor.gather(1, group_index) / qmax_sym).clamp(min=1e-7)
+
+            q_train = torch.round(
+                torch.clamp(W_quant_space / scale_train, -qmax_sym, qmax_sym)
+            )
+            q_export = torch.round(
+                torch.clamp(W_quant_space / scale_export, -qmax_sym, qmax_sym)
+            )
+            W_train_quant_space = q_train * scale_train
+            W_export_quant_space = q_export * scale_export
+            q_mismatch = (q_train != q_export).float().mean().item() * 100.0
+            scale_max_diff = (scale_train - scale_export).abs().max().item()
+            zp_mismatch = 0.0
+        else:
+            base_pos = meta["base_pos_group"].to(W.device).float()
+            base_neg = meta["base_neg_group"].to(W.device).float()
+
+            pos = base_pos.clone()
+            pos.scatter_reduce_(
+                dim=1,
+                index=group_index,
+                src=W_quant_space.clamp(min=0),
+                reduce="amax",
+                include_self=True,
+            )
+            neg = base_neg.clone()
+            neg.scatter_reduce_(
+                dim=1,
+                index=group_index,
+                src=(-W_quant_space).clamp(min=0),
+                reduce="amax",
+                include_self=True,
+            )
+            scale_train_all, zp_train_all = asymmetric_scale_zero_from_pos_neg(
+                pos, neg, qmax_asym
+            )
+            scale_train = scale_train_all.gather(1, group_index)
+            zp_train = zp_train_all.gather(1, group_index)
+            zp_export = zeros.to(W.device).float().gather(1, group_index)
+
+            q_train = torch.round(
+                torch.clamp(W_quant_space / scale_train + zp_train, 0, qmax_asym)
+            )
+            q_export = torch.round(
+                torch.clamp(W_quant_space / scale_export + zp_export, 0, qmax_asym)
+            )
+            W_train_quant_space = (q_train - zp_train) * scale_train
+            W_export_quant_space = (q_export - zp_export) * scale_export
+            q_mismatch = (q_train != q_export).float().mean().item() * 100.0
+            scale_max_diff = (scale_train - scale_export).abs().max().item()
+            zp_mismatch = (zp_train != zp_export).float().mean().item() * 100.0
+
+        if gain is not None:
+            W_train_orig = W_train_quant_space / gain
+            W_export_orig = W_export_quant_space / gain
+        else:
+            W_train_orig = W_train_quant_space
+            W_export_orig = W_export_quant_space
+
+        abs_err = (W_train_orig - W_export_orig).abs()
+        max_err = abs_err.max().item()
+        mean_err = abs_err.mean().item()
+        p99_err = torch.quantile(abs_err.flatten(), 0.99).item()
+        same_value_ratio = (abs_err <= value_tol).float().mean().item() * 100.0
+        print(
+            f"  [SQAT-Grid] {name}: K={sidx.numel()}, "
+            f"Qdiff max={max_err:.6g}, p99={p99_err:.6g}, mean={mean_err:.6g}, "
+            f"same<={value_tol:g}: {same_value_ratio:.2f}%, "
+            f"q_mismatch={q_mismatch:.4f}%, scale_max_diff={scale_max_diff:.6g}, "
+            f"zp_mismatch={zp_mismatch:.4f}%"
+        )
+        checked += 1
+
+    if checked == 0:
+        print("  [SQAT-Grid] No SQAT salient layers checked.")
 
 
 # ============================================================================
@@ -645,6 +948,7 @@ def _quantize_all_layers(
     group_size: int,
     q_bits: int,
     export_dequant: bool,
+    symmetric: bool,
 ) -> Tuple[Dict[str, Tuple], Dict[str, torch.Tensor]]:
     """
     Run PTQ on all target linear layers.
@@ -675,26 +979,46 @@ def _quantize_all_layers(
 
         if qat_mode == "sqat" and name in sqat_meta:
             meta = sqat_meta[name]
+            layer_symmetric = meta.get("symmetric", symmetric)
 
             # Dequant export must quantize in the same amplify-space used during SQAT training.
             # AWQ export has already folded D into the graph, so do NOT pass gain again.
             gain = meta["salient_gain"] if export_dequant else None
 
-            W_int, scales, zeros = real_quantize_sqat(
-                W_merged=W,
-                salient_indices=meta["salient_indices"],
-                base_max_group=meta["base_max_group"],
-                salient_group_ids=meta["salient_group_ids"],
-                salient_gain=gain,
-                group_size=group_size,
-                q_bits=q_bits,
-            )
+            if layer_symmetric:
+                W_int, scales, zeros = real_quantize_sqat(
+                    W_merged=W,
+                    salient_indices=meta["salient_indices"],
+                    base_max_group=meta["base_max_group"],
+                    salient_group_ids=meta["salient_group_ids"],
+                    salient_gain=gain,
+                    group_size=group_size,
+                    q_bits=q_bits,
+                )
+            else:
+                W_int, scales, zeros = real_quantize_sqat_asymmetric(
+                    W_merged=W,
+                    salient_indices=meta["salient_indices"],
+                    base_pos_group=meta["base_pos_group"],
+                    base_neg_group=meta["base_neg_group"],
+                    salient_group_ids=meta["salient_group_ids"],
+                    salient_gain=gain,
+                    group_size=group_size,
+                    q_bits=q_bits,
+                )
         else:
-            W_int, scales, zeros = real_quantize_symmetric(
-                W,
-                group_size=group_size,
-                q_bits=q_bits,
-            )
+            if symmetric:
+                W_int, scales, zeros = real_quantize_symmetric(
+                    W,
+                    group_size=group_size,
+                    q_bits=q_bits,
+                )
+            else:
+                W_int, scales, zeros = real_quantize_asymmetric(
+                    W,
+                    group_size=group_size,
+                    q_bits=q_bits,
+                )
 
         quantized_layers[name] = (W_int, scales, zeros)
         quant_targets[name] = W.cpu()
@@ -727,6 +1051,7 @@ def merge_and_export(
     qat_mode = cfg["qat"]["mode"]
     q_bits = cfg["model"]["quant_bits"]
     group_size = cfg["qat"].get("group_size", 128)
+    symmetric = cfg["qat"].get("symmetric", True)
     base_model_name = cfg["model"]["name"]
     target_modules = cfg["lora"]["target_modules"]
     lora_scaling = cfg["lora"]["alpha"] / cfg["lora"]["rank"]
@@ -736,7 +1061,13 @@ def merge_and_export(
         output_dir = f"{cfg['training']['output_dir']}-{q_bits}bit-{qat_mode}-{suffix}-eval"
 
     print(f"[Export] Mode: {'dequantized dense' if export_dequant else 'AWQ quantized'}")
-    print(f"[Export] QAT mode: {qat_mode}, INT{q_bits}, group_size={group_size}")
+    print(
+        f"[Export] QAT mode: {qat_mode}, INT{q_bits}, "
+        f"group_size={group_size}, symmetric={symmetric}"
+    )
+
+    if not export_dequant and not symmetric:
+        raise ValueError("Asymmetric export currently supports export_dequant=True only.")
 
     # --- Collect SQAT metadata before unwrap ---
     if qat_mode == "sqat" and sqat_metadata is None and model is not None:
@@ -817,18 +1148,34 @@ def merge_and_export(
     print("[Export] Applying PTQ...")
     quantized_layers, quant_targets = _quantize_all_layers(
         merged_model, target_modules, qat_mode, sqat_meta,
-        group_size, q_bits, export_dequant,
+        group_size, q_bits, export_dequant, symmetric,
     )
     print(f"[Export] Quantized {len(quantized_layers)} layers")
 
     print("[Export] Verifying a few layers...")
-    _verify_ptq_consistency(quant_targets, quantized_layers, group_size)
+    _verify_ptq_consistency(
+        quant_targets,
+        quantized_layers,
+        group_size,
+        symmetric,
+        qat_mode=qat_mode,
+        sqat_meta=sqat_meta,
+    )
+    if qat_mode == "sqat" and sqat_meta:
+        _verify_sqat_salient_train_export_grid(
+            weight_targets=quant_targets,
+            quantized_layers=quantized_layers,
+            sqat_meta=sqat_meta,
+            q_bits=q_bits,
+            export_dequant=export_dequant,
+            symmetric=symmetric,
+        )
 
     # --- Save ---
     if export_dequant:
         print("[Export] Replacing weights with dequantized dense tensors...")
         modules_map = _get_named_modules(merged_model)
-        for name, (W_int, scales, _) in quantized_layers.items():
+        for name, (W_int, scales, zeros) in quantized_layers.items():
             mod = modules_map.get(name)
             if mod is None or not hasattr(mod, "weight"):
                 continue
@@ -837,6 +1184,7 @@ def merge_and_export(
 
             if qat_mode == "sqat" and name in sqat_meta:
                 meta = sqat_meta[name]
+                layer_symmetric = meta.get("symmetric", symmetric)
                 W_deq = dequantize_sqat_to_original_space(
                     W_int=W_int,
                     scales=scales,
@@ -844,27 +1192,26 @@ def merge_and_export(
                     group_size=group_size,
                     salient_indices=meta["salient_indices"],
                     salient_gain=meta["salient_gain"],
+                    zero_points=zeros,
+                    symmetric=layer_symmetric,
                 )
             else:
-                W_deq = dequantize_symmetric(
-                    W_int=W_int,
-                    scales=scales,
-                    group_size=group_size,
-                    in_features=in_f,
-                )
+                if symmetric:
+                    W_deq = dequantize_symmetric(
+                        W_int=W_int,
+                        scales=scales,
+                        group_size=group_size,
+                        in_features=in_f,
+                    )
+                else:
+                    W_deq = dequantize_asymmetric(
+                        W_int=W_int,
+                        scales=scales,
+                        zero_points=zeros,
+                        group_size=group_size,
+                        in_features=in_f,
+                    )
 
-            mod.weight.data.copy_(W_deq.to(mod.weight.dtype))
-            
-        print("[Export] Replacing weights with dequantized dense tensors...")
-        modules_map = _get_named_modules(merged_model)
-        for name, (W_int, scales, _) in quantized_layers.items():
-            mod = modules_map.get(name)
-            if mod is None or not hasattr(mod, "weight"):
-                continue
-            in_f = mod.weight.shape[1]
-            # Standard dequant for all layers — D was never applied in the
-            # quantizer for export_dequant mode, so no D^{-1} mapping needed.
-            W_deq = dequantize_symmetric(W_int, scales, group_size, in_f)
             mod.weight.data.copy_(W_deq.to(mod.weight.dtype))
 
         dtype = torch.float16 if dequant_dtype.lower() in ("fp16", "float16", "half") else torch.bfloat16

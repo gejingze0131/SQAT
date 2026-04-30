@@ -33,14 +33,16 @@ lora:
 # "full"  = full QAT on all quantized weights
 # "sqat"  = selective salient QAT (ours)
 qat:
-  mode: "full"
-  group_size: 64                   # quantization group size (shared by all modes & export)
+  mode: "sqat"
+  symmetric: false                   # true = symmetric; false = affine asymmetric with zero_point
+  group_size: 32                   # quantization group size (shared by all modes & export)
   # SQAT-specific
   sqat:
     top_k_ratio: 0.01              # fraction of salient input channels
-    base_max_refresh_interval: 0 
-    salient_gain_alpha: 0.0        # the strength of the salient amplification
+    base_max_refresh_interval: 0  # steps between max group updates (base, non-salient)
+    salient_gain_alpha: 0.5        # the strength of the salient amplification
     salient_gain_max: 2.0          # maximum value for AWQ-style saliency amplification D
+    initial_aligned_tol: 1.0e-6    # tolerance for initial salient aligned statistics
     calibration_samples: 1024       # num samples for 2nd moment estimation
     calibration_seq_len: 1024       # seq len for calibration
     plot_activation_stats: true    # whether to plot activation distributions for debugging
@@ -51,20 +53,19 @@ qat:
 # --- Data ---
 data:
   # Fine-tuning dataset
-  train_dataset: "commonsense_qa"  # or "commonsense_qa", "openassistant", custom path
+  train_dataset: "metamath"  # or "metamath", "openassistant", custom path
   train_split: "train"
   val_split: "validation"
-  max_train_samples: 10000          # null = use all
-  prompt_template: "commonsense_qa"  # template name (see data.py)
+  max_train_samples: 10000         # null = use all
+  prompt_template: "metamath"  # template name (see data.py)
   
 # --- Training ---
 training:
   output_dir: "outputs/qlora"
   num_epochs: 1
-  per_device_train_batch_size: 8
+  per_device_train_batch_size: 16
   per_device_eval_batch_size: 8
-  gradient_checkpointing: true
-  gradient_accumulation_steps: 4   # effective batch = 2 GPUs × 8 × 4 = 64
+  gradient_accumulation_steps: 2   # effective batch = 2 GPUs × 16 × 2 = 64
   learning_rate: 2.0e-4
   weight_decay: 0.01
   lr_scheduler_type: "cosine"

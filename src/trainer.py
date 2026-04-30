@@ -75,7 +75,6 @@ def build_trainer(
         num_train_epochs=train_cfg["num_epochs"],
         per_device_train_batch_size=train_cfg["per_device_train_batch_size"],
         per_device_eval_batch_size=train_cfg["per_device_eval_batch_size"],
-        gradient_checkpointing=train_cfg["gradient_checkpointing"],
         gradient_accumulation_steps=train_cfg["gradient_accumulation_steps"],
         learning_rate=train_cfg["learning_rate"],
         weight_decay=train_cfg["weight_decay"],
