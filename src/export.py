@@ -513,6 +513,27 @@ def _remap_adapter_keys_if_needed(adapter_path: str) -> bool:
     return True
 
 
+def _load_adapter_for_export(base_model_nf4: nn.Module, adapter_path: str, cfg: dict) -> PeftModel:
+    """Load a PEFT adapter, using QA-LoRA's resized A matrices when needed."""
+    qat_mode = cfg.get("qat", {}).get("mode", "none")
+    if qat_mode != "qalora":
+        return PeftModel.from_pretrained(
+            base_model_nf4, adapter_path, torch_dtype=torch.float16,
+        )
+
+    from peft import PeftConfig, get_peft_model
+    from .qalora import load_qalora_adapter, patch_qalora_model
+
+    peft_config = PeftConfig.from_pretrained(adapter_path)
+    peft_model = get_peft_model(base_model_nf4, peft_config)
+    _, count = patch_qalora_model(
+        peft_model, cfg, patch_forward=False, init_lora_A=False,
+    )
+    load_qalora_adapter(peft_model, adapter_path)
+    print(f"[Export] Loaded QA-LoRA adapter into {count} patched layers")
+    return peft_model
+
+
 # ============================================================================
 # AWQ-style salient gain D folding
 # ============================================================================
@@ -906,6 +927,8 @@ def _merge_lora_into_dense(
     merged_model: nn.Module,
     target_modules: list,
     lora_scaling: float,
+    qat_mode: str = "none",
+    group_size: int = 128,
 ) -> int:
     """Dequant NF4 base + LoRA delta -> copy into dense model. Returns layer count."""
     import bitsandbytes as bnb
@@ -924,7 +947,13 @@ def _merge_lora_into_dense(
         adapter_name = list(module.lora_A.keys())[0]
         A = module.lora_A[adapter_name].weight.data.float()
         B = module.lora_B[adapter_name].weight.data.float()
-        W_merged = (W_base + (B @ A) * lora_scaling).half()
+        if qat_mode == "qalora":
+            from .qalora import expand_qalora_delta
+            delta_group = (B @ A) * lora_scaling
+            delta = expand_qalora_delta(delta_group, in_f, group_size)
+        else:
+            delta = (B @ A) * lora_scaling
+        W_merged = (W_base + delta).half()
 
         clean_name = _strip_peft_prefix(name)
         target = modules_map.get(clean_name)
@@ -1066,6 +1095,11 @@ def merge_and_export(
         f"group_size={group_size}, symmetric={symmetric}"
     )
 
+    if qat_mode == "qalora" and not export_dequant:
+        raise ValueError(
+            "QA-LoRA uses affine asymmetric quantization in this repo; "
+            "export it with --export_dequant to save fp16 quantize->dequant weights."
+        )
     if not export_dequant and not symmetric:
         raise ValueError("Asymmetric export currently supports export_dequant=True only.")
 
@@ -1110,9 +1144,7 @@ def merge_and_export(
     )
 
     print("[Export] Loading LoRA adapter...")
-    peft_model = PeftModel.from_pretrained(
-        base_model_nf4, adapter_path, torch_dtype=torch.float16,
-    )
+    peft_model = _load_adapter_for_export(base_model_nf4, adapter_path, cfg)
 
     # --- Merge into dense shell ---
     print("[Export] Loading dense model shell...")
@@ -1123,7 +1155,14 @@ def merge_and_export(
         trust_remote_code=True,
     )
 
-    count = _merge_lora_into_dense(peft_model, merged_model, target_modules, lora_scaling)
+    count = _merge_lora_into_dense(
+        peft_model,
+        merged_model,
+        target_modules,
+        lora_scaling,
+        qat_mode=qat_mode,
+        group_size=group_size,
+    )
     print(f"[Export] Merged {count} layers")
 
     del peft_model, base_model_nf4
@@ -1320,9 +1359,7 @@ def export_merged_only(
     )
 
     print("[Export] Loading LoRA adapter...")
-    peft_model = PeftModel.from_pretrained(
-        base_model_nf4, adapter_path, torch_dtype=torch.float16,
-    )
+    peft_model = _load_adapter_for_export(base_model_nf4, adapter_path, cfg)
 
     # --- Merge into dense shell (NO quantization) ---
     print("[Export] Loading dense model shell...")
@@ -1333,7 +1370,14 @@ def export_merged_only(
         trust_remote_code=True,
     )
 
-    count = _merge_lora_into_dense(peft_model, merged_model, target_modules, lora_scaling)
+    count = _merge_lora_into_dense(
+        peft_model,
+        merged_model,
+        target_modules,
+        lora_scaling,
+        qat_mode=qat_mode,
+        group_size=cfg.get("qat", {}).get("group_size", 128),
+    )
     print(f"[Export] Merged {count} layers (no quantization applied)")
 
     del peft_model, base_model_nf4

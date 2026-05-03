@@ -5,6 +5,7 @@ Three modes:
   - "none":  standard QLoRA, no quantization-aware training
   - "full":  fakequant on ALL quantized weights each forward pass
   - "sqat":  selective salient QAT (only top-k channels by activation 2nd moment)
+  - "qalora": group-wise QA-LoRA with affine asymmetric fakequant
 
 Fix notes vs previous version
 -----------------------------
@@ -43,6 +44,7 @@ class QATMode(Enum):
     NONE = "none"
     FULL = "full"
     SQAT = "sqat"
+    QALORA = "qalora"
 
 
 # ============================================================================
@@ -418,5 +420,8 @@ def get_qat_handler(cfg: dict) -> QATHandler:
     elif mode == QATMode.SQAT:
         from .qat_sqat import SelectiveSalientQAT
         return SelectiveSalientQAT()
+    elif mode == QATMode.QALORA:
+        from .qalora import QALoRA
+        return QALoRA()
     else:
         raise ValueError(f"Unknown QAT mode: {mode_str}")

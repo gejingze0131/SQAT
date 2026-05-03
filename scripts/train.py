@@ -15,6 +15,9 @@ Usage:
   # With SQAT
   accelerate launch --num_processes 4 scripts/train.py --config configs/default.yaml --qat_mode sqat
 
+  # With QA-LoRA (asymmetric only)
+  accelerate launch --num_processes 4 scripts/train.py --config configs/default.yaml --qat_mode qalora --asymmetric
+
   # With Full QAT
   accelerate launch --num_processes 4 scripts/train.py --config configs/default.yaml --qat_mode full
 
@@ -74,6 +77,9 @@ def load_config(config_path: str, overrides: dict) -> dict:
     if overrides.get("report_to"):
         cfg["training"]["report_to"] = overrides["report_to"]
 
+    if cfg["qat"].get("mode") == "qalora":
+        cfg["qat"]["symmetric"] = False
+
     # Data overrides
     if overrides.get("train_dataset"):
         cfg["data"]["train_dataset"] = overrides["train_dataset"]
@@ -98,7 +104,7 @@ def load_config(config_path: str, overrides: dict) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="QLoRA + QAT Training")
     parser.add_argument("--config", type=str, default="configs/default.yaml")
-    parser.add_argument("--qat_mode", type=str, choices=["none", "full", "sqat"], default=None)
+    parser.add_argument("--qat_mode", type=str, choices=["none", "full", "sqat", "qalora"], default=None)
     parser.add_argument("--bits", type=int, choices=[3, 4], default=None)
     parser.add_argument("--symmetric", dest="symmetric", action="store_true", default=None,
                         help="Use symmetric quantization kernels.")
@@ -162,6 +168,8 @@ def main():
     print(f"  Prompt template: {cfg['data'].get('prompt_template', cfg['data']['train_dataset'])}")
     print(f"  Train split:     {cfg['data'].get('train_split', 'train')}")
     print(f"  Val split:       {cfg['data'].get('val_split', 'validation')}")
+    if qat_mode == "qalora":
+        print("  QA-LoRA:         asymmetric affine quantization only")
 
     accelerator = Accelerator()
 
