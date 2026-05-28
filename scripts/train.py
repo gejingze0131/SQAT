@@ -15,6 +15,9 @@ Usage:
   # With SQAT
   accelerate launch --num_processes 4 scripts/train.py --config configs/default.yaml --qat_mode sqat
 
+  # With bilateral fixed-grid SQAT
+  accelerate launch --num_processes 4 scripts/train.py --config configs/default.yaml --qat_mode sqat_bilateral
+
   # With QA-LoRA (asymmetric only)
   accelerate launch --num_processes 4 scripts/train.py --config configs/default.yaml --qat_mode qalora --asymmetric
 
@@ -70,6 +73,10 @@ def load_config(config_path: str, overrides: dict) -> dict:
         cfg["lora"]["rank"] = overrides["lora_rank"]
     if overrides.get("top_k_ratio"):
         cfg["qat"]["sqat"]["top_k_ratio"] = overrides["top_k_ratio"]
+    if overrides.get("input_top_k") is not None:
+        cfg["qat"]["sqat"]["input_top_k"] = overrides["input_top_k"]
+    if overrides.get("output_top_k") is not None:
+        cfg["qat"]["sqat"]["output_top_k"] = overrides["output_top_k"]
     if overrides.get("salient_gain_alpha") is not None:
         cfg["qat"]["sqat"]["salient_gain_alpha"] = overrides["salient_gain_alpha"]
     if overrides.get("salient_gain_max") is not None:
@@ -104,7 +111,12 @@ def load_config(config_path: str, overrides: dict) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="QLoRA + QAT Training")
     parser.add_argument("--config", type=str, default="configs/default.yaml")
-    parser.add_argument("--qat_mode", type=str, choices=["none", "full", "sqat", "qalora"], default=None)
+    parser.add_argument(
+        "--qat_mode",
+        type=str,
+        choices=["none", "full", "sqat", "sqat_bilateral", "qalora"],
+        default=None,
+    )
     parser.add_argument("--bits", type=int, choices=[3, 4], default=None)
     parser.add_argument("--symmetric", dest="symmetric", action="store_true", default=None,
                         help="Use symmetric quantization kernels.")
@@ -114,7 +126,12 @@ def main():
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--lr", type=float, default=None)
     parser.add_argument("--lora_rank", type=int, default=None)
-    parser.add_argument("--top_k_ratio", type=float, default=None)
+    parser.add_argument("--top_k_ratio", type=float, default=None,
+                        help="Top-k ratio for original input-side SQAT.")
+    parser.add_argument("--input_top_k", type=int, default=None,
+                        help="Number of salient input channels for bilateral SQAT. 0 disables input side.")
+    parser.add_argument("--output_top_k", type=int, default=None,
+                        help="Number of salient output channels for bilateral SQAT. 0 disables output side.")
     parser.add_argument(
         "--salient_gain_alpha", type=float, default=None,
         help="AWQ-style saliency amplification exponent alpha. "
@@ -180,7 +197,7 @@ def main():
         # For SQAT export-only, we need metadata.
         # The metadata is saved alongside the adapter checkpoint.
         sqat_metadata = None
-        if qat_mode == "sqat":
+        if qat_mode in {"sqat", "sqat_bilateral"}:
             meta_path = os.path.join(args.checkpoint_dir, "sqat_metadata.pt")
             if os.path.exists(meta_path):
                 sqat_metadata = torch.load(meta_path, map_location="cpu")
@@ -225,9 +242,9 @@ def main():
     print(f"\n[3/5] Setting up QAT handler: {qat_mode}")
     qat_handler = get_qat_handler(cfg)
 
-    # For SQAT, we need a calibration dataloader
+    # For SQAT variants, we need a calibration dataloader
     qat_kwargs = {}
-    if qat_mode == "sqat":
+    if qat_mode in {"sqat", "sqat_bilateral"}:
         print("  Loading calibration data for SQAT...")
         cal_dataset = load_calibration_data(cfg, tokenizer)
         from transformers import DataCollatorForSeq2Seq
@@ -262,7 +279,7 @@ def main():
 
     # --- Collect SQAT metadata BEFORE any save/unwrap ---
     sqat_metadata = None
-    if qat_mode == "sqat":
+    if qat_mode in {"sqat", "sqat_bilateral"}:
         from src.export import collect_sqat_metadata
         sqat_metadata = collect_sqat_metadata(model)
 

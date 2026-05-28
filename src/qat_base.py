@@ -5,6 +5,7 @@ Three modes:
   - "none":  standard QLoRA, no quantization-aware training
   - "full":  fakequant on ALL quantized weights each forward pass
   - "sqat":  selective salient QAT (only top-k channels by activation 2nd moment)
+  - "sqat_bilateral": fixed-grid SQAT on Fisher-selected input/output channels
   - "qalora": group-wise QA-LoRA with affine asymmetric fakequant
 
 Fix notes vs previous version
@@ -44,6 +45,7 @@ class QATMode(Enum):
     NONE = "none"
     FULL = "full"
     SQAT = "sqat"
+    SQAT_BILATERAL = "sqat_bilateral"
     QALORA = "qalora"
 
 
@@ -90,6 +92,34 @@ def asymmetric_scale_zero_from_pos_neg(
     neg_scale = neg / zp.clamp(min=1.0)
     scale = torch.maximum(pos_scale, neg_scale).clamp(min=eps)
     return scale, zp
+
+
+def asymmetric_scale_zero_from_pos_neg_ultrafast(
+    pos: torch.Tensor,
+    neg: torch.Tensor,
+    q_max: int,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Ultrafast two-sided asymmetric affine quantizer.
+
+    Requires:
+        pos > 0
+        neg > 0
+        1 <= zero_point <= q_max - 1 after rounding/clamping
+    """
+    q_max = int(q_max)
+
+    zero_point = torch.round(q_max * neg / (pos + neg))
+    zero_point = zero_point.clamp_(1, q_max - 1)
+
+    pos_scale = pos / (q_max - zero_point)
+    neg_scale = neg / zero_point
+
+    scale = torch.maximum(pos_scale, neg_scale)
+
+    signed_anchor = torch.where(pos_scale >= neg_scale, pos, -neg)
+
+    return scale, zero_point, signed_anchor
 
 
 def asymmetric_fakequant(
@@ -420,6 +450,9 @@ def get_qat_handler(cfg: dict) -> QATHandler:
     elif mode == QATMode.SQAT:
         from .qat_sqat import SelectiveSalientQAT
         return SelectiveSalientQAT()
+    elif mode == QATMode.SQAT_BILATERAL:
+        from .qat_sqat_bilateral import BilateralSalientQAT
+        return BilateralSalientQAT()
     elif mode == QATMode.QALORA:
         from .qalora import QALoRA
         return QALoRA()

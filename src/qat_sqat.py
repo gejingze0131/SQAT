@@ -49,6 +49,7 @@ from .qat_base import (
     QATHandler,
     asymmetric_fakequant,
     asymmetric_scale_zero_from_pos_neg,
+    asymmetric_scale_zero_from_pos_neg_ultrafast,
     round_ste,
 )
 
@@ -322,11 +323,6 @@ def selective_salient_fakequant_symmetric(W_curr, group_ids, base_max_group, q_m
 
     group_indices = group_ids.unsqueeze(0).expand(N, -1)     # [N, K], zero-copy view
 
-    # Fused anchor computation:
-    # Initialise from base_max_group (the amplify-space floor), then scatter-reduce
-    # the salient abs values into each group.  include_self=True takes max with the
-    # floor values in a single pass, replacing the earlier zeros_like + scatter +
-    # torch.maximum sequence and saving one tensor allocation.
     anchor = base_max_group.clone()                          # [N, G], starts at floor
     anchor.scatter_reduce_(
         dim=1, index=group_indices, src=abs_W,
@@ -352,53 +348,55 @@ def selective_salient_fakequant_asymmetric(
     base_pos_group,
     base_neg_group,
     q_max: int,
+    eps: float = 1e-7,
+    anchor_eps: float = 1e-5,
 ):
-    """
-    Dynamic-range affine fakequant for salient columns only.
-
-    base_pos_group/base_neg_group are the non-salient range floors. Salient
-    values are scatter-reduced into those floors, then integer zero-points and
-    anchor-preserving scales are computed per affected group.
-    """
     N, K = W_curr.shape
+    q_max = int(q_max)
+
+    group_ids = group_ids.to(device=W_curr.device, dtype=torch.long)
     group_indices = group_ids.unsqueeze(0).expand(N, -1)
 
-    pos = base_pos_group.clone()
-    pos.scatter_reduce_(
+    pos_g = base_pos_group.clone()
+    neg_g = base_neg_group.clone()
+
+    pos_g.scatter_reduce_(
         dim=1,
         index=group_indices,
-        src=W_curr.clamp(min=0),
+        src=W_curr.clamp_min(0.0),
         reduce="amax",
         include_self=True,
     )
 
-    neg = base_neg_group.clone()
-    neg.scatter_reduce_(
+    neg_g.scatter_reduce_(
         dim=1,
         index=group_indices,
-        src=(-W_curr).clamp(min=0),
+        src=(-W_curr).clamp_min(0.0),
         reduce="amax",
         include_self=True,
     )
 
-    pos_expanded = pos.gather(dim=1, index=group_indices)
-    neg_expanded = neg.gather(dim=1, index=group_indices)
-    scale, zero_point = asymmetric_scale_zero_from_pos_neg(
-        pos_expanded, neg_expanded, int(q_max)
+    pos = pos_g.gather(dim=1, index=group_indices)
+    neg = neg_g.gather(dim=1, index=group_indices)
+
+    scale, zero_point, signed_anchor = asymmetric_scale_zero_from_pos_neg_ultrafast(
+        pos=pos,
+        neg=neg,
+        q_max=q_max,
+        # eps=eps,
     )
 
-    W_quant = asymmetric_fakequant(W_curr, scale, zero_point, int(q_max))
+    W_quant = asymmetric_fakequant(
+        w=W_curr,
+        scale=scale,
+        zero_point=zero_point,
+        q_max=q_max,
+    )
 
-    # Preserve the active range-defining anchor exactly.  The affine scale is
-    # chosen so either the positive or negative range endpoint lands on a grid
-    # boundary after integer zero-point rounding.
-    pos_scale = pos_expanded / (int(q_max) - zero_point).clamp(min=1.0)
-    neg_scale = neg_expanded / zero_point.clamp(min=1.0)
-    active_pos = pos_scale >= (neg_scale - 1e-12)
-    active_neg = neg_scale >= (pos_scale - 1e-12)
-    pos_anchor = (W_curr > 0) & (W_curr >= (pos_expanded - 1e-5))
-    neg_anchor = (W_curr < 0) & ((-W_curr) >= (neg_expanded - 1e-5))
-    return torch.where((pos_anchor & active_pos) | (neg_anchor & active_neg), W_curr, W_quant)
+    active_anchor = (W_curr - signed_anchor).abs() <= anchor_eps
+    mask = active_anchor.detach().to(dtype=W_curr.dtype)
+
+    return W_quant + (W_curr - W_quant) * mask
 
 
 # Backward-compatible name for older callers.
@@ -432,8 +430,6 @@ def saliency_amplified_quant_residual_symmetric(
         W_curr_salient: salient-channel slice of current effective weight
                         (W_base_S + scaling * B @ A[:,S]).  Shape [out, K].
                         Original coordinate space.
-        salient_gain:   per-channel amplification D.  Shape [K].
-                        All-ones disables amplification.
         group_ids:      quantization group index per salient channel [K].
         base_max_group: per-group scale floor.  Shape [out, G].
                         Amplify-space quantity: its values equal the original-space
@@ -446,23 +442,15 @@ def saliency_amplified_quant_residual_symmetric(
         delta_salient [out, K]: residual in original weight space.
                                 Inject as  Y += X_S @ delta_salient.T.
     """
-    D_safe = salient_gain.clamp(min=1e-7)
-    W_amp = W_curr_salient * D_safe
 
     # Quantize in amplify-space; dynamic anchor reflects amp-space magnitudes
-    W_amp_quant = selective_salient_fakequant_symmetric(
-        W_curr=W_amp,
+    W_quant = selective_salient_fakequant_symmetric(
+        W_curr=W_curr_salient,
         group_ids=group_ids,
         base_max_group=base_max_group,
         q_max=q_max,
     )                                         # [out, K], amp-space
-
-    # Map rounding error back to original space.
-    # (W_amp_quant - W_amp) is the quantization error expressed in amp-space;
-    # dividing by D converts it to original-space error.
-    # Do NOT inject the amp-space error (W_amp_quant - W_amp) directly.
-    return (W_amp_quant - W_amp) / D_safe
-
+    return W_quant - W_curr_salient              
 
 def saliency_amplified_quant_residual_asymmetric(
     W_curr_salient: torch.Tensor,
@@ -492,14 +480,14 @@ saliency_amplified_quant_residual = saliency_amplified_quant_residual_symmetric
 @torch.no_grad()
 def summarize_initial_salient_anchor_alignment(
     patched_layers: Dict[str, nn.Module],
-    aligned_tol: float = 1e-6,
 ) -> None:
     """
-    Print overall anchor/aligned ratios for salient weights before training.
+    Print anchor/aligned split for salient weights before training.
 
-    Ratios are element-wise over all salient slices [out_features, K].  "aligned"
-    excludes active anchors and counts non-anchor salient values that already
-    quantize-dequantize to themselves under the current training grid.
+    Every salient weight is exactly one of:
+      - anchor   : |W_j| >= group_max - eps  (defines the scale, zero deployment error)
+      - aligned  : all other salient weights  (fakequant + STE during training)
+    anchor% + aligned% == 100% by construction.
     """
     total = 0
     anchor_total = 0
@@ -529,7 +517,6 @@ def summarize_initial_salient_anchor_alignment(
             anchor_expanded = anchor.gather(1, group_index)
             scale = (anchor_expanded / q_max).clamp(min=1e-7)
             anchor_mask = abs_W >= (anchor_expanded - 1e-5)
-            W_quant = torch.round(torch.clamp(W_amp / scale, -q_max, q_max)) * scale
         else:
             q_max = int(layer.q_max)
             pos = layer.base_pos_group.clone()
@@ -560,10 +547,8 @@ def summarize_initial_salient_anchor_alignment(
             pos_anchor = (W_amp > 0) & (W_amp >= (pos_expanded - 1e-5))
             neg_anchor = (W_amp < 0) & ((-W_amp) >= (neg_expanded - 1e-5))
             anchor_mask = (pos_anchor & active_pos) | (neg_anchor & active_neg)
-            q = torch.round(torch.clamp(W_amp / scale + zero_point, 0, q_max))
-            W_quant = (q - zero_point) * scale
 
-        aligned_mask = (~anchor_mask) & ((W_quant - W_amp).abs() <= aligned_tol)
+        aligned_mask = ~anchor_mask
 
         total += W_amp.numel()
         anchor_total += int(anchor_mask.sum().item())
@@ -575,13 +560,11 @@ def summarize_initial_salient_anchor_alignment(
 
     anchor_pct = anchor_total / total * 100.0
     aligned_pct = aligned_total / total * 100.0
-    covered_pct = (anchor_total + aligned_total) / total * 100.0
     print(
         "[SQAT] Initial salient anchor/aligned stats "
-        f"(tol={aligned_tol:g}, elements={total}): "
+        f"(elements={total}): "
         f"anchor={anchor_pct:.2f}% ({anchor_total}), "
-        f"aligned_non_anchor={aligned_pct:.2f}% ({aligned_total}), "
-        f"anchor_or_aligned={covered_pct:.2f}%"
+        f"aligned={aligned_pct:.2f}% ({aligned_total})"
     )
 
 
@@ -1178,10 +1161,7 @@ class SelectiveSalientQAT(QATHandler):
             f"[SQAT] Patched {len(self.patched_layers)} layers with SQAT wrappers "
             f"(symmetric={symmetric})."
         )
-        summarize_initial_salient_anchor_alignment(
-            self.patched_layers,
-            aligned_tol=sqat_cfg.get("initial_aligned_tol", 1e-6),
-        )
+        summarize_initial_salient_anchor_alignment(self.patched_layers)
         return model
 
     def on_train_begin(self, model):
