@@ -15,9 +15,6 @@ Usage:
   # With SQAT
   accelerate launch --num_processes 4 scripts/train.py --config configs/default.yaml --qat_mode sqat
 
-  # With bilateral fixed-grid SQAT
-  accelerate launch --num_processes 4 scripts/train.py --config configs/default.yaml --qat_mode sqat_bilateral
-
   # With QA-LoRA (asymmetric only)
   accelerate launch --num_processes 4 scripts/train.py --config configs/default.yaml --qat_mode qalora --asymmetric
 
@@ -114,7 +111,7 @@ def main():
     parser.add_argument(
         "--qat_mode",
         type=str,
-        choices=["none", "full", "sqat", "sqat_bilateral", "qalora"],
+        choices=["none", "full", "sqat", "qalora"],
         default=None,
     )
     parser.add_argument("--bits", type=int, choices=[3, 4], default=None)
@@ -128,10 +125,6 @@ def main():
     parser.add_argument("--lora_rank", type=int, default=None)
     parser.add_argument("--top_k_ratio", type=float, default=None,
                         help="Top-k ratio for original input-side SQAT.")
-    parser.add_argument("--input_top_k", type=int, default=None,
-                        help="Number of salient input channels for bilateral SQAT. 0 disables input side.")
-    parser.add_argument("--output_top_k", type=int, default=None,
-                        help="Number of salient output channels for bilateral SQAT. 0 disables output side.")
     parser.add_argument(
         "--salient_gain_alpha", type=float, default=None,
         help="AWQ-style saliency amplification exponent alpha. "
@@ -197,7 +190,7 @@ def main():
         # For SQAT export-only, we need metadata.
         # The metadata is saved alongside the adapter checkpoint.
         sqat_metadata = None
-        if qat_mode in {"sqat", "sqat_bilateral"}:
+        if qat_mode in {"sqat"}:
             meta_path = os.path.join(args.checkpoint_dir, "sqat_metadata.pt")
             if os.path.exists(meta_path):
                 sqat_metadata = torch.load(meta_path, map_location="cpu")
@@ -244,7 +237,7 @@ def main():
 
     # For SQAT variants, we need a calibration dataloader
     qat_kwargs = {}
-    if qat_mode in {"sqat", "sqat_bilateral"}:
+    if qat_mode in {"sqat"}:
         print("  Loading calibration data for SQAT...")
         cal_dataset = load_calibration_data(cfg, tokenizer)
         from transformers import DataCollatorForSeq2Seq
@@ -279,7 +272,7 @@ def main():
 
     # --- Collect SQAT metadata BEFORE any save/unwrap ---
     sqat_metadata = None
-    if qat_mode in {"sqat", "sqat_bilateral"}:
+    if qat_mode in {"sqat"}:
         from src.export import collect_sqat_metadata
         sqat_metadata = collect_sqat_metadata(model)
 

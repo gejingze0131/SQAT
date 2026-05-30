@@ -5,7 +5,6 @@ Three modes:
   - "none":  standard QLoRA, no quantization-aware training
   - "full":  fakequant on ALL quantized weights each forward pass
   - "sqat":  selective salient QAT (only top-k channels by activation 2nd moment)
-  - "sqat_bilateral": fixed-grid SQAT on Fisher-selected input/output channels
   - "qalora": group-wise QA-LoRA with affine asymmetric fakequant
 
 Fix notes vs previous version
@@ -45,7 +44,6 @@ class QATMode(Enum):
     NONE = "none"
     FULL = "full"
     SQAT = "sqat"
-    SQAT_BILATERAL = "sqat_bilateral"
     QALORA = "qalora"
 
 
@@ -450,9 +448,6 @@ def get_qat_handler(cfg: dict) -> QATHandler:
     elif mode == QATMode.SQAT:
         from .qat_sqat import SelectiveSalientQAT
         return SelectiveSalientQAT()
-    elif mode == QATMode.SQAT_BILATERAL:
-        from .qat_sqat_bilateral import BilateralSalientQAT
-        return BilateralSalientQAT()
     elif mode == QATMode.QALORA:
         from .qalora import QALoRA
         return QALoRA()

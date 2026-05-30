@@ -53,6 +53,20 @@ from .qat_base import (
     round_ste,
 )
 
+import time
+
+def tic():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    return time.perf_counter()
+
+def toc(name, t):
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    print(f"{name}: {(time.perf_counter() - t) * 1000:.3f} ms")
+
+
+
 # statistics for salient channel selection
 def analyze_activation_second_moment_outliers(
     second_moments: Dict[str, torch.Tensor],
@@ -847,7 +861,9 @@ class SelectiveSalientQATLinear(nn.Module):
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         # --- Path 1+2: Original QLoRA forward (NF4 base + LoRA, all channels) ---
         # Completely unchanged.
+        t = tic()
         Y = self.original_module(x, *args, **kwargs)
+        toc("original_module", t)
 
         if not self.has_lora:
             return Y
@@ -870,14 +886,18 @@ class SelectiveSalientQATLinear(nn.Module):
         # in original weight space.  When D=1 everywhere this is identical to the
         # original formula  delta_S = Q(W_curr_S) - W_curr_S.
 
+        t = tic()
         X_S = x[..., self.salient_indices]  # [..., K], original-space activations
+        toc("index select X_S", t)
 
         # Original-space effective weight on salient channels
+        t = tic()
         W_curr_S = (
             self.W_base_salient + self._get_BA_salient() * self.lora_scaling
         )  # [out, K]
-
+        toc("compute W_curr_S", t)
         # Compute residual: amplify -> quantize -> map back -> subtract original
+        t = tic()
         delta_S = saliency_amplified_quant_residual_symmetric(
             W_curr_salient=W_curr_S,
             salient_gain=self.salient_gain,     # [K]
@@ -885,8 +905,11 @@ class SelectiveSalientQATLinear(nn.Module):
             base_max_group=self.base_max_group,
             q_max=self.q_max,
         )  # [out, K], original coordinate space
-
+        toc("compute delta_S", t)
+        
+        t = tic()
         Y = Y + F.linear(X_S, delta_S)  # inject deployment-quantizer residual
+        toc("inject delta_S", t)
         return Y
 
 

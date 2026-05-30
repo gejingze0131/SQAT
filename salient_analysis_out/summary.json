@@ -1,0 +1,148 @@
+{
+  "config": {
+    "num_layers": 32,
+    "num_boundaries": 4,
+    "boundary_sizes": [
+      1,
+      1,
+      29,
+      1
+    ],
+    "b_offsets": [
+      0,
+      1,
+      2,
+      31,
+      32
+    ],
+    "hidden_size": 4096,
+    "top_k": 64,
+    "group_k": 128,
+    "top_k_ratio": 0.015625,
+    "outlier_log_sigma": 3.0,
+    "agg_modes": [
+      "union_first",
+      "union_first",
+      "union_first",
+      "union_first"
+    ]
+  },
+  "boundaries": {
+    "0": {
+      "layers": [
+        0,
+        0
+      ],
+      "boundary_size": 1,
+      "agg_mode": "union_first",
+      "energy_coverage": 0.7668999275131044,
+      "outlier_coverage": 1.0,
+      "boundary_outlier_count": 87,
+      "avg_jaccard_within": 0.0,
+      "source_capture_mean": 1.0,
+      "source_capture_min": 1.0,
+      "source_capture_max": 1.0,
+      "energy_curve": {
+        "32": 0.6408433807795355,
+        "64": 0.7327128800249145,
+        "128": 0.7668999275131044,
+        "256": 0.7817850013948704,
+        "512": 0.8030330124487356
+      },
+      "outlier_curve": {
+        "32": 0.367816091954023,
+        "64": 0.735632183908046,
+        "128": 1.0,
+        "256": 1.0,
+        "512": 1.0
+      }
+    },
+    "1": {
+      "layers": [
+        1,
+        1
+      ],
+      "boundary_size": 1,
+      "agg_mode": "union_first",
+      "energy_coverage": 0.6862212320689706,
+      "outlier_coverage": 0.9625,
+      "boundary_outlier_count": 80,
+      "avg_jaccard_within": 0.0,
+      "source_capture_mean": 1.0,
+      "source_capture_min": 1.0,
+      "source_capture_max": 1.0,
+      "energy_curve": {
+        "32": 0.6090770629303216,
+        "64": 0.628727522414379,
+        "128": 0.6862212320689706,
+        "256": 0.6967107280009313,
+        "512": 0.7166379034385713
+      },
+      "outlier_curve": {
+        "32": 0.4,
+        "64": 0.5125,
+        "128": 0.9625,
+        "256": 0.975,
+        "512": 0.975
+      }
+    },
+    "2": {
+      "layers": [
+        2,
+        30
+      ],
+      "boundary_size": 29,
+      "agg_mode": "union_first",
+      "energy_coverage": 0.21773738923443003,
+      "outlier_coverage": 0.8727272727272727,
+      "boundary_outlier_count": 110,
+      "avg_jaccard_within": 0.8288953781531899,
+      "source_capture_mean": 0.9110991379310345,
+      "source_capture_min": 0.609375,
+      "source_capture_max": 1.0,
+      "energy_curve": {
+        "32": 0.18095604200269247,
+        "64": 0.20047451365725036,
+        "128": 0.21773738923443003,
+        "256": 0.24655952802256034,
+        "512": 0.3035559862103908
+      },
+      "outlier_curve": {
+        "32": 0.2909090909090909,
+        "64": 0.5818181818181818,
+        "128": 0.8727272727272727,
+        "256": 1.0,
+        "512": 1.0
+      }
+    },
+    "3": {
+      "layers": [
+        31,
+        31
+      ],
+      "boundary_size": 1,
+      "agg_mode": "union_first",
+      "energy_coverage": 0.09271807733644144,
+      "outlier_coverage": 1.0,
+      "boundary_outlier_count": 70,
+      "avg_jaccard_within": 0.0,
+      "source_capture_mean": 1.0,
+      "source_capture_min": 1.0,
+      "source_capture_max": 1.0,
+      "energy_curve": {
+        "32": 0.05520996466545494,
+        "64": 0.07052532069744043,
+        "128": 0.09271807733644144,
+        "256": 0.13141951184664014,
+        "512": 0.20228501957007683
+      },
+      "outlier_curve": {
+        "32": 0.45714285714285713,
+        "64": 0.8142857142857143,
+        "128": 1.0,
+        "256": 1.0,
+        "512": 1.0
+      }
+    }
+  }
+}

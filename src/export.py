@@ -405,7 +405,6 @@ def pack_qzeros(zero_points: torch.Tensor) -> torch.Tensor:
 def collect_sqat_metadata(model: nn.Module) -> Dict[str, dict]:
     """Extract salient-channel buffers from all SQAT wrapper layers."""
     from .qat_sqat import SelectiveSalientQATLinear
-    from .qat_sqat_bilateral import BilateralSalientQATLinear
 
     metadata = {}
     for name, module in model.named_modules():
@@ -423,30 +422,17 @@ def collect_sqat_metadata(model: nn.Module) -> Dict[str, dict]:
                 item["base_pos_group"] = module.base_pos_group.cpu().clone()
                 item["base_neg_group"] = module.base_neg_group.cpu().clone()
             metadata[name] = item
-        elif isinstance(module, BilateralSalientQATLinear):
-            item = {
-                "kind":               "bilateral_fixed",
-                "input_indices":      module.input_indices.cpu().clone(),
-                "output_indices":     module.output_indices.cpu().clone(),
-                "input_row_mask":     module.input_row_mask.cpu().clone(),
-                "fixed_scales":       module.fixed_scales.cpu().clone(),
-                "symmetric":          bool(getattr(module, "symmetric", True)),
-            }
-            if not item["symmetric"]:
-                item["fixed_zero_points"] = module.fixed_zero_points.cpu().clone()
-            metadata[name] = item
     return metadata
 
 
 def _unwrap_sqat_for_save(model: nn.Module) -> int:
     """Replace SQAT wrappers with their inner LoRA modules. Returns count."""
     from .qat_sqat import SelectiveSalientQATLinear
-    from .qat_sqat_bilateral import BilateralSalientQATLinear
 
     replacements = {
         name: module.original_module
         for name, module in model.named_modules()
-        if isinstance(module, (SelectiveSalientQATLinear, BilateralSalientQATLinear))
+        if isinstance(module, (SelectiveSalientQATLinear))
     }
     for name, original in replacements.items():
         parts = name.rsplit(".", 1)
@@ -748,12 +734,6 @@ def _verify_ptq_consistency(
                 zero_points=zeros,
                 symmetric=meta.get("symmetric", symmetric),
             )
-        elif qat_mode == "sqat_bilateral" and sqat_meta and name in sqat_meta:
-            layer_symmetric = sqat_meta[name].get("symmetric", symmetric)
-            if layer_symmetric:
-                W_deq = dequantize_symmetric(W_int, scales, group_size, in_f)
-            else:
-                W_deq = dequantize_asymmetric(W_int, scales, zeros, group_size, in_f)
         elif symmetric:
             W_deq = dequantize_symmetric(W_int, scales, group_size, in_f)
         else:
@@ -905,88 +885,6 @@ def _verify_sqat_salient_train_export_grid(
     if checked == 0:
         print("  [SQAT-Grid] No SQAT salient layers checked.")
 
-
-def _verify_bilateral_fixed_train_export_grid(
-    weight_targets: Dict[str, torch.Tensor],
-    quantized_layers: Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
-    sqat_meta: Dict[str, dict],
-    q_bits: int,
-    group_size: int,
-    symmetric: bool,
-    max_layers: int = 8,
-) -> None:
-    """Verify that bilateral SQAT export uses the stored fixed grid."""
-    if not sqat_meta:
-        return
-
-    qmax_sym = 2 ** (q_bits - 1) - 1
-    qmax_asym = 2 ** q_bits - 1
-    checked = 0
-
-    print("[Export] Verifying bilateral fixed SQAT train/export grids...")
-    for name, meta in sqat_meta.items():
-        if checked >= max_layers:
-            break
-        if meta.get("kind") != "bilateral_fixed":
-            continue
-        if name not in weight_targets or name not in quantized_layers:
-            continue
-
-        W = weight_targets[name].float()
-        _, scales_export, zeros_export = quantized_layers[name]
-        scales_meta = meta["fixed_scales"].to(W.device).float()
-        scales_export = scales_export.to(W.device).float()
-        layer_symmetric = meta.get("symmetric", symmetric)
-
-        scale_max_diff = (scales_meta - scales_export).abs().max().item()
-        if layer_symmetric:
-            zp_mismatch = 0.0
-            zps_meta = zps_export = None
-        else:
-            zps_meta = meta["fixed_zero_points"].to(W.device).float()
-            zps_export = zeros_export.to(W.device).float()
-            zp_mismatch = (zps_meta != zps_export).float().mean().item() * 100.0
-
-        def compare(rows: torch.Tensor, cols: torch.Tensor) -> float:
-            if rows.numel() == 0 or cols.numel() == 0:
-                return 0.0
-            rows_d = rows.to(W.device, dtype=torch.long)
-            cols_d = cols.to(W.device, dtype=torch.long)
-            group_ids = cols_d // group_size
-            W_slice = W.index_select(0, rows_d).index_select(1, cols_d)
-            scale_train = scales_meta.index_select(0, rows_d).index_select(1, group_ids)
-            scale_export = scales_export.index_select(0, rows_d).index_select(1, group_ids)
-            if layer_symmetric:
-                q_train = torch.round(torch.clamp(W_slice / scale_train, -qmax_sym, qmax_sym))
-                q_export = torch.round(torch.clamp(W_slice / scale_export, -qmax_sym, qmax_sym))
-            else:
-                zp_train = zps_meta.index_select(0, rows_d).index_select(1, group_ids)
-                zp_export = zps_export.index_select(0, rows_d).index_select(1, group_ids)
-                q_train = torch.round(torch.clamp(W_slice / scale_train + zp_train, 0, qmax_asym))
-                q_export = torch.round(torch.clamp(W_slice / scale_export + zp_export, 0, qmax_asym))
-            return (q_train != q_export).float().mean().item() * 100.0
-
-        if "input_row_mask" in meta:
-            input_rows = (
-                meta["input_row_mask"].flatten() > 0
-            ).nonzero(as_tuple=False).flatten()
-        else:
-            input_rows = meta.get("non_output_indices", torch.arange(W.shape[0]))
-        input_q_mismatch = compare(input_rows, meta["input_indices"])
-        output_q_mismatch = compare(meta["output_indices"], torch.arange(W.shape[1]))
-
-        print(
-            f"  [BiSQAT-Grid] {name}: "
-            f"K_in={meta['input_indices'].numel()}, K_out={meta['output_indices'].numel()}, "
-            f"input_q_mismatch={input_q_mismatch:.4f}%, "
-            f"output_q_mismatch={output_q_mismatch:.4f}%, "
-            f"scale_max_diff={scale_max_diff:.6g}, "
-            f"zp_mismatch={zp_mismatch:.4f}%"
-        )
-        checked += 1
-
-    if checked == 0:
-        print("  [BiSQAT-Grid] No bilateral SQAT layers checked.")
 
 
 # ============================================================================
@@ -1176,24 +1074,6 @@ def _quantize_all_layers(
                     group_size=group_size,
                     q_bits=q_bits,
                 )
-        elif qat_mode == "sqat_bilateral" and name in sqat_meta:
-            meta = sqat_meta[name]
-            layer_symmetric = meta.get("symmetric", symmetric)
-            if layer_symmetric:
-                W_int, scales, zeros = real_quantize_fixed_symmetric(
-                    W,
-                    scales=meta["fixed_scales"],
-                    group_size=group_size,
-                    q_bits=q_bits,
-                )
-            else:
-                W_int, scales, zeros = real_quantize_fixed_asymmetric(
-                    W,
-                    scales=meta["fixed_scales"],
-                    zero_points=meta["fixed_zero_points"],
-                    group_size=group_size,
-                    q_bits=q_bits,
-                )
         else:
             if symmetric:
                 W_int, scales, zeros = real_quantize_symmetric(
@@ -1263,7 +1143,7 @@ def merge_and_export(
         raise ValueError("Asymmetric export currently supports export_dequant=True only.")
 
     # --- Collect SQAT metadata before unwrap ---
-    if qat_mode in {"sqat", "sqat_bilateral"} and sqat_metadata is None and model is not None:
+    if qat_mode in {"sqat"} and sqat_metadata is None and model is not None:
         print("[Export] Collecting SQAT metadata...")
         sqat_metadata = collect_sqat_metadata(model)
         print(f"[Export]   Found {len(sqat_metadata)} SQAT layers")
@@ -1368,15 +1248,6 @@ def merge_and_export(
             export_dequant=export_dequant,
             symmetric=symmetric,
         )
-    if qat_mode == "sqat_bilateral" and sqat_meta:
-        _verify_bilateral_fixed_train_export_grid(
-            weight_targets=quant_targets,
-            quantized_layers=quantized_layers,
-            sqat_meta=sqat_meta,
-            q_bits=q_bits,
-            group_size=group_size,
-            symmetric=symmetric,
-        )
 
     # --- Save ---
     if export_dequant:
@@ -1402,23 +1273,6 @@ def merge_and_export(
                     zero_points=zeros,
                     symmetric=layer_symmetric,
                 )
-            elif qat_mode == "sqat_bilateral" and name in sqat_meta:
-                layer_symmetric = sqat_meta[name].get("symmetric", symmetric)
-                if layer_symmetric:
-                    W_deq = dequantize_symmetric(
-                        W_int,
-                        scales=scales,
-                        group_size=group_size,
-                        in_features=in_f,
-                    )
-                else:
-                    W_deq = dequantize_asymmetric(
-                        W_int,
-                        scales=scales,
-                        zero_points=zeros,
-                        group_size=group_size,
-                        in_features=in_f,
-                    )
             else:
                 if symmetric:
                     W_deq = dequantize_symmetric(

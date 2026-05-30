@@ -21,14 +21,14 @@ lora:
   bias: "none"
 
 qat:
-  mode: "sqat_bilateral"
+  mode: "sqat"
   symmetric: true
   group_size: 64
   sqat:
     input_top_k: 64    # 0 disables the input-side branch
     output_top_k: 64   # 0 disables the output-side branch
-    calibration_samples: 1024
-    calibration_seq_len: 1024
+    calibration_samples: 512
+    calibration_seq_len: 2048
 
 data:
   train_dataset: "commonsense_qa"

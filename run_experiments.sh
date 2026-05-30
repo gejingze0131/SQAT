@@ -4,7 +4,7 @@
 # ============================================================================
 set -e
 
-CONFIG="configs/bilateral_sqat.yaml"
+CONFIG="configs/sqat.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=4
 BITS=4
@@ -47,7 +47,7 @@ accelerate launch \
     --num_processes $NUM_GPUS \
     scripts/train.py \
     --config $CONFIG \
-    --qat_mode sqat_bilateral \
+    --qat_mode sqat \
     --bits $BITS \
     --export_dequant \
     --report_to wandb
