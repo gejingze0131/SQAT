@@ -111,7 +111,7 @@ def main():
     parser.add_argument(
         "--qat_mode",
         type=str,
-        choices=["none", "full", "sqat", "qalora"],
+        choices=["none", "full", "sqat", "qalora", "sqat_permute"],
         default=None,
     )
     parser.add_argument("--bits", type=int, choices=[3, 4], default=None)
@@ -199,6 +199,16 @@ def main():
                 print(f"[Export] WARNING: SQAT mode but no metadata at {meta_path}")
                 print(f"[Export] PTQ will use standard rounding (potential mismatch!)")
 
+        if qat_mode == "sqat_permute":
+            perm_meta_path = os.path.join(args.checkpoint_dir, "sqat_permute_meta.pt")
+            if os.path.exists(perm_meta_path):
+                from src.export import save_sqat_permute_meta  # noqa — triggers nothing
+                print(f"[Export] sqat_permute metadata found at {perm_meta_path}")
+                # metadata is loaded inside merge_and_export via collect_sqat_permute_metadata;
+                # for checkpoint-dir export we pass it directly as sqat_metadata placeholder
+            else:
+                print(f"[Export] WARNING: sqat_permute mode but no metadata at {perm_meta_path}")
+
         # Don't need to load quantized model — export loads FP16 base separately
         tokenizer = AutoTokenizer.from_pretrained(args.checkpoint_dir)
         if args.export_merged_only:
@@ -237,7 +247,7 @@ def main():
 
     # For SQAT variants, we need a calibration dataloader
     qat_kwargs = {}
-    if qat_mode in {"sqat"}:
+    if qat_mode in {"sqat", "sqat_permute"}:
         print("  Loading calibration data for SQAT...")
         cal_dataset = load_calibration_data(cfg, tokenizer)
         from transformers import DataCollatorForSeq2Seq
@@ -270,11 +280,16 @@ def main():
     print("\n[5/5] Starting training...")
     trainer.train()
 
-    # --- Collect SQAT metadata BEFORE any save/unwrap ---
+    # --- Collect metadata BEFORE any save/unwrap ---
     sqat_metadata = None
     if qat_mode in {"sqat"}:
         from src.export import collect_sqat_metadata
         sqat_metadata = collect_sqat_metadata(model)
+
+    sqat_permute_metadata = None
+    if qat_mode == "sqat_permute":
+        from src.export import collect_sqat_permute_metadata
+        sqat_permute_metadata = collect_sqat_permute_metadata(model)
 
     # --- Save final checkpoint ---
     final_dir = os.path.join(trainer.args.output_dir, "final")
@@ -282,11 +297,15 @@ def main():
     tokenizer.save_pretrained(final_dir)
     print(f"\nFinal adapter saved to {final_dir}")
 
-    # Persist SQAT metadata for future export-only runs
+    # Persist metadata for future export-only runs
     if sqat_metadata:
         meta_path = os.path.join(final_dir, "sqat_metadata.pt")
         torch.save(sqat_metadata, meta_path)
         print(f"SQAT metadata saved to {meta_path}")
+
+    if sqat_permute_metadata:
+        from src.export import save_sqat_permute_meta
+        save_sqat_permute_meta(sqat_permute_metadata, final_dir)
 
     # --- Export ---
     if accelerator.is_main_process:

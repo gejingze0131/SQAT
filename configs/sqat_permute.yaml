@@ -1,0 +1,91 @@
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 4
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  # All 7 projections participate in LoRA fine-tuning.
+  # QAT fakequant coverage differs by projection type:
+  #   q/k/v/gate/up_proj : residual-stream P_k permute → QAT on salient cols [0:group_k]
+  #   down_proj          : block-internal P4_l permute (salient-first) → QAT on [0:group_k]
+  #                        (arbitrary intermediate-dim permutation, no multi-head constraint)
+  #   o_proj             : per-head Hadamard fold (H into v_proj + H^T into o_proj), NO QAT
+  #                        (within-head permutation can't produce contiguous [0:group_k] slice)
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "sqat_permute"
+  symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
+  group_size: 64            # group_k % group_size == 0 required.
+                            # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
+                            # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
+                            # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
+
+  # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
+  sqat:
+    calibration_samples: 512
+    calibration_seq_len: 2048
+
+  sqat_permute:
+    # Segment partition: sum must equal model.config.num_hidden_layers (32 for Llama-2-7b)
+    # Each segment gets an independent residual-stream permutation P_k.
+    # num_runtime_permutes = len(boundary_sizes) - 1  (one index_select gather per boundary)
+    boundary_sizes: [2, 30]
+
+    # Salient channels per segment in d_model space.
+    # Must be a multiple of group_size (= 128) so salient cols occupy exactly
+    # group_k/group_size complete quantization groups at physical positions [0:group_k].
+    group_k: 128
+
+    # Per-source top-k fraction for residual-stream salient selection
+    # (outlier-first fill: log-space z-score outliers take priority).
+    top_k_ratio: 0.01
+
+    # Log-space z-score threshold for outlier detection.
+    outlier_log_sigma: 3.0
+
+    # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
+    stage: 2
+
+data:
+  train_dataset: "commonsense_qa"
+  train_split: "train"
+  val_split: null
+  prompt_template: "commonsense_qa"
+
+training:
+  output_dir: "outputs/qlora-sqat-permute"
+  num_epochs: 1
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 200
+  save_total_limit: 2
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true
