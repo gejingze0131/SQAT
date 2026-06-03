@@ -61,6 +61,14 @@ qat:
     # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
     stage: 2
 
+    # online_group_hadamard: quantize the salient slice [0:group_k] of q/k/v/gate/up in a
+    # group_k Hadamard basis (down_proj NOT rotated; o_proj keeps its per-head Hadamard).
+    # Spreads the co-located weight+activation outliers so they don't share one group's
+    # scale/zp and blow up the error. Deployment bakes H back into the dense weight at export
+    # (--export_dequant), so it is purely a better quant grid — bit-identical output, no
+    # runtime rotation. Requires power-of-2 group_k. false = original (no rotation) scheme.
+    online_group_hadamard: true
+
     # --- Stage-2 flow (handled automatically by scripts/train.py) ---------------------
     # To avoid a dequant->permute->requant round-trip (double quantization), the permute/fold
     # is applied to a CLEAN fp16 base, which is saved to <output_dir>/permuted_fp16_base and

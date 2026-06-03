@@ -78,6 +78,9 @@ def load_config(config_path: str, overrides: dict) -> dict:
         cfg["qat"]["sqat"]["salient_gain_alpha"] = overrides["salient_gain_alpha"]
     if overrides.get("salient_gain_max") is not None:
         cfg["qat"]["sqat"]["salient_gain_max"] = overrides["salient_gain_max"]
+    if overrides.get("online_group_hadamard") is not None:
+        cfg["qat"].setdefault("sqat_permute", {})["online_group_hadamard"] = \
+            overrides["online_group_hadamard"]
     if overrides.get("report_to"):
         cfg["training"]["report_to"] = overrides["report_to"]
 
@@ -134,6 +137,13 @@ def main():
     parser.add_argument("--salient_gain_max", type=float, default=2.0,
                         help="Maximum value for AWQ-style saliency amplification D. "
                              "If not set, defaults to 2.0.")
+    parser.add_argument("--online_group_hadamard", dest="online_group_hadamard",
+                        action="store_true", default=None,
+                        help="sqat_permute: quantize the salient slice (q/k/v/gate/up) in a "
+                             "group_k Hadamard basis to smooth co-located outliers.")
+    parser.add_argument("--no_online_group_hadamard", dest="online_group_hadamard",
+                        action="store_false",
+                        help="sqat_permute: disable the online group-Hadamard (original scheme).")
     parser.add_argument("--report_to", type=str, default=None)
 
     # Data overrides

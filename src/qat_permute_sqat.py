@@ -829,6 +829,7 @@ def fused_qat_residual_outputs(
     q_bits: int,
     symmetric: bool,
     lora_scaling: float,
+    hadamard: Optional[torch.Tensor] = None,   # [group_k, group_k] self-inverse H, or None
 ) -> List[torch.Tensor]:
     """
     Compute the per-projection QAT residual outputs to be ADDED to each projection's output.
@@ -838,14 +839,33 @@ def fused_qat_residual_outputs(
     Y      = F.linear(X_S, delta)                                [..., sum_out]   (ONE GEMM)
     return   Y.split(out_splits, dim=-1)
 
+    online_group_hadamard: if `hadamard` (H, group_k×group_k, self-inverse) is given, the
+    salient slice is quantized in the Hadamard basis so weight AND activation outliers (all
+    concentrated in [0:group_k] after the permute) are spread out — instead of every salient
+    channel sharing one group's scale/zp and being amplified by the co-located outliers:
+
+        W_use = W_curr @ H ;  X_use = X_S @ H ;  delta = fakequant(W_use) - W_use
+        Y = F.linear(X_use, delta)
+
+    This is exact: X_S @ W_curr^T == (X_S@H) @ (W_curr@H)^T because H H^T = I. The main NF4+LoRA
+    path is untouched; deployment bakes H^T back into the dense weight (see export.py), so the
+    output is bit-identical with no runtime rotation.
+
     The salient slice is the ONLY weight materialized. Quantization runs in fp32; the residual
     is cast back to X_S.dtype.
     """
     BA     = _fused_BA(A_S_list, B_list).to(torch.float32)         # [sum_out, group_k]
     W_curr = W_base_salient.to(torch.float32) + BA * lora_scaling  # [sum_out, group_k]
-    W_fq   = group_fakequant(W_curr, group_size, q_bits, symmetric)
-    delta  = (W_fq - W_curr).to(X_S.dtype)                         # STE residual
-    Y      = F.linear(X_S, delta)                                  # [..., sum_out], one GEMM
+    if hadamard is not None:
+        Hf    = hadamard.to(torch.float32)
+        W_use = W_curr @ Hf                                        # rotate weight cols
+        X_use = (X_S.to(torch.float32) @ Hf).to(X_S.dtype)         # rotate activation
+    else:
+        W_use = W_curr
+        X_use = X_S
+    W_fq   = group_fakequant(W_use, group_size, q_bits, symmetric)
+    delta  = (W_fq - W_use).to(X_use.dtype)                        # STE residual (rotated basis)
+    Y      = F.linear(X_use, delta)                                # [..., sum_out], one GEMM
     return list(torch.split(Y, list(out_splits), dim=-1))
 
 
@@ -920,6 +940,7 @@ class _FusedSiblingQATInjector(nn.Module):
         symmetric: bool,
         lora_scaling: float,
         where: str,
+        online_group_hadamard: bool = False,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -938,6 +959,22 @@ class _FusedSiblingQATInjector(nn.Module):
         self.out_splits = tuple(b.shape[0] for b in bases)
         # Frozen fused base salient slice [sum_out, group_k]; not saved to checkpoints.
         self.register_buffer("W_base_salient", torch.cat(bases, dim=0), persistent=False)
+
+        # online_group_hadamard: quantize the salient slice in a group_k Hadamard basis so the
+        # co-located weight/activation outliers are spread out (the residual ones are baked back
+        # at export — see export.py). H is on the buffer's device since the injector is not a
+        # model submodule and won't be moved by model.to().
+        if online_group_hadamard:
+            assert (group_k & (group_k - 1)) == 0, (
+                f"online_group_hadamard requires power-of-2 group_k, got {group_k}"
+            )
+            self.register_buffer(
+                "group_hadamard",
+                _build_hadamard(group_k).to(self.W_base_salient.device),
+                persistent=False,
+            )
+        else:
+            self.group_hadamard = None
 
         self._deltas: Optional[List[torch.Tensor]] = None
         self._handles: List[torch.utils.hooks.RemovableHandle] = []
@@ -963,6 +1000,7 @@ class _FusedSiblingQATInjector(nn.Module):
         self._deltas = fused_qat_residual_outputs(
             self.W_base_salient, A_S_list, B_list, self.out_splits, X_S,
             self.group_size, self.q_bits, self.symmetric, self.lora_scaling,
+            hadamard=self.group_hadamard,
         )
         return None  # do not modify the block inputs
 
@@ -1057,6 +1095,7 @@ def install_fused_selective_qat(
     lora_scaling: float,
     target_modules: Sequence[str],
     include_down_proj: bool = True,
+    online_group_hadamard: bool = False,
 ) -> List[nn.Module]:
     """
     Install block-level fused Selective-QAT injectors on every decoder layer.
@@ -1064,6 +1103,11 @@ def install_fused_selective_qat(
     - q/k/v_proj   → one FusedAttnQATInjector per layer (pre-hook on self_attn + add-hooks).
     - gate/up_proj → one FusedMLPQATInjector per layer.
     - down_proj    → one DownProjQATInjector per layer (single small GEMM, no fusion).
+
+    online_group_hadamard: quantize the salient slice of q/k/v/gate/up in a group_k Hadamard
+    basis (down_proj is NOT rotated — its salient input has no foldable sibling rotation;
+    o_proj keeps its separate per-head Hadamard). Deployment bakes H back into the dense
+    weight at export, so this is purely a better quantization grid (bit-identical output).
 
     Only projections that are LoRA-wrapped AND listed in `target_modules` are injected.
     Returns the list of injectors (keep a reference; call .remove() on each to uninstall).
@@ -1083,16 +1127,19 @@ def install_fused_selective_qat(
             _has_lora(getattr(attn, n)) for n in ("q_proj", "k_proj", "v_proj")
         ):
             injectors.append(FusedAttnQATInjector(
-                attn, attn.q_proj, attn.k_proj, attn.v_proj, **common
+                attn, attn.q_proj, attn.k_proj, attn.v_proj,
+                online_group_hadamard=online_group_hadamard, **common
             ))
 
         if {"gate_proj", "up_proj"} <= tset and all(
             _has_lora(getattr(mlp, n)) for n in ("gate_proj", "up_proj")
         ):
             injectors.append(FusedMLPQATInjector(
-                mlp, mlp.gate_proj, mlp.up_proj, **common
+                mlp, mlp.gate_proj, mlp.up_proj,
+                online_group_hadamard=online_group_hadamard, **common
             ))
 
+        # down_proj: never group-Hadamard-rotated (no foldable sibling rotation).
         if include_down_proj and "down_proj" in tset and _has_lora(mlp.down_proj):
             injectors.append(DownProjQATInjector(mlp.down_proj, **common))
 
@@ -1101,7 +1148,8 @@ def install_fused_selective_qat(
         f"{sum(isinstance(i, FusedAttnQATInjector) for i in injectors)} attn, "
         f"{sum(isinstance(i, FusedMLPQATInjector) for i in injectors)} mlp, "
         f"{sum(isinstance(i, DownProjQATInjector) for i in injectors)} down  "
-        f"(group_k={group_k}, group_size={group_size}, symmetric={symmetric})"
+        f"(group_k={group_k}, group_size={group_size}, symmetric={symmetric}, "
+        f"online_group_hadamard={online_group_hadamard})"
     )
     return injectors
 
@@ -1380,6 +1428,7 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         group_size     = perm_meta["group_size"]
         q_bits         = cfg["model"]["quant_bits"]
         symmetric      = cfg["qat"].get("symmetric", True)
+        online_group_hadamard = sp_cfg.get("online_group_hadamard", False)
         lora_scaling   = cfg["lora"]["alpha"] / cfg["lora"]["rank"]
         target_modules = cfg["lora"]["target_modules"]
         d_model        = perm_meta["d_model"]
@@ -1409,13 +1458,18 @@ class SegmentPermutedSelectiveQAT(QATHandler):
                 lora_scaling=lora_scaling,
                 target_modules=target_modules,
                 include_down_proj=True,
+                online_group_hadamard=online_group_hadamard,
             )
 
-        # ---- 3) Attach export metadata (perm_meta + q_bits + symmetric). ----
-        model._sqat_permute_meta = {**perm_meta, "q_bits": q_bits, "symmetric": symmetric}
+        # ---- 3) Attach export metadata (perm_meta + q_bits + symmetric + hadamard flag). ----
+        model._sqat_permute_meta = {
+            **perm_meta, "q_bits": q_bits, "symmetric": symmetric,
+            "online_group_hadamard": online_group_hadamard,
+        }
         print(f"[SegPerm] prepare_model done: stage={stage}, "
               f"num_runtime_permutes={len(self.boundary_perms)}, "
-              f"group_k={group_k}, group_size={group_size}, symmetric={symmetric}")
+              f"group_k={group_k}, group_size={group_size}, symmetric={symmetric}, "
+              f"online_group_hadamard={online_group_hadamard}")
         return model
 
     def on_train_begin(self, model: nn.Module): pass

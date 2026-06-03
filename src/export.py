@@ -472,6 +472,50 @@ def save_sqat_permute_meta(meta: dict, output_dir: str) -> None:
     print(f"[Export] Saved sqat_permute metadata to {path}")
 
 
+# Projections whose salient input slice [0:group_k] is quantized in the group-Hadamard basis
+# when online_group_hadamard is on. down_proj is excluded (no foldable sibling rotation);
+# o_proj keeps its own per-head Hadamard.
+_GROUP_HADAMARD_ROTATED = {"q_proj", "k_proj", "v_proj", "gate_proj", "up_proj"}
+
+
+def _rotate_salient_cols_inplace(
+    merged_model: nn.Module, target_modules, group_k: int, H: torch.Tensor,
+) -> int:
+    """
+    online_group_hadamard export: rotate the salient input columns of each q/k/v/gate/up target
+    linear into the Hadamard basis IN PLACE — W[:, :group_k] @= H — so PTQ chooses its grid in
+    the (outlier-smoothed) rotated basis. The rotation is baked back after dequant
+    (_unrotate_salient_cols), so the saved dense weight stays in the original basis with the
+    rotated-basis quantization error. Returns the number of layers rotated.
+    """
+    Hf = H.to(torch.float32)
+    n = 0
+    for name, module in merged_model.named_modules():
+        if not isinstance(module, nn.Linear):
+            continue
+        terminal = name.split(".")[-1]
+        if terminal not in _GROUP_HADAMARD_ROTATED or terminal not in target_modules:
+            continue
+        with torch.no_grad():
+            W = module.weight.data
+            W[:, :group_k] = (W[:, :group_k].to(torch.float32) @ Hf.to(W.device)).to(W.dtype)
+        n += 1
+    return n
+
+
+def _unrotate_salient_cols(
+    W_deq: torch.Tensor, name: str, target_modules, group_k: int, H: torch.Tensor,
+) -> torch.Tensor:
+    """Bake H back: W_deq[:, :group_k] @= H (H is self-inverse) for rotated projections."""
+    terminal = name.split(".")[-1]
+    if terminal not in _GROUP_HADAMARD_ROTATED or terminal not in target_modules:
+        return W_deq
+    Hf = H.to(torch.float32)
+    out = W_deq.clone()
+    out[:, :group_k] = W_deq[:, :group_k].to(torch.float32) @ Hf.to(W_deq.device)
+    return out.to(W_deq.dtype)
+
+
 # ============================================================================
 # Internal helpers
 # ============================================================================
@@ -1200,6 +1244,23 @@ def merge_and_export(
                   f"num_boundaries={len(mm.get('boundary_perms', []))}, "
                   f"group_k={mm.get('group_k')}, group_size={mm.get('group_size')}")
 
+    # online_group_hadamard: resolve the group-Hadamard bake-back config (dequant path only).
+    sp_hadamard, sp_group_k, sp_H = False, None, None
+    if qat_mode == "sqat_permute" and sqat_permute_meta:
+        _mm = sqat_permute_meta.get("model", sqat_permute_meta) or {}
+        sp_hadamard = bool(_mm.get("online_group_hadamard", False))
+        sp_group_k  = _mm.get("group_k")
+        if sp_hadamard and export_dequant:
+            from .qat_permute_sqat import _build_hadamard
+            sp_H = _build_hadamard(sp_group_k)            # [group_k, group_k] fp32
+            print(f"[Export]   online_group_hadamard ON → bake-back dequant "
+                  f"(group_k={sp_group_k})")
+        elif sp_hadamard and not export_dequant:
+            raise ValueError(
+                "online_group_hadamard export requires --export_dequant (dense bake-back); "
+                "AWQ INT4 export of the rotated grid is not supported."
+            )
+
     if qat_mode in {"sqat"} and sqat_metadata is None and model is not None:
         print("[Export] Collecting SQAT metadata...")
         sqat_metadata = collect_sqat_metadata(model)
@@ -1281,6 +1342,12 @@ def merge_and_export(
     # [FIX] export_dequant: do NOT move to CUDA — quantization runs on CPU
     #       (real_quantize_sqat now offloads to CPU internally)
 
+    # online_group_hadamard: rotate salient cols of q/k/v/gate/up into the Hadamard basis BEFORE
+    # PTQ so the grid is chosen in the outlier-smoothed basis (baked back after dequant below).
+    if sp_hadamard and export_dequant:
+        n_rot = _rotate_salient_cols_inplace(merged_model, target_modules, sp_group_k, sp_H)
+        print(f"[Export] online_group_hadamard: rotated salient cols of {n_rot} layers pre-PTQ")
+
     # --- PTQ ---
     print("[Export] Applying PTQ...")
     quantized_layers, quant_targets = _quantize_all_layers(
@@ -1348,6 +1415,11 @@ def merge_and_export(
                         group_size=group_size,
                         in_features=in_f,
                     )
+
+            # online_group_hadamard: bake H back so the dense weight is in the original basis
+            # (carrying the rotated-basis quantization error) — no runtime rotation at inference.
+            if sp_hadamard:
+                W_deq = _unrotate_salient_cols(W_deq, name, target_modules, sp_group_k, sp_H)
 
             mod.weight.data.copy_(W_deq.to(mod.weight.dtype))
 
