@@ -202,10 +202,18 @@ def main():
         if qat_mode == "sqat_permute":
             perm_meta_path = os.path.join(args.checkpoint_dir, "sqat_permute_meta.pt")
             if os.path.exists(perm_meta_path):
-                from src.export import save_sqat_permute_meta  # noqa — triggers nothing
-                print(f"[Export] sqat_permute metadata found at {perm_meta_path}")
-                # metadata is loaded inside merge_and_export via collect_sqat_permute_metadata;
-                # for checkpoint-dir export we pass it directly as sqat_metadata placeholder
+                # The adapter was trained on the PERMUTED fp16 base, so the merge must reload
+                # that exact base (not the original) — otherwise permuted LoRA is applied to
+                # un-permuted weights. The base path is recorded in perm_meta.
+                _pm         = torch.load(perm_meta_path, map_location="cpu")
+                _model_meta = _pm.get("model", _pm) if isinstance(_pm, dict) else {}
+                _base       = (_model_meta or {}).get("permuted_base_dir")
+                if _base and os.path.isdir(_base):
+                    print(f"[Export] sqat_permute: using permuted fp16 base {_base}")
+                    cfg["model"]["name"] = _base
+                else:
+                    print(f"[Export] WARNING: sqat_permute permuted_base_dir missing/not found "
+                          f"({_base!r}); merge would use the ORIGINAL base and be INCORRECT.")
             else:
                 print(f"[Export] WARNING: sqat_permute mode but no metadata at {perm_meta_path}")
 
@@ -228,6 +236,59 @@ def main():
             )
         return
 
+    # --- SQAT-Permute: permute in fp16 and re-save BEFORE the NF4 load ---------------
+    # load_in_4bit quantizes at load time; permuting an already-NF4 model would be a
+    # dequant->permute->requant round-trip (double quantization). Instead, rank 0 loads fp16,
+    # runs the validated permute/fold, and saves the permuted base; then ALL ranks reload it
+    # through the standard NF4 path so NF4 quantizes the permuted weights exactly once.
+    # The boundary gather is a runtime residual reorder (cannot be folded): it is re-registered
+    # in prepare_model for training and on the exported model for inference (eval scripts).
+    perm_meta = None
+    if qat_mode == "sqat_permute":
+        from src.qat_permute_sqat import build_permuted_fp16_checkpoint, load_perm_meta
+        from transformers import DataCollatorForSeq2Seq
+
+        sp_cfg       = cfg["qat"]["sqat_permute"]
+        permuted_dir = os.path.join(cfg["training"]["output_dir"], "permuted_fp16_base")
+
+        if accelerator.is_main_process:
+            print("\n[SQAT-Permute] Building permuted fp16 base (permute BEFORE NF4)...")
+            sp_tok = AutoTokenizer.from_pretrained(
+                cfg["model"]["name"], use_fast=True, trust_remote_code=True
+            )
+            if sp_tok.pad_token is None:
+                sp_tok.pad_token    = sp_tok.eos_token
+                sp_tok.pad_token_id = sp_tok.eos_token_id
+            cal_dataset  = load_calibration_data(cfg, sp_tok)
+            cal_collator = DataCollatorForSeq2Seq(
+                tokenizer=sp_tok, padding=True, return_tensors="pt",
+            )
+            cal_dataloader = DataLoader(
+                cal_dataset,
+                batch_size=cfg["training"]["per_device_eval_batch_size"],
+                collate_fn=cal_collator, shuffle=False,
+            )
+            build_permuted_fp16_checkpoint(
+                model_name=cfg["model"]["name"],
+                tokenizer=sp_tok,
+                calibration_dataloader=cal_dataloader,
+                boundary_sizes=sp_cfg["boundary_sizes"],
+                save_dir=permuted_dir,
+                group_k=sp_cfg.get("group_k", 128),
+                group_size=cfg["qat"].get("group_size", 128),
+                top_k_ratio=sp_cfg.get("top_k_ratio", 0.01),
+                outlier_log_sigma=sp_cfg.get("outlier_log_sigma", 3.0),
+                dtype=getattr(torch, cfg["model"]["dtype"]),
+                device=accelerator.device,
+            )
+        accelerator.wait_for_everyone()
+
+        # All ranks: point the base model at the PERMUTED fp16 checkpoint and read perm_meta.
+        cfg["model"]["name"] = permuted_dir
+        perm_meta = load_perm_meta(permuted_dir)
+        print(f"[SQAT-Permute] Using permuted base {permuted_dir} "
+              f"(num_runtime_permutes={len(perm_meta['boundary_perms'])})")
+
     # --- Load model ---
     print("\n[1/5] Loading model and tokenizer...")
     model, tokenizer, base_model_ref = load_model_and_tokenizer(cfg)
@@ -245,9 +306,10 @@ def main():
     print(f"\n[3/5] Setting up QAT handler: {qat_mode}")
     qat_handler = get_qat_handler(cfg)
 
-    # For SQAT variants, we need a calibration dataloader
+    # SQAT needs a calibration dataloader here. SQAT-Permute already did calibration +
+    # permute/fold in the fp16 pre-step above, so it only passes perm_meta.
     qat_kwargs = {}
-    if qat_mode in {"sqat", "sqat_permute"}:
+    if qat_mode == "sqat":
         print("  Loading calibration data for SQAT...")
         cal_dataset = load_calibration_data(cfg, tokenizer)
         from transformers import DataCollatorForSeq2Seq
@@ -261,6 +323,9 @@ def main():
             shuffle=False,
         )
         qat_kwargs["calibration_dataloader"] = cal_dataloader
+        qat_kwargs["tokenizer"] = tokenizer
+    elif qat_mode == "sqat_permute":
+        qat_kwargs["perm_meta"] = perm_meta
         qat_kwargs["tokenizer"] = tokenizer
 
     model = qat_handler.prepare_model(model, cfg, **qat_kwargs)

@@ -44,18 +44,26 @@ def eval_with_lm_eval_harness(
     print(f"[Eval] Num fewshot: {num_fewshot}")
     print(f"[Eval] Batch size: {batch_size}")
 
-    # Build model args for HF backend
-    model_args = f"pretrained={model_path}"
-    model_args += ",dtype=float16"
-    model_args += ",trust_remote_code=True"
-
-    if adapter_path:
-        model_args += f",peft={adapter_path}"
+    # SQAT-Permute exports need the runtime boundary gather at inference; only then pull in
+    # sqat_permute (which depends on bitsandbytes). Plain models keep the string form.
+    if os.path.exists(os.path.join(model_path, "sqat_permute_meta.pt")):
+        import sys as _sys
+        _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        from src.qat_permute_sqat import lm_eval_model_kwargs
+        _me = lm_eval_model_kwargs(
+            model_path, dtype="float16", batch_size=batch_size, adapter_path=adapter_path,
+        )
+    else:
+        _margs = f"pretrained={model_path},dtype=float16,trust_remote_code=True"
+        if adapter_path:
+            _margs += f",peft={adapter_path}"
+        _me = {"model": "hf", "model_args": _margs}
 
     # Run evaluation
     results = lm_eval.simple_evaluate(
-        model="hf",
-        model_args=model_args,
+        **_me,
         tasks=tasks,
         num_fewshot=num_fewshot,
         batch_size=batch_size,

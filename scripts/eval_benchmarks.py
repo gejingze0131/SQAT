@@ -105,17 +105,27 @@ def eval_benchmarks(
     print(f"[Eval] Batch size: {batch_size}")
     print(f"[Eval] Dtype: {dtype}")
 
-    # Build model args
-    model_args = f"pretrained={model_path}"
-    model_args += f",dtype={dtype}"
-    model_args += ",trust_remote_code=True"
-    if adapter_path:
-        model_args += f",peft={adapter_path}"
+    # SQAT-Permute exports carry sqat_permute_meta.pt and need the runtime boundary gather at
+    # inference. Only then do we pull in sqat_permute (which depends on bitsandbytes); plain
+    # models keep the lightweight pretrained-path string.
+    if os.path.exists(os.path.join(model_path, "sqat_permute_meta.pt")):
+        import sys as _sys
+        _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        from src.qat_permute_sqat import lm_eval_model_kwargs
+        _me = lm_eval_model_kwargs(
+            model_path, dtype=dtype, batch_size=batch_size, adapter_path=adapter_path,
+        )
+    else:
+        _margs = f"pretrained={model_path},dtype={dtype},trust_remote_code=True"
+        if adapter_path:
+            _margs += f",peft={adapter_path}"
+        _me = {"model": "hf", "model_args": _margs}
 
     # Run evaluation
     results = lm_eval.simple_evaluate(
-        model="hf",
-        model_args=model_args,
+        **_me,
         tasks=resolved_tasks,
         num_fewshot=num_fewshot,
         batch_size=batch_size,

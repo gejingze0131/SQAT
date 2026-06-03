@@ -22,7 +22,7 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Defaults (override via CLI args passed through to sqat_permute.py)
+# Defaults (override via CLI args passed through to scripts/verify_permute.py)
 # ---------------------------------------------------------------------------
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 N_SAMPLES=512           # small for fast validation; increase to 128 for thorough run
@@ -87,8 +87,7 @@ echo ""
 # ---------------------------------------------------------------------------
 # Run Stage 1 test
 # ---------------------------------------------------------------------------
-CMD="python sqat_permute.py \
-    --test_permute \
+CMD="python scripts/verify_permute.py \
     --model_name   $MODEL_NAME \
     --n_samples    $N_SAMPLES \
     --seq_len      $SEQ_LEN \

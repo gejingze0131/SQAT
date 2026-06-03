@@ -453,9 +453,7 @@ def get_qat_handler(cfg: dict) -> QATHandler:
         from .qalora import QALoRA
         return QALoRA()
     elif mode == QATMode.SQAT_PERMUTE:
-        import sys, os
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from sqat_permute import SegmentPermutedSelectiveQAT
+        from .qat_permute_sqat import SegmentPermutedSelectiveQAT
         return SegmentPermutedSelectiveQAT()
     else:
         raise ValueError(f"Unknown QAT mode: {mode_str}")

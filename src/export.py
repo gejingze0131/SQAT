@@ -450,27 +450,18 @@ def _unwrap_sqat_for_save(model: nn.Module) -> int:
 
 def collect_sqat_permute_metadata(model: nn.Module) -> Optional[Dict]:
     """
-    Extract PermutedSelectiveQATLinear layer metadata + model-level boundary info.
-    Returns None if the model has not been processed by SegmentPermutedSelectiveQAT.
+    Return the model-level sqat_permute metadata attached by SegmentPermutedSelectiveQAT
+    (boundary perms / segment perms / permuted base dir / group_k / group_size / q_bits /
+    symmetric). Selective QAT is now hook-based (no per-layer wrapper modules), so there is
+    no per-layer metadata to collect. Returns None if the model was not processed.
+
+    The {"layers": {}, "model": ...} shape is kept for backward compatibility with the saved
+    sqat_permute_meta.pt schema (readers unwrap the "model" sub-dict).
     """
-    try:
-        from sqat_permute import PermutedSelectiveQATLinear
-    except ImportError:
-        return None
-
-    layer_meta: Dict[str, dict] = {}
-    for name, module in model.named_modules():
-        if isinstance(module, PermutedSelectiveQATLinear):
-            layer_meta[name] = {
-                "group_k":    module.group_k,
-                "group_size": module.group_size,
-                "q_max":      module.q_max,
-            }
-
     model_meta = getattr(model, "_sqat_permute_meta", None)
-    if layer_meta or model_meta:
-        return {"layers": layer_meta, "model": model_meta}
-    return None
+    if model_meta is None:
+        return None
+    return {"layers": {}, "model": model_meta}
 
 
 def save_sqat_permute_meta(meta: dict, output_dir: str) -> None:
@@ -479,28 +470,6 @@ def save_sqat_permute_meta(meta: dict, output_dir: str) -> None:
     path = os.path.join(output_dir, "sqat_permute_meta.pt")
     torch.save(meta, path)
     print(f"[Export] Saved sqat_permute metadata to {path}")
-
-
-def _unwrap_sqat_permute_for_save(model: nn.Module) -> int:
-    """Replace PermutedSelectiveQATLinear wrappers with their inner LoRA modules."""
-    try:
-        from sqat_permute import PermutedSelectiveQATLinear
-    except ImportError:
-        return 0
-
-    replacements = {
-        name: module.original_module
-        for name, module in model.named_modules()
-        if isinstance(module, PermutedSelectiveQATLinear)
-    }
-    for name, original in replacements.items():
-        parts = name.rsplit(".", 1)
-        parent = model.get_submodule(parts[0]) if len(parts) == 2 else model
-        setattr(parent, parts[-1], original)
-
-    if replacements:
-        print(f"[Export] Unwrapped {len(replacements)} PermutedSelectiveQATLinear layers")
-    return len(replacements)
 
 
 # ============================================================================
@@ -1214,12 +1183,22 @@ def merge_and_export(
 
     # --- Collect metadata before unwrap ---
     sqat_permute_meta = None
-    if qat_mode == "sqat_permute" and model is not None:
-        print("[Export] Collecting sqat_permute metadata...")
-        sqat_permute_meta = collect_sqat_permute_metadata(model)
+    if qat_mode == "sqat_permute":
+        if model is not None:
+            print("[Export] Collecting sqat_permute metadata...")
+            sqat_permute_meta = collect_sqat_permute_metadata(model)
+        elif checkpoint_dir is not None:
+            # Export-only: re-read the metadata saved next to the trained adapter so the
+            # exported model still carries the boundary-gather info needed at inference.
+            _mp = os.path.join(checkpoint_dir, "sqat_permute_meta.pt")
+            if os.path.exists(_mp):
+                sqat_permute_meta = torch.load(_mp, map_location="cpu")
+                print(f"[Export] Loaded sqat_permute metadata from {_mp}")
         if sqat_permute_meta:
-            n = len(sqat_permute_meta.get("layers", {}))
-            print(f"[Export]   Found {n} PermutedSelectiveQATLinear layers")
+            mm = sqat_permute_meta.get("model", sqat_permute_meta) or {}
+            print(f"[Export]   sqat_permute metadata: "
+                  f"num_boundaries={len(mm.get('boundary_perms', []))}, "
+                  f"group_k={mm.get('group_k')}, group_size={mm.get('group_size')}")
 
     if qat_mode in {"sqat"} and sqat_metadata is None and model is not None:
         print("[Export] Collecting SQAT metadata...")
@@ -1233,7 +1212,8 @@ def merge_and_export(
         assert model is not None, "Provide either model or checkpoint_dir"
         tmp_dir = tempfile.mkdtemp(prefix="qlora_export_")
         adapter_path = tmp_dir
-        _unwrap_sqat_permute_for_save(model)
+        # sqat_permute injects QAT via hooks (no wrapper modules + no extra params), so the
+        # PEFT adapter saves cleanly without any unwrap step.
         _unwrap_sqat_for_save(model)
         model.save_pretrained(adapter_path)
         tokenizer.save_pretrained(adapter_path)

@@ -1,6 +1,6 @@
 model:
   name: "meta-llama/Llama-2-7b-hf"
-  quant_bits: 4
+  quant_bits: 3
   double_quant: true
   quant_type: "nf4"
   dtype: "bfloat16"
@@ -30,7 +30,7 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
-  group_size: 64            # group_k % group_size == 0 required.
+  group_size: 32            # group_k % group_size == 0 required.
                             # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
                             # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
                             # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
@@ -61,6 +61,18 @@ qat:
     # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
     stage: 2
 
+    # --- Stage-2 flow (handled automatically by scripts/train.py) ---------------------
+    # To avoid a dequant->permute->requant round-trip (double quantization), the permute/fold
+    # is applied to a CLEAN fp16 base, which is saved to <output_dir>/permuted_fp16_base and
+    # then reloaded through the standard load_in_4bit path so NF4 quantizes the permuted
+    # weights exactly ONCE. That directory (~13GB) is kept so `--export_only` later can reload
+    # the correct (permuted) base; delete it manually once you no longer need export-only.
+    #
+    # The per-segment residual permutation needs a runtime boundary gather (one index_select
+    # per segment boundary; num_segments-1 total). It is re-registered for training in the
+    # handler and for inference by the eval scripts (which read sqat_permute_meta.pt). Do not
+    # evaluate a permuted export with a loader that ignores that metadata.
+
 data:
   train_dataset: "commonsense_qa"
   train_split: "train"
@@ -69,10 +81,10 @@ data:
 
 training:
   output_dir: "outputs/qlora-sqat-permute"
-  num_epochs: 1
-  per_device_train_batch_size: 4
-  per_device_eval_batch_size: 4
-  gradient_accumulation_steps: 4
+  num_epochs: 3
+  per_device_train_batch_size: 8
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 2
   learning_rate: 2.0e-4
   weight_decay: 0.01
   lr_scheduler_type: "cosine"
