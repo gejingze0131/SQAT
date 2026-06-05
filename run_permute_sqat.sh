@@ -20,10 +20,16 @@
 
 set -euo pipefail
 
+# Fix A: avoid CUDA allocator fragmentation (the OOM showed several GB "reserved
+# but unallocated"). expandable_segments lets the caching allocator grow/shrink
+# segments so variable-length batches don't strand memory. Applies to train,
+# export and eval below.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+
 # ---------------------------------------------------------------------------
 # Config (BOUNDARY_SIZES / GROUP_K must match the chosen --config yaml)
 # ---------------------------------------------------------------------------
-CONFIG="configs/sqat_permute_commonsense.yaml"
+CONFIG="configs/sqat_permute_math.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=4
 BITS=4
@@ -135,7 +141,7 @@ if [ "$SKIP_EVAL" = false ]; then
     echo -e "\n>>> Stage 3: Evaluating exported models"
     shopt -s nullglob
     found=false
-    for eval_dir in outputs/qlora-sqat-permute*-dequant-eval outputs/qlora-sqat-permute*-eval; do
+    for eval_dir in outputs/qlora-sqat-permute*-dequant-eval; do
         [ -d "$eval_dir" ] || continue
         found=true
         echo "  Evaluating $eval_dir"

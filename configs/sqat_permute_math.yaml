@@ -4,7 +4,7 @@ model:
   double_quant: true
   quant_type: "nf4"
   dtype: "bfloat16"
-  max_seq_len: 2048
+  max_seq_len: 1536
 
 lora:
   rank: 64
@@ -90,9 +90,13 @@ data:
 training:
   output_dir: "outputs/qlora-sqat-permute"
   num_epochs: 1
-  per_device_train_batch_size: 2
-  per_device_eval_batch_size: 2
-  gradient_accumulation_steps: 8
+  # Fix B: halve the micro-batch and double accumulation → same effective batch
+  # (2 x 8 x 4 GPUs = 64) but ~half the peak activation memory, leaving headroom
+  # for the longest sequences. group_by_length keeps padding waste low.
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 4
+  group_by_length: true
   learning_rate: 2.0e-4
   weight_decay: 0.01
   lr_scheduler_type: "cosine"

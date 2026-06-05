@@ -30,7 +30,7 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
-  group_size: 32            # group_k % group_size == 0 required.
+  group_size: 64            # group_k % group_size == 0 required.
                             # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
                             # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
                             # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
@@ -89,7 +89,7 @@ data:
 
 training:
   output_dir: "outputs/qlora-sqat-permute"
-  num_epochs: 1
+  num_epochs: 3
   per_device_train_batch_size: 8
   per_device_eval_batch_size: 8
   gradient_accumulation_steps: 2

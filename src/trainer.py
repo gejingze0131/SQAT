@@ -70,6 +70,24 @@ def build_trainer(
     bits = cfg["model"]["quant_bits"]
     output_dir = f"{train_cfg['output_dir']}-{bits}bit-{qat_mode}"
 
+    # Fix B: batch samples of similar length together so dynamic padding wastes far
+    # less memory/compute. Without it one long sample (MetaMath solutions vary a lot,
+    # up to max_seq_len) pads the whole batch and spikes activation memory — the
+    # "stable then sudden OOM at step 100+" pattern.
+    # The flag was renamed across transformers versions: v4 uses the bool
+    # `group_by_length=True`; v5 uses `train_sampling_strategy="group_by_length"`.
+    # Detect which the installed version exposes so this works on either.
+    import dataclasses
+    _ta_fields = {f.name for f in dataclasses.fields(TrainingArguments)}
+    _group_by_length = train_cfg.get("group_by_length", True)
+    _length_kwargs = {}
+    if "group_by_length" in _ta_fields:
+        _length_kwargs["group_by_length"] = _group_by_length
+    elif "train_sampling_strategy" in _ta_fields:
+        _length_kwargs["train_sampling_strategy"] = (
+            "group_by_length" if _group_by_length else "random"
+        )
+
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=train_cfg["num_epochs"],
@@ -95,6 +113,8 @@ def build_trainer(
         # Distributed
         ddp_find_unused_parameters=False,
         # Gradient checkpointing is already set in model_loader
+        # Fix B: length-grouping (see _length_kwargs above; version-dependent key).
+        **_length_kwargs,
     )
 
     # Data collator with left-padding for causal LM

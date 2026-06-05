@@ -1009,7 +1009,17 @@ class _FusedSiblingQATInjector(nn.Module):
             # _deltas is populated by the parent pre-hook earlier in the same forward.
             if self._deltas is None:
                 return out
-            return out + self._deltas[idx]
+            result = out + self._deltas[idx]
+            # Fix C: drop the Python reference to this (activation-sized) delta as
+            # soon as it is consumed. The add result + autograd graph keep what
+            # backward needs; without this the whole layer's deltas stay pinned on
+            # self until the NEXT step's pre-hook overwrites them (~hundreds of MB
+            # per layer x num_layers held idle between steps). Clearing per-index is
+            # order-independent (does not assume sibling execution order) and the
+            # pre-hook repopulates _deltas before these add-hooks run again
+            # (including under gradient-checkpoint recompute), so it is safe.
+            self._deltas[idx] = None
+            return result
         return _add
 
     def remove(self) -> None:
