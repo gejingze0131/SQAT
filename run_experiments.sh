@@ -41,16 +41,16 @@ echo "============================================"
 # ------------------------------------
 # Experiment 2: QLoRA + SQAT (${BITS}-bit)
 # ------------------------------------
-echo -e "\n>>> Exp 2: QLoRA ${BITS}-bit + SQAT"
-accelerate launch \
-    --config_file $ACCEL_CONFIG \
-    --num_processes $NUM_GPUS \
-    scripts/train.py \
-    --config $CONFIG \
-    --qat_mode sqat \
-    --bits $BITS \
-    --export_dequant \
-    --report_to wandb
+# echo -e "\n>>> Exp 2: QLoRA ${BITS}-bit + SQAT"
+# accelerate launch \
+#     --config_file $ACCEL_CONFIG \
+#     --num_processes $NUM_GPUS \
+#     scripts/train.py \
+#     --config $CONFIG \
+#     --qat_mode sqat \
+#     --bits $BITS \
+#     --export_dequant \
+#     --report_to wandb
 
 # ------------------------------------
 # Experiment 3: QLoRA + Full QAT (${BITS}-bit)

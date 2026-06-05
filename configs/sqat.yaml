@@ -30,10 +30,10 @@ qat:
     calibration_seq_len: 2048
 
 data:
-  train_dataset: "commonsense_qa"
+  train_dataset: "commonsense"          # zwhe99/commonsense_170k (BoolQ, PIQA, SIQA, ARC-e/c, HellaSwag, WinoGrande, OBQA)
   train_split: "train"
-  val_split: null
-  prompt_template: "commonsense_qa"
+  val_split: null                       # commonsense_170k ships only a train split
+  prompt_template: "commonsense"
 
 training:
   output_dir: "outputs/qlora"

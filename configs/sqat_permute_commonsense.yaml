@@ -1,6 +1,6 @@
 model:
   name: "meta-llama/Llama-2-7b-hf"
-  quant_bits: 3
+  quant_bits: 4
   double_quant: true
   quant_type: "nf4"
   dtype: "bfloat16"
@@ -37,8 +37,8 @@ qat:
 
   # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
   sqat:
-    calibration_samples: 512
-    calibration_seq_len: 2048
+    calibration_samples: 256
+    calibration_seq_len: 1024
 
   sqat_permute:
     # Segment partition: sum must equal model.config.num_hidden_layers (32 for Llama-2-7b)
@@ -67,7 +67,7 @@ qat:
     # scale/zp and blow up the error. Deployment bakes H back into the dense weight at export
     # (--export_dequant), so it is purely a better quant grid — bit-identical output, no
     # runtime rotation. Requires power-of-2 group_k. false = original (no rotation) scheme.
-    online_group_hadamard: true
+    online_group_hadamard: false
 
     # --- Stage-2 flow (handled automatically by scripts/train.py) ---------------------
     # To avoid a dequant->permute->requant round-trip (double quantization), the permute/fold
@@ -82,14 +82,14 @@ qat:
     # evaluate a permuted export with a loader that ignores that metadata.
 
 data:
-  train_dataset: "commonsense_qa"
+  train_dataset: "commonsense"          # zwhe99/commonsense_170k (BoolQ, PIQA, SIQA, ARC-e/c, HellaSwag, WinoGrande, OBQA)
   train_split: "train"
-  val_split: null
-  prompt_template: "commonsense_qa"
+  val_split: null                       # commonsense_170k ships only a train split
+  prompt_template: "commonsense"
 
 training:
   output_dir: "outputs/qlora-sqat-permute"
-  num_epochs: 3
+  num_epochs: 1
   per_device_train_batch_size: 8
   per_device_eval_batch_size: 8
   gradient_accumulation_steps: 2
@@ -102,10 +102,10 @@ training:
   bf16: true
   logging_steps: 10
   save_steps: 200
-  save_total_limit: 2
+  save_total_limit: 1
   dataloader_num_workers: 4
   report_to: "wandb"
-  seed: 42
+  seed: 43
 
 export:
   merge_and_save: true

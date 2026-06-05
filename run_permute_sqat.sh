@@ -23,21 +23,21 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Config (BOUNDARY_SIZES / GROUP_K must match the chosen --config yaml)
 # ---------------------------------------------------------------------------
-CONFIG="configs/sqat_permute.yaml"
+CONFIG="configs/sqat_permute_commonsense.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=4
-BITS=3
+BITS=4
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
-BOUNDARY_SIZES="2 30"     # must match configs/sqat_permute.yaml: qat.sqat_permute.boundary_sizes
+BOUNDARY_SIZES="2 30"     # must match configs/sqat_permute_commonsense.yaml: qat.sqat_permute.boundary_sizes
 GROUP_K=128
 EVAL_GPU=0                # single GPU used for export + evaluation
 # Group-Hadamard rotation of the salient slice (q/k/v/gate/up); overrides the yaml.
 # true  → smooth co-located weight/activation outliers (recommended)
 # false → original concentrated-group scheme
-ONLINE_GROUP_HADAMARD=true
+ONLINE_GROUP_HADAMARD=false
 
-SKIP_VALIDATE=True
+SKIP_VALIDATE=true
 SKIP_TRAIN=false
 SKIP_EVAL=false
 CHECKPOINT_DIR=""
@@ -139,13 +139,18 @@ if [ "$SKIP_EVAL" = false ]; then
         [ -d "$eval_dir" ] || continue
         found=true
         echo "  Evaluating $eval_dir"
-        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_benchmarks.py eval \
-            --model_path "$eval_dir" \
-            --output_dir results/benchmarks
-        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_mmlu.py \
+        # CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_benchmarks.py eval \
+        #     --model_path "$eval_dir" \
+        #     --output_dir results/benchmarks
+        # CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_mmlu.py \
+        #     --model_path  "$eval_dir" \
+        #     --num_fewshot 0 \
+        #     --output_dir  results/mmlu
+        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_math.py \
             --model_path  "$eval_dir" \
-            --num_fewshot 0 \
-            --output_dir  results/mmlu
+            --num_fewshot 5 \
+            --output_dir  results/math
+
     done
     shopt -u nullglob
     [ "$found" = true ] || echo "  (no exported eval dirs found under outputs/qlora-sqat-permute*)"

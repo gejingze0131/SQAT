@@ -1,0 +1,111 @@
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 4
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  # All 7 projections participate in LoRA fine-tuning.
+  # QAT fakequant coverage differs by projection type:
+  #   q/k/v/gate/up_proj : residual-stream P_k permute → QAT on salient cols [0:group_k]
+  #   down_proj          : block-internal P4_l permute (salient-first) → QAT on [0:group_k]
+  #                        (arbitrary intermediate-dim permutation, no multi-head constraint)
+  #   o_proj             : per-head Hadamard fold (H into v_proj + H^T into o_proj), NO QAT
+  #                        (within-head permutation can't produce contiguous [0:group_k] slice)
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "sqat_permute"
+  symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
+  group_size: 32            # group_k % group_size == 0 required.
+                            # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
+                            # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
+                            # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
+
+  # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
+  sqat:
+    calibration_samples: 256
+    calibration_seq_len: 1024
+
+  sqat_permute:
+    # Segment partition: sum must equal model.config.num_hidden_layers (32 for Llama-2-7b)
+    # Each segment gets an independent residual-stream permutation P_k.
+    # num_runtime_permutes = len(boundary_sizes) - 1  (one index_select gather per boundary)
+    boundary_sizes: [2, 30]
+
+    # Salient channels per segment in d_model space.
+    # Must be a multiple of group_size (= 128) so salient cols occupy exactly
+    # group_k/group_size complete quantization groups at physical positions [0:group_k].
+    group_k: 128
+
+    # Per-source top-k fraction for residual-stream salient selection
+    # (outlier-first fill: log-space z-score outliers take priority).
+    top_k_ratio: 0.01
+
+    # Log-space z-score threshold for outlier detection.
+    outlier_log_sigma: 3.0
+
+    # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
+    stage: 2
+
+    # online_group_hadamard: quantize the salient slice [0:group_k] of q/k/v/gate/up in a
+    # group_k Hadamard basis (down_proj NOT rotated; o_proj keeps its per-head Hadamard).
+    # Spreads the co-located weight+activation outliers so they don't share one group's
+    # scale/zp and blow up the error. Deployment bakes H back into the dense weight at export
+    # (--export_dequant), so it is purely a better quant grid — bit-identical output, no
+    # runtime rotation. Requires power-of-2 group_k. false = original (no rotation) scheme.
+    online_group_hadamard: false
+
+    # --- Stage-2 flow (handled automatically by scripts/train.py) ---------------------
+    # To avoid a dequant->permute->requant round-trip (double quantization), the permute/fold
+    # is applied to a CLEAN fp16 base, which is saved to <output_dir>/permuted_fp16_base and
+    # then reloaded through the standard load_in_4bit path so NF4 quantizes the permuted
+    # weights exactly ONCE. That directory (~13GB) is kept so `--export_only` later can reload
+    # the correct (permuted) base; delete it manually once you no longer need export-only.
+    #
+    # The per-segment residual permutation needs a runtime boundary gather (one index_select
+    # per segment boundary; num_segments-1 total). It is re-registered for training in the
+    # handler and for inference by the eval scripts (which read sqat_permute_meta.pt). Do not
+    # evaluate a permuted export with a loader that ignores that metadata.
+
+data:
+  train_dataset: "metamath"
+  train_split: "train"
+  val_split: null
+  prompt_template: "metamath"
+
+training:
+  output_dir: "outputs/qlora-sqat-permute"
+  num_epochs: 1
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 200
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true

@@ -1,6 +1,7 @@
 """
 Dataset loading and prompt formatting.
-Supports: CommonsenseQA, Alpaca-style instruction data, MetaMath, custom datasets.
+Supports: Commonsense-170k (multi-task fine-tuning), CommonsenseQA,
+Alpaca-style instruction data, MetaMath, custom datasets.
 """
 
 import os
@@ -90,6 +91,21 @@ def format_commonsense_qa(example: dict) -> dict:
     return {"text": prompt + " " + answer}
 
 
+def format_commonsense(example: dict) -> dict:
+    """Format a Commonsense-170k (zwhe99/commonsense_170k) example.
+
+    This is the LLM-Adapters multi-task commonsense fine-tuning set covering
+    BoolQ, PIQA, SIQA, ARC-e, ARC-c, HellaSwag, WinoGrande, and OBQA. Each
+    example is already in Alpaca instruction format with fields:
+        instruction / input / output / type
+    The `instruction` carries the question plus the answer-format hint and
+    `output` is the gold answer (e.g. "the correct answer is true"), so we
+    render it through the standard Alpaca prompt template (matching the
+    LLM-Adapters / DoRA convention).
+    """
+    return format_alpaca(example)
+
+
 def format_alpaca(example: dict) -> dict:
     """Format Alpaca-style instruction data."""
     instruction = _pick_first(example, ["instruction", "prompt", "query"])
@@ -143,6 +159,8 @@ def format_metamath(example: dict) -> dict:
     return {"text": prompt + response}
 
 FORMATTERS = {
+    "commonsense": format_commonsense,
+    "commonsense_170k": format_commonsense,
     "commonsense_qa": format_commonsense_qa,
     "alpaca": format_alpaca,
     "metamath": format_metamath,
@@ -181,12 +199,15 @@ def _load_raw_dataset(dataset_name: str):
     Load dataset from HF hub or local path.
 
     Special handling:
+      - commonsense    -> zwhe99/commonsense_170k (multi-task fine-tuning set)
       - commonsense_qa -> tau/commonsense_qa
       - alpaca         -> tatsu-lab/alpaca
       - metamath       -> meta-math/MetaMathQA
     """
     dataset_name_lower = dataset_name.lower()
 
+    if dataset_name_lower in {"commonsense", "commonsense_170k"}:
+        return load_dataset("zwhe99/commonsense_170k")
     if dataset_name_lower == "commonsense_qa":
         return load_dataset("tau/commonsense_qa")
     if dataset_name_lower == "alpaca":
