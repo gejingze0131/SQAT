@@ -713,80 +713,433 @@ def round_ste(x: torch.Tensor) -> torch.Tensor:
     return (torch.round(x) - x).detach() + x
 
 
+def _asym_q_max(q_bits: int) -> int:
+    """Affine (asymmetric) upper level: 2**bits - 1 (15 for INT4, 7 for INT3)."""
+    return 2 ** q_bits - 1
+
+
+def _sym_q_max(q_bits: int) -> int:
+    """Symmetric clamp bound: 2**(bits-1) - 1 (7 for INT4, 3 for INT3)."""
+    return 2 ** (q_bits - 1) - 1
+
+
+# ----------------------------------------------------------------------------
+# Canonical per-output-row, per-input-group quantization parameters.
+#
+# THIS IS THE SINGLE SOURCE OF TRUTH for the SQAT-permute grid. Training fakequant,
+# the export PTQ, and the grid verifier ALL derive scale/zero_point from these two
+# helpers, so the training-time grid and the deployment-time grid are identical by
+# construction (the earlier regression was a min/max-vs-pos/neg formula mismatch
+# between training and export — never reintroduce a second formula).
+#
+# Asymmetric (affine) convention:
+#   scale = (wmax - wmin) / q_max ;  zp = round(-wmin/scale) clamped to [0, q_max]
+#   quantize:   q  = round(clamp(w/scale + zp, 0, q_max))
+#   dequantize: w' = (q - zp) * scale
+# Symmetric convention:
+#   scale = amax / q_max ;  quantize q = round(clamp(w/scale, -q_max, q_max)) ; w' = q*scale
+# ----------------------------------------------------------------------------
+
+def _asym_qparams(Wg: torch.Tensor, q_max: int, eps: float = 1e-8):
+    """Wg: [..., group_size] (last dim = a quant group). Returns (scale, zp), each [..., 1]."""
+    wmin = Wg.amin(dim=-1, keepdim=True)
+    wmax = Wg.amax(dim=-1, keepdim=True)
+    scale = ((wmax - wmin) / q_max).clamp(min=eps)
+    zp    = torch.round(-wmin / scale).clamp(0, q_max)
+    return scale, zp
+
+
+def _sym_scale(Wg: torch.Tensor, q_max: int, eps: float = 1e-8) -> torch.Tensor:
+    """Wg: [..., group_size]. Returns scale [..., 1]."""
+    return (Wg.abs().amax(dim=-1, keepdim=True) / q_max).clamp(min=eps)
+
+
 def groupwise_symmetric_fakequant(
-    W: torch.Tensor,
-    group_size: int,
-    q_max: float,
-    eps: float = 1e-8,
+    W: torch.Tensor, group_size: int, q_max: int, eps: float = 1e-8,
 ) -> torch.Tensor:
-    """
-    Symmetric per-output-row, per-input-group fakequant with STE.
-
-    Args:
-        W:          [out_features, group_k]  (group_k % group_size == 0)
-        group_size: columns per quantization group
-        q_max:      symmetric clamp bound, e.g. 2**(bits-1) - 1 = 7 for INT4
-
-    qparam logical shape: scale [out, num_groups, 1].
-    Returns dequantized W of the SAME shape [out_features, group_k].
-    """
+    """Symmetric per-row, per-group fakequant with STE. W: [out, group_k] → same shape."""
     out_f, gk = W.shape
     assert gk % group_size == 0, f"group_k={gk} must be a multiple of group_size={group_size}"
-    ng = gk // group_size
-
-    Wg    = W.reshape(out_f, ng, group_size)
-    amax  = Wg.abs().amax(dim=2, keepdim=True)              # [out, ng, 1]
-    scale = (amax / q_max).clamp(min=eps)                   # [out, ng, 1]
+    Wg    = W.reshape(out_f, gk // group_size, group_size)
+    scale = _sym_scale(Wg, q_max, eps)
     q     = round_ste(torch.clamp(Wg / scale, -q_max, q_max))
-    Wq    = q * scale
-    return Wq.reshape(out_f, gk)
+    return (q * scale).reshape(out_f, gk)
 
 
 def groupwise_asymmetric_fakequant(
-    W: torch.Tensor,
-    group_size: int,
-    q_max: float,
-    eps: float = 1e-8,
+    W: torch.Tensor, group_size: int, q_max: int, eps: float = 1e-8,
 ) -> torch.Tensor:
-    """
-    Affine asymmetric per-output-row, per-input-group fakequant with STE.
-
-    Args:
-        W:          [out_features, group_k]  (group_k % group_size == 0)
-        group_size: columns per quantization group
-        q_max:      affine upper bound, e.g. 2**bits - 1 = 15 for INT4
-
-    qparam logical shape: scale [out, ng, 1], zero_point [out, ng, 1].
-    Quantize:   q  = round(W/scale + zero_point) clamped to [0, q_max]
-    Dequantize: Wq = (q - zero_point) * scale
-    Returns dequantized W of the SAME shape [out_features, group_k].
-    """
+    """Affine asymmetric per-row, per-group fakequant with STE. W: [out, group_k] → same shape."""
     out_f, gk = W.shape
     assert gk % group_size == 0, f"group_k={gk} must be a multiple of group_size={group_size}"
-    ng = gk // group_size
-
-    Wg   = W.reshape(out_f, ng, group_size)
-    wmin = Wg.amin(dim=2, keepdim=True)                     # [out, ng, 1]
-    wmax = Wg.amax(dim=2, keepdim=True)                     # [out, ng, 1]
-    scale      = ((wmax - wmin) / q_max).clamp(min=eps)     # [out, ng, 1]
-    zero_point = torch.round(-wmin / scale)                 # [out, ng, 1] (integer-valued)
-    q  = round_ste(torch.clamp(Wg / scale + zero_point, 0, q_max))
-    Wq = (q - zero_point) * scale
-    return Wq.reshape(out_f, gk)
+    Wg        = W.reshape(out_f, gk // group_size, group_size)
+    scale, zp = _asym_qparams(Wg, q_max, eps)
+    q  = round_ste(torch.clamp(Wg / scale + zp, 0, q_max))
+    return ((q - zp) * scale).reshape(out_f, gk)
 
 
 def group_fakequant(
-    W: torch.Tensor,
+    W: torch.Tensor, group_size: int, q_bits: int, symmetric: bool,
+) -> torch.Tensor:
+    """Training fakequant dispatch (STE). Returns dequantized W (same shape)."""
+    if symmetric:
+        return groupwise_symmetric_fakequant(W, group_size, _sym_q_max(q_bits))
+    return groupwise_asymmetric_fakequant(W, group_size, _asym_q_max(q_bits))
+
+
+# ----------------------------------------------------------------------------
+# Export-side real quantize / dequantize (NO STE) — share the qparams above.
+# group_dequantize(group_quantize(W)) == group_fakequant(W) exactly (verified).
+# ----------------------------------------------------------------------------
+
+@torch.no_grad()
+def group_quantize(
+    W: torch.Tensor, group_size: int, q_bits: int, symmetric: bool, eps: float = 1e-8,
+):
+    """
+    Real group quantization for export. Pads in_features to a group multiple internally.
+
+    Returns:
+        W_int:  [out, in_features] int levels (float tensor of integers, trimmed to in_features)
+        scale:  [out, num_groups]
+        zp:     [out, num_groups]   (all zeros for the symmetric branch)
+    """
+    out_f, in_f = W.shape
+    ng  = math.ceil(in_f / group_size)
+    pad = ng * group_size - in_f
+    Wp  = F.pad(W, (0, pad)) if pad > 0 else W
+    Wg  = Wp.reshape(out_f, ng, group_size)
+    if symmetric:
+        q_max = _sym_q_max(q_bits)
+        scale = _sym_scale(Wg, q_max, eps)
+        q     = torch.round(torch.clamp(Wg / scale, -q_max, q_max))
+        zp    = torch.zeros_like(scale)
+    else:
+        q_max     = _asym_q_max(q_bits)
+        scale, zp = _asym_qparams(Wg, q_max, eps)
+        q = torch.round(torch.clamp(Wg / scale + zp, 0, q_max))
+    W_int = q.reshape(out_f, -1)[:, :in_f].contiguous()
+    return W_int, scale.squeeze(-1), zp.squeeze(-1)
+
+
+@torch.no_grad()
+def group_dequantize(
+    W_int: torch.Tensor, scale: torch.Tensor, zp: torch.Tensor,
+    group_size: int, in_features: int, symmetric: bool,
+) -> torch.Tensor:
+    """Inverse of group_quantize. Returns dequantized W [out, in_features]."""
+    out_f = W_int.shape[0]
+    ng    = scale.shape[1]
+    pad   = ng * group_size - in_features
+    qf    = W_int.float()
+    qp    = F.pad(qf, (0, pad)) if pad > 0 else qf
+    Wg    = qp.reshape(out_f, ng, group_size)
+    s     = scale.unsqueeze(-1).float()
+    if symmetric:
+        Wdq = Wg * s
+    else:
+        Wdq = (Wg - zp.unsqueeze(-1).float()) * s
+    return Wdq.reshape(out_f, -1)[:, :in_features]
+
+
+@torch.no_grad()
+def verify_permute_quant_consistency(
+    W: torch.Tensor, group_k: int, group_size: int, q_bits: int, symmetric: bool,
+    hadamard: Optional[torch.Tensor] = None,
+) -> float:
+    """
+    Assert the SALIENT slice's training grid == export grid. Returns max|Δ| over [out, group_k]
+    between group_fakequant(W_S) (training) and group_dequantize(group_quantize(W_S)) (export).
+    With the shared qparams above this must be ~0 (fp round-off only). If online_group_hadamard
+    is used, pass the H that the slice is quantized in.
+    """
+    W_s = W[:, :group_k].float()
+    if hadamard is not None:
+        W_s = W_s @ hadamard.to(W_s.dtype)
+    fq = group_fakequant(W_s, group_size, q_bits, symmetric)
+    wi, sc, zp = group_quantize(W_s, group_size, q_bits, symmetric)
+    dq = group_dequantize(wi, sc, zp, group_size, group_k, symmetric)
+    return (fq - dq).abs().max().item()
+
+
+# ============================================================================
+# Part 8b — GPTQ (Optimal Brain Quantization) for the NON-salient columns.
+#
+# Improvement over plain RTN export: the ~97% non-salient columns are quantized with OBS error
+# compensation instead of round-to-nearest. The salient slice [0:group_k] is the QAT-protected
+# part and MUST keep the EXACT canonical group_quantize grid the LoRA was trained against (else
+# the QAT benefit does not transfer — the earlier min/max-vs-pos/neg regression). So GPTQ here:
+#   * fixes columns [0:group_k] to the canonical RTN grid (training-consistent) and propagates
+#     their quantization error into the non-salient columns, and
+#   * GPTQ-quantizes columns [group_k:] with OBS compensation (same group_size and asym/sym as QAT).
+# o_proj carries no salient slice (group_k=0) → it is fully GPTQ-quantized.
+#
+# The Hessian H = X^T X must be in the SAME (permuted) basis as the weight columns — collect it on
+# the permuted base with the boundary gathers registered (gptq_quantize_model_sequential does this).
+# ============================================================================
+
+def _gptq_cholesky_inv_upper(H: torch.Tensor, percdamp: float, max_tries: int = 5) -> torch.Tensor:
+    """
+    Return the upper-triangular Cholesky factor U of H^{-1} (H^{-1} = U^T U), the form GPTQ's
+    sequential update consumes. Dead (zero-activation) columns are made invertible; damping is
+    escalated until H+damp is positive-definite.
+    """
+    cols = H.shape[0]
+    H = H.clone()
+    diagH = torch.diagonal(H)
+    dead = diagH == 0.0
+    if dead.any():
+        H[dead, dead] = 1.0
+        diagH = torch.diagonal(H)
+    live = ~dead
+    mean_diag = diagH[live].mean() if live.any() else H.new_tensor(1.0)
+    idx = torch.arange(cols, device=H.device)
+    base = percdamp * mean_diag
+    for t in range(max_tries):
+        Hd = H.clone()
+        Hd[idx, idx] += base * (1.0 + t)            # escalate damping if not PD
+        try:
+            L = torch.linalg.cholesky(Hd)
+            Hinv = torch.cholesky_inverse(L)
+            return torch.linalg.cholesky(Hinv, upper=True)
+        except RuntimeError:
+            continue
+    raise RuntimeError("GPTQ: Hessian Cholesky failed even after damping escalation.")
+
+
+@torch.no_grad()
+def gptq_quantize_layer(
+    W: torch.Tensor,            # [out, in] dense weight (permuted basis)
+    H: torch.Tensor,            # [in, in]  input Hessian (X^T X) in the SAME basis
+    group_k: int,               # leading salient columns held at the canonical grid (0 = none)
     group_size: int,
     q_bits: int,
     symmetric: bool,
-) -> torch.Tensor:
-    """Dispatch to the symmetric / asymmetric branch by `symmetric`. Returns dequant W."""
-    if symmetric:
-        q_max = float(2 ** (q_bits - 1) - 1)               # 7 for INT4
-        return groupwise_symmetric_fakequant(W, group_size, q_max)
-    q_max = float(2 ** q_bits - 1)                          # 15 for INT4
-    return groupwise_asymmetric_fakequant(W, group_size, q_max)
+    percdamp: float = 0.01,
+    blocksize: int = 128,
+    eps: float = 1e-8,
+):
+    """
+    GPTQ-quantize W with the first `group_k` columns FIXED to the canonical SQAT grid
+    (group_quantize → training-consistent) and the remaining columns OBS/GPTQ-quantized. Returns
+    (W_int [out,in], scale [out,ng], zp [out,ng]) in the EXACT layout of group_quantize, so the
+    existing group_dequantize path reconstructs the deployed weight unchanged.
+    """
+    dev = W.device
+    out_f, in_f = W.shape
+    assert in_f % group_size == 0, \
+        f"GPTQ requires in_features ({in_f}) divisible by group_size ({group_size})"
+    assert group_k % group_size == 0, \
+        f"group_k ({group_k}) must be a multiple of group_size ({group_size})"
+    ng = in_f // group_size
+    q_max = _sym_q_max(q_bits) if symmetric else _asym_q_max(q_bits)
+
+    # block size aligned to group_size so a quant group never straddles a block boundary
+    if blocksize < group_size:
+        blocksize = group_size
+    blocksize = (blocksize // group_size) * group_size
+
+    W = W.clone().float()
+    H = H.float().to(dev)
+
+    W_int = torch.zeros(out_f, in_f, device=dev)
+    scale = torch.zeros(out_f, ng, device=dev)
+    zp    = torch.zeros(out_f, ng, device=dev)
+
+    # ---- 1) fixed salient grid for [0:group_k] (bit-identical to training fakequant) ----
+    n_sal_g = group_k // group_size
+    salient_deq = None
+    if group_k > 0:
+        wi_s, sc_s, zp_s = group_quantize(W[:, :group_k], group_size, q_bits, symmetric, eps)
+        salient_deq = group_dequantize(wi_s, sc_s, zp_s, group_size, group_k, symmetric).to(dev)
+        W_int[:, :group_k] = wi_s.to(dev)
+        scale[:, :n_sal_g]  = sc_s.to(dev)
+        zp[:, :n_sal_g]     = zp_s.to(dev)
+
+    # ---- 2) Hessian inverse (upper Cholesky factor of H^{-1}) ----
+    Hinv = _gptq_cholesky_inv_upper(H, percdamp)
+
+    # ---- 3) blocked column sweep (lazy-batch OBS update) ----
+    for i1 in range(0, in_f, blocksize):
+        i2 = min(i1 + blocksize, in_f)
+        W1    = W[:, i1:i2].clone()
+        Err1  = torch.zeros_like(W1)
+        Hinv1 = Hinv[i1:i2, i1:i2]
+
+        for j in range(i2 - i1):
+            col = i1 + j
+            w   = W1[:, j]
+            d   = Hinv1[j, j]
+            g   = col // group_size
+
+            if col < group_k:
+                q = salient_deq[:, col]                          # FIXED canonical value
+            else:
+                if col % group_size == 0:                        # new non-salient group → its grid
+                    Wg = W[:, col:col + group_size]              # block-start (compensated) weights
+                    if symmetric:
+                        s = _sym_scale(Wg, q_max, eps); z = torch.zeros_like(s)
+                    else:
+                        s, z = _asym_qparams(Wg, q_max, eps)
+                    scale[:, g] = s.squeeze(-1)
+                    zp[:, g]    = z.squeeze(-1)
+                s = scale[:, g].unsqueeze(-1)
+                z = zp[:, g].unsqueeze(-1)
+                if symmetric:
+                    qi = torch.round(torch.clamp(w.unsqueeze(-1) / s, -q_max, q_max))
+                    q  = (qi * s).squeeze(-1)
+                else:
+                    qi = torch.round(torch.clamp(w.unsqueeze(-1) / s + z, 0, q_max))
+                    q  = ((qi - z) * s).squeeze(-1)
+                W_int[:, col] = qi.squeeze(-1)
+
+            err = (w - q) / d
+            W1[:, j:] -= err.unsqueeze(-1) * Hinv1[j, j:].unsqueeze(0)
+            Err1[:, j] = err
+
+        W[:, i2:] -= Err1 @ Hinv[i1:i2, i2:]
+
+    return W_int, scale, zp
+
+
+class _GPTQCatcherStop(Exception):
+    """Raised by the layer-0 catcher to stop the forward after capturing the first input."""
+
+
+@torch.no_grad()
+def gptq_quantize_model_sequential(
+    model: nn.Module,
+    calibration_dataloader: DataLoader,
+    target_terminals: Sequence[str],
+    perm_group_k: int,
+    group_size: int,
+    q_bits: int,
+    symmetric: bool,
+    device: torch.device,
+    perm_meta=None,
+    percdamp: float = 0.01,
+    blocksize: int = 128,
+    nsamples: int = 128,
+) -> Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    """
+    In-place sequential GPTQ on a dense (permuted) fp16 model. For every nn.Linear whose terminal
+    name is in `target_terminals`:
+       * q/k/v/gate/up/down_proj → columns [0:perm_group_k] fixed to the canonical SQAT grid, the
+         rest GPTQ-quantized;
+       * o_proj                  → no salient slice (group_k=0) → fully GPTQ.
+    Each decoder layer is quantized using the ALREADY-quantized previous layers' outputs (true
+    cross-layer sequential GPTQ): weights are replaced in place with their quantize→dequant values,
+    and the per-layer (W_int, scale, zp) are returned (on CPU) in the group_quantize layout.
+
+    The model MUST be the permuted base; boundary gathers from `perm_meta` are registered for the
+    duration so the captured activations are in the deployment basis (and per-layer inputs are
+    re-ordered at segment boundaries exactly as at inference).
+    """
+    target_terminals = set(target_terminals)
+    name_of = {m: n for n, m in model.named_modules()}
+    layers = _resolve_decoder_layers(model)
+    num_layers = len(layers)
+
+    prev_use_cache = getattr(model.config, "use_cache", None)
+    model.config.use_cache = False
+    model.eval()
+
+    gather_hooks = register_boundary_gathers_from_meta(model, perm_meta) if perm_meta else []
+
+    # ---- capture layer-0 input + per-batch kwargs (attention_mask / position_embeddings / ...) ----
+    inps: List[torch.Tensor] = []
+    kwargs_list: List[dict] = []
+    orig_layer0 = layers[0]
+
+    class _Catcher(nn.Module):
+        def __init__(self, mod):
+            super().__init__()
+            self.mod = mod
+
+        def forward(self, hidden_states, **kw):
+            inps.append(hidden_states.detach().to("cpu"))
+            kwargs_list.append(
+                {k: (v.detach().to("cpu") if torch.is_tensor(v) else v) for k, v in kw.items()}
+            )
+            raise _GPTQCatcherStop()
+
+    layers[0] = _Catcher(orig_layer0)
+    seen = 0
+    for batch in calibration_dataloader:
+        if seen >= nsamples:
+            break
+        ids = batch["input_ids"].to(device)
+        am  = batch.get("attention_mask")
+        am  = am.to(device) if am is not None else None
+        try:
+            model(input_ids=ids, attention_mask=am)
+        except _GPTQCatcherStop:
+            pass
+        seen += ids.shape[0]
+    layers[0] = orig_layer0
+    print(f"[GPTQ] Captured {len(inps)} calibration batches ({seen} sequences).")
+
+    def _kw_to_dev(kw):
+        return {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in kw.items()}
+
+    quantized_layers: Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
+
+    for L in tqdm(range(num_layers), desc="[GPTQ] Sequential quantize"):
+        layer = layers[L]
+        subs = {}                                   # full_name -> (module, group_k)
+        for sub in layer.modules():
+            if isinstance(sub, nn.Linear) and name_of[sub].split(".")[-1] in target_terminals:
+                term = name_of[sub].split(".")[-1]
+                subs[name_of[sub]] = (sub, 0 if term == "o_proj" else perm_group_k)
+        if not subs:
+            continue
+
+        # 1) accumulate input Hessians for this layer's sublayers (fp16 weights)
+        Hs: Dict[str, torch.Tensor] = {}
+        handles = []
+
+        def _mk(nm):
+            def _h(mod, inp, out):
+                x = inp[0].detach()
+                x = x.reshape(-1, x.shape[-1]).float()
+                xtx = x.t() @ x
+                Hs[nm] = xtx if nm not in Hs else Hs[nm].add_(xtx)
+            return _h
+
+        for nm, (mod, _) in subs.items():
+            handles.append(mod.register_forward_hook(_mk(nm)))
+        for i in range(len(inps)):
+            layer(inps[i].to(device), **_kw_to_dev(kwargs_list[i]))
+        for h in handles:
+            h.remove()
+
+        # 2) GPTQ each sublayer; replace its weight with quantize->dequant
+        for nm, (mod, gk) in subs.items():
+            W = mod.weight.data.float()
+            W_int, sc, zp = gptq_quantize_layer(
+                W, Hs[nm], gk, group_size, q_bits, symmetric,
+                percdamp=percdamp, blocksize=blocksize,
+            )
+            W_deq = group_dequantize(W_int, sc, zp, group_size, W.shape[1], symmetric)
+            mod.weight.data.copy_(W_deq.to(mod.weight.dtype))
+            quantized_layers[nm] = (W_int.cpu(), sc.cpu(), zp.cpu())
+            Hs[nm] = None
+
+        # 3) recompute inputs for the next layer using the QUANTIZED layer
+        if L < num_layers - 1:
+            for i in range(len(inps)):
+                out = layer(inps[i].to(device), **_kw_to_dev(kwargs_list[i]))
+                out = out[0] if isinstance(out, tuple) else out
+                inps[i] = out.detach().to("cpu")
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    for h in gather_hooks:
+        h.remove()
+    if prev_use_cache is not None:
+        model.config.use_cache = prev_use_cache
+
+    return quantized_layers
 
 
 # ============================================================================

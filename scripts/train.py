@@ -81,6 +81,9 @@ def load_config(config_path: str, overrides: dict) -> dict:
     if overrides.get("online_group_hadamard") is not None:
         cfg["qat"].setdefault("sqat_permute", {})["online_group_hadamard"] = \
             overrides["online_group_hadamard"]
+    if overrides.get("gptq_nonsalient") is not None:
+        cfg["qat"].setdefault("sqat_permute", {}).setdefault("gptq", {})["enabled"] = \
+            overrides["gptq_nonsalient"]
     if overrides.get("report_to"):
         cfg["training"]["report_to"] = overrides["report_to"]
 
@@ -144,6 +147,13 @@ def main():
     parser.add_argument("--no_online_group_hadamard", dest="online_group_hadamard",
                         action="store_false",
                         help="sqat_permute: disable the online group-Hadamard (original scheme).")
+    parser.add_argument("--gptq_nonsalient", dest="gptq_nonsalient",
+                        action="store_true", default=None,
+                        help="sqat_permute: at export, GPTQ-quantize the non-salient columns "
+                             "(salient slice stays on the canonical grid).")
+    parser.add_argument("--no_gptq_nonsalient", dest="gptq_nonsalient",
+                        action="store_false",
+                        help="sqat_permute: disable GPTQ for non-salient cols (plain RTN export).")
     parser.add_argument("--report_to", type=str, default=None)
 
     # Data overrides

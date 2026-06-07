@@ -40,7 +40,7 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 DATASET_NAME="commonsense" # "math" or "commonsense" (must match the config yaml)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
-NUM_GPUS=2
+NUM_GPUS=4
 BITS=4
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
@@ -49,9 +49,9 @@ EVAL_GPU=0                # single GPU used for export + evaluation
 # Dedicated output dir so a plain-QLoRA run never clobbers a real sqat_permute run.
 OUTPUT_DIR="outputs/qlora-none-${DATASET_NAME}"
 
-SKIP_TRAIN=false
+SKIP_TRAIN=true
 SKIP_EVAL=false
-CHECKPOINT_DIR=""
+CHECKPOINT_DIR="outputs/qlora-none-commonsense-4bit-none/final"
 
 # ---------------------------------------------------------------------------
 # Parse arguments

@@ -22,6 +22,7 @@ Critical invariant:
     round(clamp(w / scale, -q_max, q_max))
 """
 
+import gc
 import math
 import os
 import shutil
@@ -786,8 +787,14 @@ def _verify_ptq_consistency(
     qat_mode: str = "none",
     sqat_meta: Optional[Dict[str, dict]] = None,
     max_layers: int = 5,
+    gptq: bool = False,
 ):
-    """Spot-check that dequant(quant(W)) ≈ W for a few layers."""
+    """
+    Spot-check that dequant(quant(W)) ≈ W for a few layers.
+
+    Note: with GPTQ the non-salient columns minimize OUTPUT error, not weight error, so a larger
+    weight max_err is EXPECTED there — it is labelled [GPTQ-OBS], not [WARN].
+    """
     checked = 0
     for name, target in weight_targets.items():
         if checked >= max_layers or name not in quantized_layers:
@@ -814,7 +821,7 @@ def _verify_ptq_consistency(
         abs_err = (W_deq - target.float()).abs()
         max_err = abs_err.max().item()
         mean_err = abs_err.mean().item()
-        status = "OK" if max_err < 0.5 else "WARN"
+        status = "OK" if max_err < 0.5 else ("GPTQ-OBS" if gptq else "WARN")
         print(f"  [Verify] {name}: max_err={max_err:.4f}, mean_err={mean_err:.6f} [{status}]")
         checked += 1
     if checked == 0:
@@ -1117,16 +1124,15 @@ def _quantize_all_layers(
 
         W = module.weight.data.float()
 
-        if qat_mode == "sqat_permute" and name in sqat_meta:
-            # sqat_permute: salient channels are physically at [0, group_k).
-            # PTQ must use asymmetric quantizer consistent with training-time
-            # groupwise_asymmetric_fakequant (no salient_gain, no dynamic anchor).
-            meta = sqat_meta[name]
-            W_int, scales, zeros = real_quantize_asymmetric(
-                W,
-                group_size=group_size,
-                q_bits=q_bits,
-            )
+        if qat_mode == "sqat_permute":
+            # Permuted SQAT: the salient slice sits in the first group_k/group_size complete
+            # groups. Quantize the WHOLE weight with the SAME canonical group quantizer the
+            # training fakequant uses (qat_permute_sqat.group_quantize) so the salient-slice
+            # grid is IDENTICAL train↔export — this is the fix for the train/export quantizer
+            # mismatch. (online_group_hadamard rotation, if any, was already folded into W by
+            # the pre-rotation step in merge_and_export and is baked back after dequant.)
+            from .qat_permute_sqat import group_quantize
+            W_int, scales, zeros = group_quantize(W, group_size, q_bits, symmetric)
 
         elif qat_mode == "sqat" and name in sqat_meta:
             meta = sqat_meta[name]
@@ -1261,6 +1267,31 @@ def merge_and_export(
                 "AWQ INT4 export of the rotated grid is not supported."
             )
 
+    # Improvement 1 — GPTQ (OBS) for the NON-salient columns. The salient slice [0:group_k] keeps
+    # the canonical (training-consistent) RTN grid; columns [group_k:] are GPTQ-quantized with error
+    # compensation (and absorb the salient slice's quant error). Same group_size + asym/sym as QAT.
+    sp_gptq_cfg = (cfg["qat"].get("sqat_permute", {}) or {}).get("gptq", {}) or {}
+    sp_gptq = bool(sp_gptq_cfg.get("enabled", False)) and qat_mode == "sqat_permute"
+    sp_perm_group_k = None
+    if sp_gptq:
+        if not export_dequant:
+            raise ValueError("sqat_permute GPTQ export requires --export_dequant (dense save).")
+        if sp_hadamard:
+            raise NotImplementedError(
+                "online_group_hadamard + GPTQ non-salient are separate improvements; "
+                "enable only one at a time."
+            )
+        if not sqat_permute_meta:
+            raise ValueError(
+                "sqat_permute GPTQ needs sqat_permute_meta (group_k + boundary gathers)."
+            )
+        sp_perm_group_k = int(
+            (sqat_permute_meta.get("model", sqat_permute_meta) or {}).get("group_k")
+        )
+        print(f"[Export]   GPTQ non-salient ON (group_k={sp_perm_group_k}, "
+              f"nsamples={sp_gptq_cfg.get('nsamples', 128)}, "
+              f"percdamp={sp_gptq_cfg.get('percdamp', 0.01)})")
+
     if qat_mode in {"sqat"} and sqat_metadata is None and model is not None:
         print("[Export] Collecting SQAT metadata...")
         sqat_metadata = collect_sqat_metadata(model)
@@ -1349,11 +1380,63 @@ def merge_and_export(
         print(f"[Export] online_group_hadamard: rotated salient cols of {n_rot} layers pre-PTQ")
 
     # --- PTQ ---
-    print("[Export] Applying PTQ...")
-    quantized_layers, quant_targets = _quantize_all_layers(
-        merged_model, target_modules, qat_mode, sqat_meta,
-        group_size, q_bits, export_dequant, symmetric,
-    )
+    if sp_gptq:
+        print("[Export] Applying GPTQ to non-salient columns (salient slice kept on canonical grid)...")
+        from .qat_permute_sqat import gptq_quantize_model_sequential
+        from torch.utils.data import DataLoader
+        from transformers import DataCollatorForSeq2Seq
+        from .data import load_calibration_data
+
+        # Capture the ORIGINAL (pre-GPTQ) weights for the salient-grid verifier (GPTQ mutates W).
+        quant_targets = {
+            n: m.weight.data.float().cpu()
+            for n, m in merged_model.named_modules()
+            if isinstance(m, nn.Linear) and n.split(".")[-1] in target_modules
+        }
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+            tokenizer.pad_token_id = tokenizer.eos_token_id
+        cal_ds = load_calibration_data(cfg, tokenizer)
+        cal_loader = DataLoader(
+            cal_ds,
+            batch_size=int(sp_gptq_cfg.get("batch_size", 2)),
+            collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, return_tensors="pt"),
+            shuffle=False,
+        )
+        gptq_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        try:
+            merged_model.to(gptq_device)
+            quantized_layers = gptq_quantize_model_sequential(
+                merged_model, cal_loader, target_modules,
+                perm_group_k=sp_perm_group_k, group_size=group_size, q_bits=q_bits,
+                symmetric=symmetric, device=gptq_device, perm_meta=sqat_permute_meta,
+                percdamp=float(sp_gptq_cfg.get("percdamp", 0.01)),
+                blocksize=int(sp_gptq_cfg.get("blocksize", 128)),
+                nsamples=int(sp_gptq_cfg.get("nsamples", 128)),
+            )
+        except torch.cuda.OutOfMemoryError as e:
+            # The training checkpoint is already saved before export, so nothing is lost — the
+            # in-training export just shares the GPU with the still-resident training model. Re-run
+            # export-only on a free GPU (or lower gptq.batch_size / nsamples).
+            raise RuntimeError(
+                "GPTQ export ran out of GPU memory (the merged fp16 model shares the GPU with the "
+                "resident training model). The checkpoint IS saved — recover with export-only:\n"
+                "    bash run_permute_sqat.sh --skip_train --checkpoint_dir <output_dir>/final\n"
+                "or reduce qat.sqat_permute.gptq.batch_size / nsamples in the config."
+            ) from e
+        merged_model.to("cpu")
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    else:
+        print("[Export] Applying PTQ...")
+        quantized_layers, quant_targets = _quantize_all_layers(
+            merged_model, target_modules, qat_mode, sqat_meta,
+            group_size, q_bits, export_dequant, symmetric,
+        )
     print(f"[Export] Quantized {len(quantized_layers)} layers")
 
     print("[Export] Verifying a few layers...")
@@ -1364,6 +1447,7 @@ def merge_and_export(
         symmetric,
         qat_mode=qat_mode,
         sqat_meta=sqat_meta,
+        gptq=sp_gptq,
     )
     if qat_mode == "sqat" and sqat_meta:
         _verify_sqat_salient_train_export_grid(
@@ -1374,6 +1458,50 @@ def merge_and_export(
             export_dequant=export_dequant,
             symmetric=symmetric,
         )
+
+    # sqat_permute: assert the salient-slice grid is IDENTICAL train↔export (the regression
+    # guard). quant_targets[name] is the exact weight that was quantized (already H-rotated if
+    # online_group_hadamard), so check it directly with hadamard=None.
+    if qat_mode == "sqat_permute":
+        from .qat_permute_sqat import (
+            verify_permute_quant_consistency, group_fakequant, group_dequantize,
+        )
+        gk = sp_group_k or group_size
+        n_sal_g = gk // group_size
+        print(f"[Export] Verifying sqat_permute salient train↔export grid (group_k={gk})...")
+        checked = 0
+        worst = 0.0
+        worst_store = 0.0
+        for name, W in quant_targets.items():
+            if checked >= 6:
+                break
+            err = verify_permute_quant_consistency(
+                W, gk, group_size, q_bits, symmetric, hadamard=None,
+            )
+            worst = max(worst, err)
+            status = "OK" if err < 1e-4 else "MISMATCH"
+            line = f"  [Permute-grid] {name}: max|Δ|={err:.3e} [{status}]"
+            # GPTQ guard: the EXPORTED salient ints must still equal the canonical training grid
+            # (only the [group_k:] non-salient cols are GPTQ'd). o_proj has no salient slice → skip.
+            if sp_gptq and name in quantized_layers and name.split(".")[-1] != "o_proj":
+                wi, sc, zp = quantized_layers[name]
+                sal_dq = group_dequantize(
+                    wi[:, :gk], sc[:, :n_sal_g], zp[:, :n_sal_g], group_size, gk, symmetric,
+                )
+                canon = group_fakequant(W[:, :gk].float(), group_size, q_bits, symmetric)
+                serr = (sal_dq - canon).abs().max().item()
+                worst_store = max(worst_store, serr)
+                line += f"  salient-stored max|Δ|={serr:.3e}"
+            print(line)
+            checked += 1
+        if worst >= 1e-4:
+            print(f"[Export] WARNING: sqat_permute train/export grid mismatch (worst={worst:.3e}) "
+                  f"— QAT benefit will NOT transfer. Check the quantizer formulas.")
+        elif sp_gptq and worst_store >= 1e-4:
+            print(f"[Export] WARNING: GPTQ disturbed the salient grid (worst={worst_store:.3e}) "
+                  f"— the QAT slice must stay on the canonical grid.")
+        else:
+            print(f"[Export]   train↔export grid consistent (worst max|Δ|={worst:.3e}).")
 
     # --- Save ---
     if export_dequant:
@@ -1386,7 +1514,12 @@ def merge_and_export(
 
             in_f = mod.weight.shape[1]
 
-            if qat_mode == "sqat" and name in sqat_meta:
+            if qat_mode == "sqat_permute":
+                # Canonical dequant matching qat_permute_sqat.group_quantize (single source of
+                # truth → salient grid identical to training fakequant).
+                from .qat_permute_sqat import group_dequantize
+                W_deq = group_dequantize(W_int, scales, zeros, group_size, in_f, symmetric)
+            elif qat_mode == "sqat" and name in sqat_meta:
                 meta = sqat_meta[name]
                 layer_symmetric = meta.get("symmetric", symmetric)
                 W_deq = dequantize_sqat_to_original_space(

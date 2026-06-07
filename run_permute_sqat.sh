@@ -29,23 +29,30 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # ---------------------------------------------------------------------------
 # Config (BOUNDARY_SIZES / GROUP_K must match the chosen --config yaml)
 # ---------------------------------------------------------------------------
-CONFIG="configs/sqat_permute_math.yaml"
+DATASET_NAME="commonsense" # math or commonsense (must match the config yaml, which controls the boundary gather)
+CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=4
 BITS=4
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
-BOUNDARY_SIZES="2 30"     # must match configs/sqat_permute_commonsense.yaml: qat.sqat_permute.boundary_sizes
+BOUNDARY_SIZES="2 30"     # must match configs/sqat_permute_${DATASET_NAME}.yaml: qat.sqat_permute.boundary_sizes
 GROUP_K=128
 EVAL_GPU=0                # single GPU used for export + evaluation
 # Group-Hadamard rotation of the salient slice (q/k/v/gate/up); overrides the yaml.
 # true  → smooth co-located weight/activation outliers (recommended)
 # false → original concentrated-group scheme
 ONLINE_GROUP_HADAMARD=false
+# Improvement 1: GPTQ (OBS) export for the ~97% non-salient columns; overrides the yaml.
+# true  → non-salient cols use GPTQ error compensation (salient slice stays on canonical grid)
+# false → non-salient cols use plain RTN (original export)
+# NOTE: not compatible with ONLINE_GROUP_HADAMARD=true (enable only one).
+GPTQ_NONSALIENT=true
 
 SKIP_VALIDATE=true
 SKIP_TRAIN=false
 SKIP_EVAL=false
+# CHECKPOINT_DIR="outputs/qlora-sqat-permute-4bit-sqat_permute/final"
 CHECKPOINT_DIR=""
 
 # ---------------------------------------------------------------------------
@@ -62,6 +69,7 @@ while [[ $# -gt 0 ]]; do
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
         --online_group_hadamard) ONLINE_GROUP_HADAMARD="$2"; shift 2 ;;
+        --gptq_nonsalient)        GPTQ_NONSALIENT="$2";      shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -73,6 +81,13 @@ else
     HADAMARD_FLAG="--no_online_group_hadamard"
 fi
 
+# Map the GPTQ toggle to the train.py flag (config yaml is the fallback default).
+if [ "$GPTQ_NONSALIENT" = "true" ]; then
+    GPTQ_FLAG="--gptq_nonsalient"
+else
+    GPTQ_FLAG="--no_gptq_nonsalient"
+fi
+
 echo "============================================================"
 echo "  Permuted Selective-QAT Pipeline"
 echo "  Config:      $CONFIG"
@@ -80,6 +95,7 @@ echo "  Model:       $MODEL_NAME"
 echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (eval)"
 echo "  Boundaries:  [$BOUNDARY_SIZES]   group_k=$GROUP_K   bits=$BITS"
 echo "  GroupHadamard: $ONLINE_GROUP_HADAMARD"
+echo "  GPTQ non-sal:  $GPTQ_NONSALIENT"
 echo "============================================================"
 
 # ---------------------------------------------------------------------------
@@ -108,6 +124,7 @@ if [ "$SKIP_TRAIN" = false ]; then
         --bits     "$BITS" \
         --asymmetric \
         $HADAMARD_FLAG \
+        $GPTQ_FLAG \
         --export_dequant \
         --report_to wandb
 
@@ -129,6 +146,7 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
         --qat_mode       sqat_permute \
         --bits           "$BITS" \
         --asymmetric \
+        $GPTQ_FLAG \
         --export_only \
         --export_dequant \
         --checkpoint_dir "$CHECKPOINT_DIR"
@@ -145,18 +163,21 @@ if [ "$SKIP_EVAL" = false ]; then
         [ -d "$eval_dir" ] || continue
         found=true
         echo "  Evaluating $eval_dir"
-        # CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_benchmarks.py eval \
-        #     --model_path "$eval_dir" \
-        #     --output_dir results/benchmarks
-        # CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_mmlu.py \
-        #     --model_path  "$eval_dir" \
-        #     --num_fewshot 0 \
-        #     --output_dir  results/mmlu
-        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_math.py \
-            --model_path  "$eval_dir" \
-            --num_fewshot 5 \
-            --output_dir  results/math
-
+        if [ $DATASET_NAME = "commonsense" ]; then
+            # For commonsense, we run both benchmarks to see if the permutation has any effect on one but not the other.
+             CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_benchmarks.py eval \
+                --model_path "$eval_dir" \
+                --output_dir results/benchmarks
+             CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_mmlu.py \
+                --model_path  "$eval_dir" \
+                --num_fewshot 0 \
+                --output_dir  results/mmlu
+        elif [ $DATASET_NAME = "math" ]; then
+            CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_math.py \
+                --model_path  "$eval_dir" \
+                --num_fewshot 5 \
+                --output_dir  results/math
+        fi
     done
     shopt -u nullglob
     [ "$found" = true ] || echo "  (no exported eval dirs found under outputs/qlora-sqat-permute*)"

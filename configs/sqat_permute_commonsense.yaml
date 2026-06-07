@@ -37,8 +37,8 @@ qat:
 
   # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
   sqat:
-    calibration_samples: 256
-    calibration_seq_len: 1024
+    calibration_samples: 512
+    calibration_seq_len: 2048
 
   sqat_permute:
     # Segment partition: sum must equal model.config.num_hidden_layers (32 for Llama-2-7b)
@@ -60,6 +60,24 @@ qat:
 
     # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
     stage: 2
+
+    # gptq (Improvement 1): at export, quantize the ~97% NON-salient columns [group_k:] with
+    # GPTQ/OBS error compensation instead of plain RTN. The salient slice [0:group_k] keeps the
+    # EXACT canonical (training-consistent) grid; the non-salient cols additionally absorb the
+    # salient slice's quantization error. Uses the SAME group_size and asym/sym as QAT. Dense
+    # (--export_dequant) only; o_proj has no salient slice → fully GPTQ. Not combined with
+    # online_group_hadamard. Calibrated on the training data in the permuted basis (boundary
+    # gathers active), sequential per decoder layer (memory-bounded).
+    gptq:
+      enabled: true
+      nsamples: 128          # calibration sequences for the Hessian
+      percdamp: 0.01         # Hessian diagonal damping (fraction of mean diag)
+      # blocksize is GPTQ's lazy-batch COMPUTE block (how many columns are error-compensated
+      # before one batched Hessian update). It is NOT the quantization group: the quant grid is
+      # group_size (=64 above). blocksize only must be a multiple of group_size (auto-aligned in
+      # code). 128 is the standard GPTQ default (= 2 groups of 64); larger=faster, smaller=exacter.
+      blocksize: 128
+      batch_size: 2          # calibration micro-batch (keeps activation memory low)
 
     # online_group_hadamard: quantize the salient slice [0:group_k] of q/k/v/gate/up in a
     # group_k Hadamard basis (down_proj NOT rotated; o_proj keeps its per-head Hadamard).
@@ -89,7 +107,7 @@ data:
 
 training:
   output_dir: "outputs/qlora-sqat-permute"
-  num_epochs: 3
+  num_epochs: 2
   per_device_train_batch_size: 8
   per_device_eval_batch_size: 8
   gradient_accumulation_steps: 2
