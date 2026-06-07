@@ -292,6 +292,57 @@ def select_internal_salient_channels(
     return result
 
 
+def compute_awq_scales(
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+    residual_salient: Dict[int, List[int]],
+    internal_salient: Dict[Tuple[int, str], List[int]],
+    boundary_sizes: List[int],
+    num_layers: int,
+    group_k: int,
+    alpha: float = 0.5,
+    max_s: float = 2.0,
+    eps: float = 1e-12,
+) -> Dict[str, torch.Tensor]:
+    """
+    AWQ-style per-input-channel scale S on the salient slice [0:group_k], per (layer, source):
+      attn (q/k/v share)   ← (l,'attn')      E[x²] at the segment's salient channels
+      mlp  (gate/up share) ← (l,'mlp')       E[x²] at the same salient channels
+      down (down_proj)     ← (l,'down_proj') E[x²] at the P4 salient channels
+    S_j = (E[x²]_j)^alpha, normalized so min over the slice = 1, clamped to [1, max_s] (so S≥1,
+    i.e. salient channels are only ever amplified). Returns {"attn"/"mlp"/"down": [L, group_k]}
+    float32 (1.0 where a source is unavailable). Indexed by PERMUTED position (matches the slice).
+    """
+    b_off = [0] + list(itertools.accumulate(boundary_sizes))
+
+    def seg_of(l: int) -> int:
+        for s in range(len(boundary_sizes)):
+            if b_off[s] <= l < b_off[s + 1]:
+                return s
+        return len(boundary_sizes) - 1
+
+    def _scale_from(e: torch.Tensor) -> torch.Tensor:
+        d = e.clamp(min=eps).pow(alpha)
+        d = d / d.min()
+        return d.clamp(max=max_s).float()
+
+    attn = torch.ones(num_layers, group_k)
+    mlp  = torch.ones(num_layers, group_k)
+    down = torch.ones(num_layers, group_k)
+    for l in range(num_layers):
+        sal = residual_salient.get(seg_of(l))
+        if sal is not None:
+            idx = torch.as_tensor(list(sal)[:group_k], dtype=torch.long)
+            if (l, "attn") in second_moments:
+                attn[l] = _scale_from(second_moments[(l, "attn")][idx])
+            if (l, "mlp") in second_moments:
+                mlp[l] = _scale_from(second_moments[(l, "mlp")][idx])
+        dperm = internal_salient.get((l, "down_proj"))
+        if dperm is not None and (l, "down_proj") in second_moments:
+            didx = torch.as_tensor(list(dperm)[:group_k], dtype=torch.long)
+            down[l] = _scale_from(second_moments[(l, "down_proj")][didx])
+    return {"attn": attn, "mlp": mlp, "down": down}
+
+
 # ============================================================================
 # Part 3 — Permutation construction
 # ============================================================================
@@ -845,20 +896,25 @@ def group_dequantize(
 @torch.no_grad()
 def verify_permute_quant_consistency(
     W: torch.Tensor, group_k: int, group_size: int, q_bits: int, symmetric: bool,
-    hadamard: Optional[torch.Tensor] = None,
+    awq_s: Optional[torch.Tensor] = None,
 ) -> float:
     """
     Assert the SALIENT slice's training grid == export grid. Returns max|Δ| over [out, group_k]
-    between group_fakequant(W_S) (training) and group_dequantize(group_quantize(W_S)) (export).
-    With the shared qparams above this must be ~0 (fp round-off only). If online_group_hadamard
-    is used, pass the H that the slice is quantized in.
+    between training fakequant and export quantize→dequant on the salient slice. With the shared
+    qparams this must be ~0 (fp round-off only). If AWQ-style scaling is used, pass the per-channel
+    `awq_s` the slice is quantized in (the amplify+de-amplify cancels, so it stays a self-check of
+    the quantizer formulas in the amplified space).
     """
     W_s = W[:, :group_k].float()
-    if hadamard is not None:
-        W_s = W_s @ hadamard.to(W_s.dtype)
-    fq = group_fakequant(W_s, group_size, q_bits, symmetric)
-    wi, sc, zp = group_quantize(W_s, group_size, q_bits, symmetric)
-    dq = group_dequantize(wi, sc, zp, group_size, group_k, symmetric)
+    if awq_s is not None:
+        s = awq_s.to(torch.float32).view(1, -1)
+        fq = group_fakequant(W_s * s, group_size, q_bits, symmetric) / s
+        wi, sc, zp = group_quantize(W_s * s, group_size, q_bits, symmetric)
+        dq = group_dequantize(wi, sc, zp, group_size, group_k, symmetric) / s
+    else:
+        fq = group_fakequant(W_s, group_size, q_bits, symmetric)
+        wi, sc, zp = group_quantize(W_s, group_size, q_bits, symmetric)
+        dq = group_dequantize(wi, sc, zp, group_size, group_k, symmetric)
     return (fq - dq).abs().max().item()
 
 
@@ -918,12 +974,19 @@ def gptq_quantize_layer(
     percdamp: float = 0.01,
     blocksize: int = 128,
     eps: float = 1e-8,
+    awq_s: Optional[torch.Tensor] = None,   # [group_k] AWQ scale for the salient slice, or None
 ):
     """
     GPTQ-quantize W with the first `group_k` columns FIXED to the canonical SQAT grid
     (group_quantize → training-consistent) and the remaining columns OBS/GPTQ-quantized. Returns
     (W_int [out,in], scale [out,ng], zp [out,ng]) in the EXACT layout of group_quantize, so the
     existing group_dequantize path reconstructs the deployed weight unchanged.
+
+    AWQ-style scaling: if `awq_s` is given, the salient slice is quantized in the amplified space
+    (W_S * S). The STORED ints/scale/zp stay in the amplified space — the caller bakes the `/S`
+    back into the salient columns of the dequantized dense weight (see _unscale_salient_cols in
+    export.py), matching the training fakequant W_fq/S exactly. The OBS error that the salient
+    slice propagates into the non-salient columns uses the de-amplified deployed value (W_fq/S).
     """
     dev = W.device
     out_f, in_f = W.shape
@@ -950,8 +1013,18 @@ def gptq_quantize_layer(
     n_sal_g = group_k // group_size
     salient_deq = None
     if group_k > 0:
-        wi_s, sc_s, zp_s = group_quantize(W[:, :group_k], group_size, q_bits, symmetric, eps)
-        salient_deq = group_dequantize(wi_s, sc_s, zp_s, group_size, group_k, symmetric).to(dev)
+        W_sal = W[:, :group_k]
+        if awq_s is not None:
+            s = awq_s.to(torch.float32).view(1, -1).to(dev)        # [1, group_k]
+            wi_s, sc_s, zp_s = group_quantize(W_sal * s, group_size, q_bits, symmetric, eps)
+            # deployed (de-amplified) value drives the OBS error propagation; stored ints stay
+            # in the amplified space (the /S is baked back into the dense weight at export).
+            salient_deq = (
+                group_dequantize(wi_s, sc_s, zp_s, group_size, group_k, symmetric).to(dev) / s
+            )
+        else:
+            wi_s, sc_s, zp_s = group_quantize(W_sal, group_size, q_bits, symmetric, eps)
+            salient_deq = group_dequantize(wi_s, sc_s, zp_s, group_size, group_k, symmetric).to(dev)
         W_int[:, :group_k] = wi_s.to(dev)
         scale[:, :n_sal_g]  = sc_s.to(dev)
         zp[:, :n_sal_g]     = zp_s.to(dev)
@@ -1002,6 +1075,40 @@ def gptq_quantize_layer(
     return W_int, scale, zp
 
 
+# ----------------------------------------------------------------------------
+# AWQ-style per-input-channel scale S for the salient slice (Improvement 2).
+# S is per (decoder layer, projection group): q/k/v share the "attn" S, gate/up share "mlp",
+# down_proj has its own "down" S. Stored in perm_meta["awq_scales"] = {src: [num_layers, group_k]}.
+# ----------------------------------------------------------------------------
+
+_AWQ_SOURCE = {
+    "q_proj": "attn", "k_proj": "attn", "v_proj": "attn",
+    "gate_proj": "mlp", "up_proj": "mlp",
+    "down_proj": "down",
+}
+
+
+def _layer_index_from_name(name: str) -> Optional[int]:
+    import re
+    m = re.search(r"layers\.(\d+)\.", name)
+    return int(m.group(1)) if m else None
+
+
+def awq_s_for_module(awq_scales: Optional[dict], name: str) -> Optional[torch.Tensor]:
+    """Return the [group_k] AWQ scale for a linear by full name, or None (o_proj / disabled)."""
+    if not awq_scales:
+        return None
+    src = _AWQ_SOURCE.get(name.split(".")[-1])
+    if src is None or src not in awq_scales:
+        return None
+    l = _layer_index_from_name(name)
+    if l is None:
+        return None
+    s = awq_scales[src]
+    s = s[l] if not torch.is_tensor(s) or s.dim() == 2 else s
+    return torch.as_tensor(s, dtype=torch.float32)
+
+
 class _GPTQCatcherStop(Exception):
     """Raised by the layer-0 catcher to stop the forward after capturing the first input."""
 
@@ -1020,6 +1127,7 @@ def gptq_quantize_model_sequential(
     percdamp: float = 0.01,
     blocksize: int = 128,
     nsamples: int = 128,
+    awq_scales: Optional[dict] = None,
 ) -> Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """
     In-place sequential GPTQ on a dense (permuted) fp16 model. For every nn.Linear whose terminal
@@ -1116,11 +1224,16 @@ def gptq_quantize_model_sequential(
         # 2) GPTQ each sublayer; replace its weight with quantize->dequant
         for nm, (mod, gk) in subs.items():
             W = mod.weight.data.float()
+            awq_s = awq_s_for_module(awq_scales, nm)
             W_int, sc, zp = gptq_quantize_layer(
                 W, Hs[nm], gk, group_size, q_bits, symmetric,
-                percdamp=percdamp, blocksize=blocksize,
+                percdamp=percdamp, blocksize=blocksize, awq_s=awq_s,
             )
             W_deq = group_dequantize(W_int, sc, zp, group_size, W.shape[1], symmetric)
+            if awq_s is not None:
+                # bake 1/S back into the salient columns so the in-place (and exported) dense
+                # weight is the deployed value W_fq/S — matching the training fakequant.
+                W_deq[:, :gk] = W_deq[:, :gk] / awq_s.view(1, -1).to(W_deq.device)
             mod.weight.data.copy_(W_deq.to(mod.weight.dtype))
             quantized_layers[nm] = (W_int.cpu(), sc.cpu(), zp.cpu())
             Hs[nm] = None
@@ -1182,7 +1295,7 @@ def fused_qat_residual_outputs(
     q_bits: int,
     symmetric: bool,
     lora_scaling: float,
-    hadamard: Optional[torch.Tensor] = None,   # [group_k, group_k] self-inverse H, or None
+    awq_s: Optional[torch.Tensor] = None,   # [group_k] per-input-channel AWQ scale, or None
 ) -> List[torch.Tensor]:
     """
     Compute the per-projection QAT residual outputs to be ADDED to each projection's output.
@@ -1192,33 +1305,30 @@ def fused_qat_residual_outputs(
     Y      = F.linear(X_S, delta)                                [..., sum_out]   (ONE GEMM)
     return   Y.split(out_splits, dim=-1)
 
-    online_group_hadamard: if `hadamard` (H, group_k×group_k, self-inverse) is given, the
-    salient slice is quantized in the Hadamard basis so weight AND activation outliers (all
-    concentrated in [0:group_k] after the permute) are spread out — instead of every salient
-    channel sharing one group's scale/zp and being amplified by the co-located outliers:
+    AWQ-style per-channel scaling: if `awq_s` (a per-input-channel vector of length group_k, shared
+    across the fused siblings) is given, the salient slice is quantized in the AMPLIFIED space —
+    the salient input channels' weight columns are scaled up by S before quantization so the
+    high-activation channels survive the shared group grid, then divided back out:
 
-        W_use = W_curr @ H ;  X_use = X_S @ H ;  delta = fakequant(W_use) - W_use
-        Y = F.linear(X_use, delta)
+        W_fq = fakequant(W_curr * S) ;  delta = W_fq / S - W_curr ;  Y = F.linear(X_S, delta)
 
-    This is exact: X_S @ W_curr^T == (X_S@H) @ (W_curr@H)^T because H H^T = I. The main NF4+LoRA
-    path is untouched; deployment bakes H^T back into the dense weight (see export.py), so the
-    output is bit-identical with no runtime rotation.
+    The activation X_S is UNCHANGED — the 1/S is baked into the (dense) weight at export, so this is
+    purely a better quantization grid (no runtime activation scaling, output bit-identical to a
+    fold-1/S-into-the-preceding-LN deployment). The main NF4+LoRA path is untouched.
 
     The salient slice is the ONLY weight materialized. Quantization runs in fp32; the residual
     is cast back to X_S.dtype.
     """
     BA     = _fused_BA(A_S_list, B_list).to(torch.float32)         # [sum_out, group_k]
     W_curr = W_base_salient.to(torch.float32) + BA * lora_scaling  # [sum_out, group_k]
-    if hadamard is not None:
-        Hf    = hadamard.to(torch.float32)
-        W_use = W_curr @ Hf                                        # rotate weight cols
-        X_use = (X_S.to(torch.float32) @ Hf).to(X_S.dtype)         # rotate activation
+    if awq_s is not None:
+        s     = awq_s.to(torch.float32).view(1, -1)                # [1, group_k]
+        W_fq  = group_fakequant(W_curr * s, group_size, q_bits, symmetric)
+        delta = (W_fq / s - W_curr).to(X_S.dtype)                  # STE residual (original space)
     else:
-        W_use = W_curr
-        X_use = X_S
-    W_fq   = group_fakequant(W_use, group_size, q_bits, symmetric)
-    delta  = (W_fq - W_use).to(X_use.dtype)                        # STE residual (rotated basis)
-    Y      = F.linear(X_use, delta)                                # [..., sum_out], one GEMM
+        W_fq  = group_fakequant(W_curr, group_size, q_bits, symmetric)
+        delta = (W_fq - W_curr).to(X_S.dtype)
+    Y      = F.linear(X_S, delta)                                  # [..., sum_out], one GEMM
     return list(torch.split(Y, list(out_splits), dim=-1))
 
 
@@ -1293,7 +1403,7 @@ class _FusedSiblingQATInjector(nn.Module):
         symmetric: bool,
         lora_scaling: float,
         where: str,
-        online_group_hadamard: bool = False,
+        awq_s: Optional[torch.Tensor] = None,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -1313,21 +1423,18 @@ class _FusedSiblingQATInjector(nn.Module):
         # Frozen fused base salient slice [sum_out, group_k]; not saved to checkpoints.
         self.register_buffer("W_base_salient", torch.cat(bases, dim=0), persistent=False)
 
-        # online_group_hadamard: quantize the salient slice in a group_k Hadamard basis so the
-        # co-located weight/activation outliers are spread out (the residual ones are baked back
-        # at export — see export.py). H is on the buffer's device since the injector is not a
-        # model submodule and won't be moved by model.to().
-        if online_group_hadamard:
-            assert (group_k & (group_k - 1)) == 0, (
-                f"online_group_hadamard requires power-of-2 group_k, got {group_k}"
-            )
+        # AWQ-style per-input-channel scale S for the salient slice (shared by the fused siblings,
+        # since they read the same block input). Quantizing W_S*S protects the high-activation
+        # channels; the /S is baked into the dense weight at export (no runtime activation scaling).
+        # On the buffer's device — the injector is not a model submodule, so model.to() won't move it.
+        if awq_s is not None:
             self.register_buffer(
-                "group_hadamard",
-                _build_hadamard(group_k).to(self.W_base_salient.device),
+                "awq_s",
+                awq_s.to(torch.float32).view(-1).to(self.W_base_salient.device),
                 persistent=False,
             )
         else:
-            self.group_hadamard = None
+            self.awq_s = None
 
         self._deltas: Optional[List[torch.Tensor]] = None
         self._handles: List[torch.utils.hooks.RemovableHandle] = []
@@ -1353,7 +1460,7 @@ class _FusedSiblingQATInjector(nn.Module):
         self._deltas = fused_qat_residual_outputs(
             self.W_base_salient, A_S_list, B_list, self.out_splits, X_S,
             self.group_size, self.q_bits, self.symmetric, self.lora_scaling,
-            hadamard=self.group_hadamard,
+            awq_s=self.awq_s,
         )
         return None  # do not modify the block inputs
 
@@ -1411,6 +1518,7 @@ class DownProjQATInjector(nn.Module):
         q_bits: int,
         symmetric: bool,
         lora_scaling: float,
+        awq_s: Optional[torch.Tensor] = None,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -1426,6 +1534,15 @@ class DownProjQATInjector(nn.Module):
         self.register_buffer(
             "W_base_salient", _dequant_base_salient(down_proj, group_k), persistent=False
         )
+        # AWQ scale for down_proj's own salient (P4-permuted) intermediate input slice.
+        if awq_s is not None:
+            self.register_buffer(
+                "awq_s",
+                awq_s.to(torch.float32).view(-1).to(self.W_base_salient.device),
+                persistent=False,
+            )
+        else:
+            self.awq_s = None
         self.out_splits = (self.W_base_salient.shape[0],)
         self._handles = [down_proj.register_forward_hook(self._hook)]
 
@@ -1436,6 +1553,7 @@ class DownProjQATInjector(nn.Module):
         (delta_out,) = fused_qat_residual_outputs(
             self.W_base_salient, [A_S], [B], self.out_splits, X_S,
             self.group_size, self.q_bits, self.symmetric, self.lora_scaling,
+            awq_s=self.awq_s,
         )
         return out + delta_out
 
@@ -1458,7 +1576,7 @@ def install_fused_selective_qat(
     lora_scaling: float,
     target_modules: Sequence[str],
     include_down_proj: bool = True,
-    online_group_hadamard: bool = False,
+    awq_scales: Optional[dict] = None,
 ) -> List[nn.Module]:
     """
     Install block-level fused Selective-QAT injectors on every decoder layer.
@@ -1467,10 +1585,10 @@ def install_fused_selective_qat(
     - gate/up_proj → one FusedMLPQATInjector per layer.
     - down_proj    → one DownProjQATInjector per layer (single small GEMM, no fusion).
 
-    online_group_hadamard: quantize the salient slice of q/k/v/gate/up in a group_k Hadamard
-    basis (down_proj is NOT rotated — its salient input has no foldable sibling rotation;
-    o_proj keeps its separate per-head Hadamard). Deployment bakes H back into the dense
-    weight at export, so this is purely a better quantization grid (bit-identical output).
+    awq_scales: if given ({"attn"/"mlp"/"down": [num_layers, group_k]}), the salient slice of each
+    projection group is quantized in the AWQ-amplified space (q/k/v share the layer's "attn" S,
+    gate/up share "mlp", down_proj uses "down"). o_proj is never injected (per-head Hadamard only).
+    The /S is baked into the dense weight at export — a better quant grid, bit-identical output.
 
     Only projections that are LoRA-wrapped AND listed in `target_modules` are injected.
     Returns the list of injectors (keep a reference; call .remove() on each to uninstall).
@@ -1479,10 +1597,16 @@ def install_fused_selective_qat(
         group_k=group_k, group_size=group_size, q_bits=q_bits,
         symmetric=symmetric, lora_scaling=lora_scaling,
     )
+
+    def _s(src: str, l: int) -> Optional[torch.Tensor]:
+        if not awq_scales or src not in awq_scales:
+            return None
+        return torch.as_tensor(awq_scales[src][l], dtype=torch.float32)
+
     tset = set(target_modules)
     injectors: List[nn.Module] = []
 
-    for layer in _resolve_decoder_layers(model):
+    for l, layer in enumerate(_resolve_decoder_layers(model)):
         attn = layer.self_attn
         mlp  = layer.mlp
 
@@ -1491,7 +1615,7 @@ def install_fused_selective_qat(
         ):
             injectors.append(FusedAttnQATInjector(
                 attn, attn.q_proj, attn.k_proj, attn.v_proj,
-                online_group_hadamard=online_group_hadamard, **common
+                awq_s=_s("attn", l), **common
             ))
 
         if {"gate_proj", "up_proj"} <= tset and all(
@@ -1499,12 +1623,11 @@ def install_fused_selective_qat(
         ):
             injectors.append(FusedMLPQATInjector(
                 mlp, mlp.gate_proj, mlp.up_proj,
-                online_group_hadamard=online_group_hadamard, **common
+                awq_s=_s("mlp", l), **common
             ))
 
-        # down_proj: never group-Hadamard-rotated (no foldable sibling rotation).
         if include_down_proj and "down_proj" in tset and _has_lora(mlp.down_proj):
-            injectors.append(DownProjQATInjector(mlp.down_proj, **common))
+            injectors.append(DownProjQATInjector(mlp.down_proj, awq_s=_s("down", l), **common))
 
     print(
         f"[qat_permute_sqat] Installed fused Selective-QAT injectors: "
@@ -1512,7 +1635,7 @@ def install_fused_selective_qat(
         f"{sum(isinstance(i, FusedMLPQATInjector) for i in injectors)} mlp, "
         f"{sum(isinstance(i, DownProjQATInjector) for i in injectors)} down  "
         f"(group_k={group_k}, group_size={group_size}, symmetric={symmetric}, "
-        f"online_group_hadamard={online_group_hadamard})"
+        f"awq_scale={'on' if awq_scales else 'off'})"
     )
     return injectors
 
@@ -1543,6 +1666,8 @@ def build_permuted_fp16_checkpoint(
     outlier_log_sigma: float = 3.0,
     dtype: torch.dtype = torch.float16,
     device: Optional[torch.device] = None,
+    awq_alpha: float = 0.5,
+    awq_max: float = 2.0,
 ) -> dict:
     """
     Stage-2 pre-quantization step — run on ONE process only (rank 0).
@@ -1601,6 +1726,12 @@ def build_permuted_fp16_checkpoint(
     }
     internal_salient = select_internal_salient_channels(second_moments, num_layers, group_k=group_k)
 
+    # ---- 2b) AWQ-style per-channel salient scales S (always computed; usage gated by config) ----
+    awq_scales = compute_awq_scales(
+        second_moments, residual_salient, internal_salient,
+        boundary_sizes, num_layers, group_k, alpha=awq_alpha, max_s=awq_max,
+    )
+
     # ---- 3) apply the three transforms IN fp16 (dtype-preserving, equivalence-preserving) ----
     boundary_perms = apply_segment_permutation_fp32(model, segment_perms, boundary_sizes)
     block_internal = apply_block_internal_permutations_fp32(model, internal_salient)
@@ -1623,6 +1754,10 @@ def build_permuted_fp16_checkpoint(
         "boundary_sizes":         list(boundary_sizes),
         "d_model":                d_model,
         "permuted_base_dir":      os.path.abspath(save_dir),
+        # AWQ-style per-channel salient scales (used only when awq_scale is enabled in cfg).
+        "awq_scales":             {k: v.cpu() for k, v in awq_scales.items()},
+        "awq_alpha":              awq_alpha,
+        "awq_max":                awq_max,
     }
     torch.save(perm_meta, os.path.join(save_dir, PERM_META_FILENAME))
     print(f"[SegPerm] perm_meta saved → {os.path.join(save_dir, PERM_META_FILENAME)} "
@@ -1791,10 +1926,11 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         group_size     = perm_meta["group_size"]
         q_bits         = cfg["model"]["quant_bits"]
         symmetric      = cfg["qat"].get("symmetric", True)
-        online_group_hadamard = sp_cfg.get("online_group_hadamard", False)
+        awq_enabled    = bool((sp_cfg.get("awq_scale", {}) or {}).get("enabled", False))
         lora_scaling   = cfg["lora"]["alpha"] / cfg["lora"]["rank"]
         target_modules = cfg["lora"]["target_modules"]
         d_model        = perm_meta["d_model"]
+        awq_scales     = perm_meta.get("awq_scales") if awq_enabled else None
 
         # ---- 1) Runtime boundary gathers (residual reorder P_k → P_{k+1}). ----
         # MUST exist for every forward — at training (here) AND inference (eval scripts call
@@ -1821,18 +1957,18 @@ class SegmentPermutedSelectiveQAT(QATHandler):
                 lora_scaling=lora_scaling,
                 target_modules=target_modules,
                 include_down_proj=True,
-                online_group_hadamard=online_group_hadamard,
+                awq_scales=awq_scales,
             )
 
-        # ---- 3) Attach export metadata (perm_meta + q_bits + symmetric + hadamard flag). ----
+        # ---- 3) Attach export metadata (perm_meta + q_bits + symmetric + awq flag). ----
         model._sqat_permute_meta = {
             **perm_meta, "q_bits": q_bits, "symmetric": symmetric,
-            "online_group_hadamard": online_group_hadamard,
+            "awq_scale": awq_enabled,
         }
         print(f"[SegPerm] prepare_model done: stage={stage}, "
               f"num_runtime_permutes={len(self.boundary_perms)}, "
               f"group_k={group_k}, group_size={group_size}, symmetric={symmetric}, "
-              f"online_group_hadamard={online_group_hadamard}")
+              f"awq_scale={awq_enabled}")
         return model
 
     def on_train_begin(self, model: nn.Module): pass

@@ -39,14 +39,15 @@ MODEL_NAME="meta-llama/Llama-2-7b-hf"
 BOUNDARY_SIZES="2 30"     # must match configs/sqat_permute_${DATASET_NAME}.yaml: qat.sqat_permute.boundary_sizes
 GROUP_K=128
 EVAL_GPU=0                # single GPU used for export + evaluation
-# Group-Hadamard rotation of the salient slice (q/k/v/gate/up); overrides the yaml.
-# true  → smooth co-located weight/activation outliers (recommended)
-# false → original concentrated-group scheme
-ONLINE_GROUP_HADAMARD=false
+# Improvement 2: AWQ-style per-channel scaling of the salient slice; overrides the yaml.
+# true  → quantize the salient slice in the amplified space W*S (q/k/v share S1, gate/up S2,
+#         down S3), bake 1/S into the dense weight (better grid, no runtime cost)
+# false → no salient scaling (original scheme)
+AWQ_SCALE=true
 # Improvement 1: GPTQ (OBS) export for the ~97% non-salient columns; overrides the yaml.
 # true  → non-salient cols use GPTQ error compensation (salient slice stays on canonical grid)
 # false → non-salient cols use plain RTN (original export)
-# NOTE: not compatible with ONLINE_GROUP_HADAMARD=true (enable only one).
+# Composes with AWQ_SCALE (salient slice fixed to the amplified grid, non-salient GPTQ'd).
 GPTQ_NONSALIENT=true
 
 SKIP_VALIDATE=true
@@ -68,17 +69,17 @@ while [[ $# -gt 0 ]]; do
         --config)         CONFIG="$2";        shift 2 ;;
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
-        --online_group_hadamard) ONLINE_GROUP_HADAMARD="$2"; shift 2 ;;
+        --awq_scale)              AWQ_SCALE="$2";            shift 2 ;;
         --gptq_nonsalient)        GPTQ_NONSALIENT="$2";      shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
 
 # Map the toggle to the train.py flag (config yaml is the fallback default).
-if [ "$ONLINE_GROUP_HADAMARD" = "true" ]; then
-    HADAMARD_FLAG="--online_group_hadamard"
+if [ "$AWQ_SCALE" = "true" ]; then
+    AWQ_FLAG="--awq_scale"
 else
-    HADAMARD_FLAG="--no_online_group_hadamard"
+    AWQ_FLAG="--no_awq_scale"
 fi
 
 # Map the GPTQ toggle to the train.py flag (config yaml is the fallback default).
@@ -94,7 +95,7 @@ echo "  Config:      $CONFIG"
 echo "  Model:       $MODEL_NAME"
 echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (eval)"
 echo "  Boundaries:  [$BOUNDARY_SIZES]   group_k=$GROUP_K   bits=$BITS"
-echo "  GroupHadamard: $ONLINE_GROUP_HADAMARD"
+echo "  AWQ-scale:     $AWQ_SCALE"
 echo "  GPTQ non-sal:  $GPTQ_NONSALIENT"
 echo "============================================================"
 
@@ -123,7 +124,7 @@ if [ "$SKIP_TRAIN" = false ]; then
         --qat_mode sqat_permute \
         --bits     "$BITS" \
         --asymmetric \
-        $HADAMARD_FLAG \
+        $AWQ_FLAG \
         $GPTQ_FLAG \
         --export_dequant \
         --report_to wandb

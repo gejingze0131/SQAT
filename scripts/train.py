@@ -78,9 +78,9 @@ def load_config(config_path: str, overrides: dict) -> dict:
         cfg["qat"]["sqat"]["salient_gain_alpha"] = overrides["salient_gain_alpha"]
     if overrides.get("salient_gain_max") is not None:
         cfg["qat"]["sqat"]["salient_gain_max"] = overrides["salient_gain_max"]
-    if overrides.get("online_group_hadamard") is not None:
-        cfg["qat"].setdefault("sqat_permute", {})["online_group_hadamard"] = \
-            overrides["online_group_hadamard"]
+    if overrides.get("awq_scale") is not None:
+        cfg["qat"].setdefault("sqat_permute", {}).setdefault("awq_scale", {})["enabled"] = \
+            overrides["awq_scale"]
     if overrides.get("gptq_nonsalient") is not None:
         cfg["qat"].setdefault("sqat_permute", {}).setdefault("gptq", {})["enabled"] = \
             overrides["gptq_nonsalient"]
@@ -140,13 +140,14 @@ def main():
     parser.add_argument("--salient_gain_max", type=float, default=2.0,
                         help="Maximum value for AWQ-style saliency amplification D. "
                              "If not set, defaults to 2.0.")
-    parser.add_argument("--online_group_hadamard", dest="online_group_hadamard",
+    parser.add_argument("--awq_scale", dest="awq_scale",
                         action="store_true", default=None,
-                        help="sqat_permute: quantize the salient slice (q/k/v/gate/up) in a "
-                             "group_k Hadamard basis to smooth co-located outliers.")
-    parser.add_argument("--no_online_group_hadamard", dest="online_group_hadamard",
+                        help="sqat_permute: AWQ-style per-channel scaling of the salient slice "
+                             "(q/k/v share S1, gate/up share S2, down its own S3); quantize in the "
+                             "amplified space, bake 1/S into the dense weight at export.")
+    parser.add_argument("--no_awq_scale", dest="awq_scale",
                         action="store_false",
-                        help="sqat_permute: disable the online group-Hadamard (original scheme).")
+                        help="sqat_permute: disable AWQ-style salient scaling (original scheme).")
     parser.add_argument("--gptq_nonsalient", dest="gptq_nonsalient",
                         action="store_true", default=None,
                         help="sqat_permute: at export, GPTQ-quantize the non-salient columns "
@@ -300,6 +301,8 @@ def main():
                 outlier_log_sigma=sp_cfg.get("outlier_log_sigma", 3.0),
                 dtype=getattr(torch, cfg["model"]["dtype"]),
                 device=accelerator.device,
+                awq_alpha=(sp_cfg.get("awq_scale", {}) or {}).get("alpha", 0.5),
+                awq_max=(sp_cfg.get("awq_scale", {}) or {}).get("max", 2.0),
             )
         accelerator.wait_for_everyone()
 

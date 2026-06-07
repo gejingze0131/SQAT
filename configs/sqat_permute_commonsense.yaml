@@ -65,9 +65,9 @@ qat:
     # GPTQ/OBS error compensation instead of plain RTN. The salient slice [0:group_k] keeps the
     # EXACT canonical (training-consistent) grid; the non-salient cols additionally absorb the
     # salient slice's quantization error. Uses the SAME group_size and asym/sym as QAT. Dense
-    # (--export_dequant) only; o_proj has no salient slice → fully GPTQ. Not combined with
-    # online_group_hadamard. Calibrated on the training data in the permuted basis (boundary
-    # gathers active), sequential per decoder layer (memory-bounded).
+    # (--export_dequant) only; o_proj has no salient slice → fully GPTQ. Composes with awq_scale
+    # (salient slice fixed to the amplified grid). Calibrated on the training data in the permuted
+    # basis (boundary gathers active), sequential per decoder layer (memory-bounded).
     gptq:
       enabled: true
       nsamples: 128          # calibration sequences for the Hessian
@@ -79,13 +79,17 @@ qat:
       blocksize: 128
       batch_size: 2          # calibration micro-batch (keeps activation memory low)
 
-    # online_group_hadamard: quantize the salient slice [0:group_k] of q/k/v/gate/up in a
-    # group_k Hadamard basis (down_proj NOT rotated; o_proj keeps its per-head Hadamard).
-    # Spreads the co-located weight+activation outliers so they don't share one group's
-    # scale/zp and blow up the error. Deployment bakes H back into the dense weight at export
-    # (--export_dequant), so it is purely a better quant grid — bit-identical output, no
-    # runtime rotation. Requires power-of-2 group_k. false = original (no rotation) scheme.
-    online_group_hadamard: false
+    # awq_scale (Improvement 2): AWQ-style per-input-channel scaling of the salient slice
+    # [0:group_k]. Within each block, q/k/v share one scale S1 (they read the same input), gate/up
+    # share S2, down_proj uses its own S3 (on its P4 intermediate slice); o_proj is untouched (it
+    # keeps its per-head Hadamard, NO QAT). S_j = (E[x²]_j)^alpha normalized so min=1, clamped to
+    # [1, max]. Training fakequants in the amplified space W*S; export bakes 1/S into the dense
+    # weight (deployed = quant(W*S)/S), so it is purely a better quant grid — bit-identical output,
+    # no runtime scaling. Dense (--export_dequant) only; composes with gptq. false = original scheme.
+    awq_scale:
+      enabled: true
+      alpha: 0.5             # exponent on E[x²]; larger = stronger amplification of salient channels
+      max: 2.0              # clamp on S (S in [1, max])
 
     # --- Stage-2 flow (handled automatically by scripts/train.py) ---------------------
     # To avoid a dequant->permute->requant round-trip (double quantization), the permute/fold

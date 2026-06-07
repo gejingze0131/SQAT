@@ -32,7 +32,6 @@ from src.qat_permute_sqat import (
     FusedAttnQATInjector,
     FusedMLPQATInjector,
     DownProjQATInjector,
-    _build_hadamard,
 )
 
 torch.manual_seed(0)
@@ -298,71 +297,67 @@ def test_grad_flow_to_lora():
     _ok("gradients reach LoRA A/B through the fused STE residual")
 
 
-def test_online_group_hadamard():
-    print("test_online_group_hadamard")
+def test_awq_scale():
+    print("test_awq_scale")
     gk, gs, rank, scaling, qb, sym = 128, 32, 8, 2.0, 4, False
     out = 16
     W_base = torch.randn(out, gk) * 0.05
     A_S    = torch.randn(rank, gk) * 0.02
     B      = torch.randn(out, rank) * 0.02
     X_S    = torch.randn(4, gk)
-    H      = _build_hadamard(gk)
+    S      = (1.0 + torch.rand(gk)).clamp(max=2.0)            # per-input-channel scale in [1, 2]
 
-    # H is a normalized, symmetric, self-inverse Walsh-Hadamard matrix
-    assert torch.allclose(H @ H, torch.eye(gk), atol=1e-5), "H must satisfy H@H=I"
-    assert torch.allclose(H, H.T, atol=1e-6), "H must be symmetric"
-    _ok("Hadamard is symmetric + self-inverse")
-
-    # 1) injector-with-hadamard == explicit rotated reference
-    (delta_h,) = fused_qat_residual_outputs(
-        W_base, [A_S], [B], (out,), X_S, gs, qb, sym, scaling, hadamard=H,
+    # 1) injector-with-awq_s == explicit amplified-space reference (X_S unchanged, /S in weight)
+    (delta_a,) = fused_qat_residual_outputs(
+        W_base, [A_S], [B], (out,), X_S, gs, qb, sym, scaling, awq_s=S,
     )
     W_curr  = W_base + (B @ A_S) * scaling
-    W_rot   = W_curr @ H
-    delta_rot = group_fakequant(W_rot, gs, qb, sym) - W_rot
-    ref     = (X_S @ H) @ delta_rot.T
-    assert torch.allclose(delta_h, ref, atol=1e-5, rtol=1e-4), "hadamard injection != reference"
-    _ok("hadamard injection matches rotated reference")
+    s_row   = S.view(1, -1)
+    delta_amp = group_fakequant(W_curr * s_row, gs, qb, sym) / s_row - W_curr
+    ref     = X_S @ delta_amp.T
+    assert torch.allclose(delta_a, ref, atol=1e-5, rtol=1e-4), "awq injection != amplified reference"
+    _ok("awq injection matches amplified-space reference")
 
-    # 2) bake-back equivalence: training (main + inject) == deployment dense weight
-    #    deployment salient weight = dq(Q(W_curr@H)) @ H  (H baked back); output via plain matmul
-    train_out  = (X_S @ W_curr.T) + delta_h
-    W_dense    = group_fakequant(W_rot, gs, qb, sym) @ H           # dq(Q(W@H)) @ H
+    # 2) bake-back equivalence: training (main + inject) == deployment dense weight quant(W*S)/S
+    train_out  = (X_S @ W_curr.T) + delta_a
+    W_dense    = group_fakequant(W_curr * s_row, gs, qb, sym) / s_row     # deployed = quant(W*S)/S
     deploy_out = X_S @ W_dense.T
     assert torch.allclose(train_out, deploy_out, atol=1e-4, rtol=1e-3), \
-        "export bake-back must equal training injection"
-    _ok("training injection == export bake-back (bit-equivalent deploy)")
+        "export /S bake-back must equal training injection"
+    _ok("training injection == export /S bake-back (bit-equivalent deploy)")
 
-    # 3) rotation actually changes the quant grid vs the non-hadamard path
+    # 3) S=1 reduces exactly to the plain (no-scale) path
     (delta_plain,) = fused_qat_residual_outputs(
-        W_base, [A_S], [B], (out,), X_S, gs, qb, sym, scaling, hadamard=None,
+        W_base, [A_S], [B], (out,), X_S, gs, qb, sym, scaling, awq_s=None,
     )
-    assert not torch.allclose(delta_h, delta_plain, atol=1e-3), \
-        "hadamard path should differ from the concentrated-group path"
-    _ok("hadamard path differs from non-hadamard path")
+    (delta_one,) = fused_qat_residual_outputs(
+        W_base, [A_S], [B], (out,), X_S, gs, qb, sym, scaling, awq_s=torch.ones(gk),
+    )
+    assert torch.allclose(delta_one, delta_plain, atol=1e-6), "awq_s=1 must equal the plain path"
+    assert not torch.allclose(delta_a, delta_plain, atol=1e-3), \
+        "a non-trivial S must change the quant grid vs the plain path"
+    _ok("awq_s=1 == plain path; non-trivial S differs")
 
-    # 4) injector flag path: FusedAttnQATInjector(online_group_hadamard=True) builds H buffer
+    # 4) injector flag path: FusedAttnQATInjector(awq_s=S) builds the buffer + end-to-end q output
     q = FakeLoRALinear(out, gk, rank, scaling)
     k = FakeLoRALinear(out, gk, rank, scaling)
     v = FakeLoRALinear(out, gk, rank, scaling)
     attn = FakeAttn(q, k, v)
     inj = FusedAttnQATInjector(
         attn, q, k, v, group_k=gk, group_size=gs, q_bits=qb,
-        symmetric=sym, lora_scaling=scaling, online_group_hadamard=True,
+        symmetric=sym, lora_scaling=scaling, awq_s=S,
     )
-    assert inj.group_hadamard is not None and inj.group_hadamard.shape == (gk, gk)
+    assert inj.awq_s is not None and inj.awq_s.shape == (gk,)
     h = torch.randn(2, gk)
     q_out, _, _ = attn(h)
-    # q output = base+lora + hadamard-rotated delta
     base_lora = (F.linear(h, q.base_layer.weight)
                  + F.linear(F.linear(h, q.lora_A["default"].weight),
                             q.lora_B["default"].weight) * scaling)
     Wq_curr = q.base_layer.weight[:, :gk] + (q.lora_B["default"].weight @ q.lora_A["default"].weight[:, :gk]) * scaling
-    Wq_rot  = Wq_curr @ H
-    ref_q   = base_lora + (h @ H) @ (group_fakequant(Wq_rot, gs, qb, sym) - Wq_rot).T
+    ref_q   = base_lora + h @ (group_fakequant(Wq_curr * s_row, gs, qb, sym) / s_row - Wq_curr).T
     assert torch.allclose(q_out, ref_q, atol=1e-5, rtol=1e-4)
     inj.remove()
-    _ok("FusedAttnQATInjector(online_group_hadamard=True) end-to-end")
+    _ok("FusedAttnQATInjector(awq_s=S) end-to-end")
 
 
 def main():
@@ -371,7 +366,7 @@ def main():
     test_attn_injector()
     test_mlp_and_down_injectors()
     test_grad_flow_to_lora()
-    test_online_group_hadamard()
+    test_awq_scale()
     print("\nALL TESTS PASSED")
 
 

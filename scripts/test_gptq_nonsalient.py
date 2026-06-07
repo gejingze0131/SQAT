@@ -83,6 +83,24 @@ def _check_case(symmetric, q_bits, group_size, group_k, tag):
           f"OBS: RTN={obj_rtn:.3e} GPTQ={obj_gptq:.3e}  (GPTQ/RTN={ratio:.3f})")
 
 
+def _check_awq_case(symmetric, q_bits, group_size, group_k, tag):
+    """GPTQ + AWQ-scale: the salient slice (after /S bake-back) must equal the amplified canonical
+    training grid quant(W_S*S)/S; o_proj-style gk=0 has no slice."""
+    W, H, _ = _make_problem()
+    out_f, in_f = W.shape
+    s = (1.0 + torch.rand(group_k)).clamp(max=2.0)
+    wi, sc, zp = gptq_quantize_layer(
+        W, H, group_k, group_size, q_bits, symmetric, awq_s=s,
+    )
+    W_gptq = group_dequantize(wi, sc, zp, group_size, in_f, symmetric)
+    W_gptq[:, :group_k] = W_gptq[:, :group_k] / s.view(1, -1)        # /S bake-back
+    canon = group_fakequant(W[:, :group_k].float() * s.view(1, -1),
+                            group_size, q_bits, symmetric) / s.view(1, -1)
+    sal_err = (W_gptq[:, :group_k] - canon).abs().max().item()
+    assert sal_err < 1e-5, f"[{tag}] AWQ salient slice mismatch: {sal_err:.2e}"
+    print(f"[OK] {tag:42s} AWQ salient (post-/S) max|Δ|={sal_err:.1e}")
+
+
 def main():
     torch.manual_seed(0)
     cases = [
@@ -96,6 +114,10 @@ def main():
     ]
     for c in cases:
         _check_case(*c)
+    # GPTQ composed with AWQ-scale: salient slice stays on the amplified canonical grid.
+    for sym, qb, gs, gk, tag in cases:
+        if gk > 0:
+            _check_awq_case(sym, qb, gs, gk, tag)
     print("\nAll GPTQ non-salient sanity tests passed.")
 
 

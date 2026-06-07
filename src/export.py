@@ -473,47 +473,20 @@ def save_sqat_permute_meta(meta: dict, output_dir: str) -> None:
     print(f"[Export] Saved sqat_permute metadata to {path}")
 
 
-# Projections whose salient input slice [0:group_k] is quantized in the group-Hadamard basis
-# when online_group_hadamard is on. down_proj is excluded (no foldable sibling rotation);
-# o_proj keeps its own per-head Hadamard.
-_GROUP_HADAMARD_ROTATED = {"q_proj", "k_proj", "v_proj", "gate_proj", "up_proj"}
-
-
-def _rotate_salient_cols_inplace(
-    merged_model: nn.Module, target_modules, group_k: int, H: torch.Tensor,
-) -> int:
-    """
-    online_group_hadamard export: rotate the salient input columns of each q/k/v/gate/up target
-    linear into the Hadamard basis IN PLACE — W[:, :group_k] @= H — so PTQ chooses its grid in
-    the (outlier-smoothed) rotated basis. The rotation is baked back after dequant
-    (_unrotate_salient_cols), so the saved dense weight stays in the original basis with the
-    rotated-basis quantization error. Returns the number of layers rotated.
-    """
-    Hf = H.to(torch.float32)
-    n = 0
-    for name, module in merged_model.named_modules():
-        if not isinstance(module, nn.Linear):
-            continue
-        terminal = name.split(".")[-1]
-        if terminal not in _GROUP_HADAMARD_ROTATED or terminal not in target_modules:
-            continue
-        with torch.no_grad():
-            W = module.weight.data
-            W[:, :group_k] = (W[:, :group_k].to(torch.float32) @ Hf.to(W.device)).to(W.dtype)
-        n += 1
-    return n
-
-
-def _unrotate_salient_cols(
-    W_deq: torch.Tensor, name: str, target_modules, group_k: int, H: torch.Tensor,
+# AWQ-style per-channel salient scaling (Improvement 2). The salient slice [0:group_k] of each
+# q/k/v/gate/up/down projection is quantized in the AMPLIFIED space (W[:, :gk] * S); the /S is
+# baked back into the dequantized dense weight so the deployed weight == quant(W*S)/S, matching
+# the training fakequant. o_proj has no salient slice (awq_s_for_module returns None for it).
+def _unscale_salient_cols(
+    W_deq: torch.Tensor, name: str, group_k: int, awq_scales,
 ) -> torch.Tensor:
-    """Bake H back: W_deq[:, :group_k] @= H (H is self-inverse) for rotated projections."""
-    terminal = name.split(".")[-1]
-    if terminal not in _GROUP_HADAMARD_ROTATED or terminal not in target_modules:
+    """Bake 1/S back into the salient cols: W_deq[:, :group_k] /= S (deployed = quant(W*S)/S)."""
+    from .qat_permute_sqat import awq_s_for_module
+    s = awq_s_for_module(awq_scales, name)
+    if s is None:
         return W_deq
-    Hf = H.to(torch.float32)
-    out = W_deq.clone()
-    out[:, :group_k] = W_deq[:, :group_k].to(torch.float32) @ Hf.to(W_deq.device)
+    out = W_deq.clone().to(torch.float32)
+    out[:, :group_k] = out[:, :group_k] / s.view(1, -1).to(out.device)
     return out.to(W_deq.dtype)
 
 
@@ -1096,6 +1069,8 @@ def _quantize_all_layers(
     q_bits: int,
     export_dequant: bool,
     symmetric: bool,
+    awq_scales=None,
+    perm_group_k: Optional[int] = None,
 ) -> Tuple[Dict[str, Tuple], Dict[str, torch.Tensor]]:
     """
     Run PTQ on all target linear layers.
@@ -1128,11 +1103,18 @@ def _quantize_all_layers(
             # Permuted SQAT: the salient slice sits in the first group_k/group_size complete
             # groups. Quantize the WHOLE weight with the SAME canonical group quantizer the
             # training fakequant uses (qat_permute_sqat.group_quantize) so the salient-slice
-            # grid is IDENTICAL train↔export — this is the fix for the train/export quantizer
-            # mismatch. (online_group_hadamard rotation, if any, was already folded into W by
-            # the pre-rotation step in merge_and_export and is baked back after dequant.)
-            from .qat_permute_sqat import group_quantize
-            W_int, scales, zeros = group_quantize(W, group_size, q_bits, symmetric)
+            # grid is IDENTICAL train↔export — the fix for the train/export quantizer mismatch.
+            # (AWQ-scale, if on, amplifies the salient slice here and is baked back after dequant.)
+            from .qat_permute_sqat import group_quantize, awq_s_for_module
+            # AWQ-style scaling: quantize the salient slice in the amplified space (W[:, :gk]*S);
+            # the /S is baked back into the dense weight after dequant (_unscale_salient_cols).
+            s = awq_s_for_module(awq_scales, name) if awq_scales else None
+            if s is not None and perm_group_k:
+                Wq = W.clone()
+                Wq[:, :perm_group_k] = Wq[:, :perm_group_k] * s.view(1, -1).to(Wq.device)
+                W_int, scales, zeros = group_quantize(Wq, group_size, q_bits, symmetric)
+            else:
+                W_int, scales, zeros = group_quantize(W, group_size, q_bits, symmetric)
 
         elif qat_mode == "sqat" and name in sqat_meta:
             meta = sqat_meta[name]
@@ -1250,22 +1232,28 @@ def merge_and_export(
                   f"num_boundaries={len(mm.get('boundary_perms', []))}, "
                   f"group_k={mm.get('group_k')}, group_size={mm.get('group_size')}")
 
-    # online_group_hadamard: resolve the group-Hadamard bake-back config (dequant path only).
-    sp_hadamard, sp_group_k, sp_H = False, None, None
+    # Improvement 2 — AWQ-style per-channel salient scaling. Resolve the per-(layer,source) scales
+    # + group_k from the (training-set) meta. When enabled, the salient slice is quantized in the
+    # amplified space (W*S) and the /S is baked back into the dense weight (dequant path only).
+    sp_awq, sp_group_k, sp_awq_scales = False, None, None
     if qat_mode == "sqat_permute" and sqat_permute_meta:
         _mm = sqat_permute_meta.get("model", sqat_permute_meta) or {}
-        sp_hadamard = bool(_mm.get("online_group_hadamard", False))
-        sp_group_k  = _mm.get("group_k")
-        if sp_hadamard and export_dequant:
-            from .qat_permute_sqat import _build_hadamard
-            sp_H = _build_hadamard(sp_group_k)            # [group_k, group_k] fp32
-            print(f"[Export]   online_group_hadamard ON → bake-back dequant "
-                  f"(group_k={sp_group_k})")
-        elif sp_hadamard and not export_dequant:
+        sp_group_k    = _mm.get("group_k")
+        sp_awq        = bool(_mm.get("awq_scale", False))
+        sp_awq_scales = _mm.get("awq_scales") if sp_awq else None
+        if sp_awq and not export_dequant:
             raise ValueError(
-                "online_group_hadamard export requires --export_dequant (dense bake-back); "
-                "AWQ INT4 export of the rotated grid is not supported."
+                "AWQ-scale export requires --export_dequant (dense /S bake-back); "
+                "INT4 AWQ-packed export of the amplified grid is not supported."
             )
+        if sp_awq and sp_awq_scales is None:
+            raise ValueError(
+                "awq_scale enabled but no awq_scales in meta — rebuild the permuted base "
+                "(build_permuted_fp16_checkpoint stores them)."
+            )
+        if sp_awq:
+            print(f"[Export]   AWQ-scale ON → amplified-space quant + /S bake-back "
+                  f"(group_k={sp_group_k})")
 
     # Improvement 1 — GPTQ (OBS) for the NON-salient columns. The salient slice [0:group_k] keeps
     # the canonical (training-consistent) RTN grid; columns [group_k:] are GPTQ-quantized with error
@@ -1276,11 +1264,6 @@ def merge_and_export(
     if sp_gptq:
         if not export_dequant:
             raise ValueError("sqat_permute GPTQ export requires --export_dequant (dense save).")
-        if sp_hadamard:
-            raise NotImplementedError(
-                "online_group_hadamard + GPTQ non-salient are separate improvements; "
-                "enable only one at a time."
-            )
         if not sqat_permute_meta:
             raise ValueError(
                 "sqat_permute GPTQ needs sqat_permute_meta (group_k + boundary gathers)."
@@ -1373,12 +1356,6 @@ def merge_and_export(
     # [FIX] export_dequant: do NOT move to CUDA — quantization runs on CPU
     #       (real_quantize_sqat now offloads to CPU internally)
 
-    # online_group_hadamard: rotate salient cols of q/k/v/gate/up into the Hadamard basis BEFORE
-    # PTQ so the grid is chosen in the outlier-smoothed basis (baked back after dequant below).
-    if sp_hadamard and export_dequant:
-        n_rot = _rotate_salient_cols_inplace(merged_model, target_modules, sp_group_k, sp_H)
-        print(f"[Export] online_group_hadamard: rotated salient cols of {n_rot} layers pre-PTQ")
-
     # --- PTQ ---
     if sp_gptq:
         print("[Export] Applying GPTQ to non-salient columns (salient slice kept on canonical grid)...")
@@ -1416,6 +1393,7 @@ def merge_and_export(
                 percdamp=float(sp_gptq_cfg.get("percdamp", 0.01)),
                 blocksize=int(sp_gptq_cfg.get("blocksize", 128)),
                 nsamples=int(sp_gptq_cfg.get("nsamples", 128)),
+                awq_scales=sp_awq_scales,   # amplified salient grid when AWQ-scale is on
             )
         except torch.cuda.OutOfMemoryError as e:
             # The training checkpoint is already saved before export, so nothing is lost — the
@@ -1436,6 +1414,7 @@ def merge_and_export(
         quantized_layers, quant_targets = _quantize_all_layers(
             merged_model, target_modules, qat_mode, sqat_meta,
             group_size, q_bits, export_dequant, symmetric,
+            awq_scales=sp_awq_scales, perm_group_k=sp_group_k,
         )
     print(f"[Export] Quantized {len(quantized_layers)} layers")
 
@@ -1460,11 +1439,12 @@ def merge_and_export(
         )
 
     # sqat_permute: assert the salient-slice grid is IDENTICAL train↔export (the regression
-    # guard). quant_targets[name] is the exact weight that was quantized (already H-rotated if
-    # online_group_hadamard), so check it directly with hadamard=None.
+    # guard). quant_targets[name] is the ORIGINAL (un-amplified) weight; the verifier amplifies the
+    # salient slice internally when AWQ-scale is on, so it checks the same grid the export used.
     if qat_mode == "sqat_permute":
         from .qat_permute_sqat import (
             verify_permute_quant_consistency, group_fakequant, group_dequantize,
+            awq_s_for_module,
         )
         gk = sp_group_k or group_size
         n_sal_g = gk // group_size
@@ -1475,20 +1455,25 @@ def merge_and_export(
         for name, W in quant_targets.items():
             if checked >= 6:
                 break
+            awq_s = awq_s_for_module(sp_awq_scales, name) if sp_awq else None
             err = verify_permute_quant_consistency(
-                W, gk, group_size, q_bits, symmetric, hadamard=None,
+                W, gk, group_size, q_bits, symmetric, awq_s=awq_s,
             )
             worst = max(worst, err)
             status = "OK" if err < 1e-4 else "MISMATCH"
             line = f"  [Permute-grid] {name}: max|Δ|={err:.3e} [{status}]"
             # GPTQ guard: the EXPORTED salient ints must still equal the canonical training grid
-            # (only the [group_k:] non-salient cols are GPTQ'd). o_proj has no salient slice → skip.
+            # (only the [group_k:] non-salient cols are GPTQ'd). The grid is checked in the same
+            # (possibly AWQ-amplified) space the slice was quantized in. o_proj has no slice → skip.
             if sp_gptq and name in quantized_layers and name.split(".")[-1] != "o_proj":
                 wi, sc, zp = quantized_layers[name]
                 sal_dq = group_dequantize(
                     wi[:, :gk], sc[:, :n_sal_g], zp[:, :n_sal_g], group_size, gk, symmetric,
                 )
-                canon = group_fakequant(W[:, :gk].float(), group_size, q_bits, symmetric)
+                W_sal = W[:, :gk].float()
+                if awq_s is not None:
+                    W_sal = W_sal * awq_s.view(1, -1)
+                canon = group_fakequant(W_sal, group_size, q_bits, symmetric)
                 serr = (sal_dq - canon).abs().max().item()
                 worst_store = max(worst_store, serr)
                 line += f"  salient-stored max|Δ|={serr:.3e}"
@@ -1549,10 +1534,10 @@ def merge_and_export(
                         in_features=in_f,
                     )
 
-            # online_group_hadamard: bake H back so the dense weight is in the original basis
-            # (carrying the rotated-basis quantization error) — no runtime rotation at inference.
-            if sp_hadamard:
-                W_deq = _unrotate_salient_cols(W_deq, name, target_modules, sp_group_k, sp_H)
+            # AWQ-scale: bake 1/S back into the salient cols so the dense weight is the deployed
+            # value quant(W*S)/S (carrying the amplified-space quant error) — no runtime scaling.
+            if sp_awq:
+                W_deq = _unscale_salient_cols(W_deq, name, sp_group_k, sp_awq_scales)
 
             mod.weight.data.copy_(W_deq.to(mod.weight.dtype))
 
