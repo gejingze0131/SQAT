@@ -1256,8 +1256,9 @@ def merge_and_export(
                   f"(group_k={sp_group_k})")
 
     # Improvement 1 — GPTQ (OBS) for the NON-salient columns. The salient slice [0:group_k] keeps
-    # the canonical (training-consistent) RTN grid; columns [group_k:] are GPTQ-quantized with error
-    # compensation (and absorb the salient slice's quant error). Same group_size + asym/sym as QAT.
+    # the canonical (training-consistent) grid; columns [group_k:] are GPTQ-quantized as an
+    # INDEPENDENT block (no salient-error leakage — see gptq_quantize_layer). Same group_size +
+    # asym/sym as QAT.
     sp_gptq_cfg = (cfg["qat"].get("sqat_permute", {}) or {}).get("gptq", {}) or {}
     sp_gptq = bool(sp_gptq_cfg.get("enabled", False)) and qat_mode == "sqat_permute"
     sp_perm_group_k = None

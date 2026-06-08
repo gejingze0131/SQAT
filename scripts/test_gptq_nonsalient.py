@@ -30,10 +30,14 @@ from src.qat_permute_sqat import (
 )
 
 
-def _obs_objective(W_deq, W, H):
-    """trace(ΔW H ΔWᵀ) = output error on the calibration set whose Hessian is H."""
-    dW = (W_deq - W).float()
-    return torch.einsum("oi,ij,oj->", dW, H, dW).item()
+def _obs_objective(W_deq, W, H, col0=0):
+    """trace(ΔW_blk H_blk ΔW_blkᵀ) = output error contributed by columns [col0:] on the
+    calibration set whose Hessian is H. GPTQ here targets ONLY the non-salient block (it must not
+    absorb the QAT-trained salient slice's error), so the meaningful objective is the [group_k:]
+    block, not the whole weight."""
+    dW = (W_deq[:, col0:] - W[:, col0:]).float()
+    Hb = H[col0:, col0:]
+    return torch.einsum("oi,ij,oj->", dW, Hb, dW).item()
 
 
 def _make_problem(out_f=64, in_f=256, n_tokens=2048, n_outliers=12, seed=0):
@@ -71,16 +75,21 @@ def _check_case(symmetric, q_bits, group_size, group_k, tag):
     else:
         sal_err = 0.0
 
-    # (3) OBS objective lower than RTN
-    obj_rtn = _obs_objective(W_rtn, W, H)
-    obj_gptq = _obs_objective(W_gptq, W, H)
+    # (3) non-salient block OBS objective lower than RTN (GPTQ targets the [group_k:] block only,
+    #     and must NOT disturb the fixed salient slice).
+    obj_rtn = _obs_objective(W_rtn, W, H, col0=group_k)
+    obj_gptq = _obs_objective(W_gptq, W, H, col0=group_k)
     ratio = obj_gptq / max(obj_rtn, 1e-12)
     assert obj_gptq < obj_rtn, (
-        f"[{tag}] GPTQ obj {obj_gptq:.4e} not < RTN obj {obj_rtn:.4e}"
+        f"[{tag}] GPTQ non-salient obj {obj_gptq:.4e} not < RTN obj {obj_rtn:.4e}"
     )
+    # the salient slice GPTQ stored must equal the RTN salient (no leakage either way)
+    if group_k > 0:
+        assert torch.allclose(W_gptq[:, :group_k], W_rtn[:, :group_k], atol=1e-6), \
+            f"[{tag}] GPTQ salient slice != RTN salient slice"
 
     print(f"[OK] {tag:42s} salient max|Δ|={sal_err:.1e}  "
-          f"OBS: RTN={obj_rtn:.3e} GPTQ={obj_gptq:.3e}  (GPTQ/RTN={ratio:.3f})")
+          f"non-sal OBS: RTN={obj_rtn:.3e} GPTQ={obj_gptq:.3e}  (GPTQ/RTN={ratio:.3f})")
 
 
 def _check_awq_case(symmetric, q_bits, group_size, group_k, tag):

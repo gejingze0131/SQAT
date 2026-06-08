@@ -698,11 +698,16 @@ def build_and_verify_permutation_fp32(
     top_k_ratio: float = 0.01,
     outlier_log_sigma: float = 3.0,
     tol: float = 1e-3,
-) -> float:
+    return_artifacts: bool = False,
+):
     """
     Stage-1 driver (used by scripts/verify_permute.py): on a plain fp32 `model`, calibrate →
     select salient → deep-copy the original → apply P_k + P4 + Hadamard → register boundary
     gathers → verify equivalence. Returns the max logit error. Mutates `model` in place.
+
+    return_artifacts=True additionally returns the calibration/saliency intermediates
+    (second_moments, residual_salient, internal_salient, ...) so callers can build and verify the
+    AWQ-style salient scales S against the SAME permuted weights (Stage-1b fusion check).
     """
     import copy
 
@@ -752,6 +757,16 @@ def build_and_verify_permutation_fp32(
         f"num_P4_perms={len(applied_internal)}, num_H_layers={num_layers}, "
         f"max_abs_logit_err={max_err:.2e}"
     )
+    if return_artifacts:
+        artifacts = {
+            "second_moments":   second_moments,
+            "residual_salient": residual_salient,
+            "internal_salient": internal_salient,
+            "segment_perms":    segment_perms,
+            "num_layers":       num_layers,
+            "d_model":          d_model,
+        }
+        return max_err, artifacts
     return max_err
 
 
@@ -977,16 +992,23 @@ def gptq_quantize_layer(
     awq_s: Optional[torch.Tensor] = None,   # [group_k] AWQ scale for the salient slice, or None
 ):
     """
-    GPTQ-quantize W with the first `group_k` columns FIXED to the canonical SQAT grid
-    (group_quantize → training-consistent) and the remaining columns OBS/GPTQ-quantized. Returns
-    (W_int [out,in], scale [out,ng], zp [out,ng]) in the EXACT layout of group_quantize, so the
-    existing group_dequantize path reconstructs the deployed weight unchanged.
+    Quantize the salient slice [0:group_k] to the canonical SQAT grid (training-consistent) and
+    GPTQ-quantize ONLY the non-salient block [group_k:]. Returns (W_int [out,in], scale [out,ng],
+    zp [out,ng]) in the EXACT layout of group_quantize, so the existing group_dequantize path
+    reconstructs the deployed weight unchanged.
+
+    IMPORTANT — the salient slice's quantization error is NOT propagated into the non-salient
+    columns. The QAT/LoRA was trained to tolerate the salient slice's quant error (training saw
+    the fakequant'd salient + the un-requantized fp16 non-salient), so the deployed non-salient
+    must approximate that SAME fp16 weight W_n — not "absorb" the salient error (doing so shifts
+    the deployed output away from the training-time output and degrades accuracy). GPTQ therefore
+    runs as an INDEPENDENT OBS problem on the non-salient block with the non-salient sub-Hessian
+    H[group_k:, group_k:], minimizing ||(W_q_n - W_n) X_n|| — strictly an improvement over RTN.
 
     AWQ-style scaling: if `awq_s` is given, the salient slice is quantized in the amplified space
     (W_S * S). The STORED ints/scale/zp stay in the amplified space — the caller bakes the `/S`
     back into the salient columns of the dequantized dense weight (see _unscale_salient_cols in
-    export.py), matching the training fakequant W_fq/S exactly. The OBS error that the salient
-    slice propagates into the non-salient columns uses the de-amplified deployed value (W_fq/S).
+    export.py), matching the training fakequant W_fq/S exactly. AWQ only touches the salient slice.
     """
     dev = W.device
     out_f, in_f = W.shape
@@ -1009,68 +1031,63 @@ def gptq_quantize_layer(
     scale = torch.zeros(out_f, ng, device=dev)
     zp    = torch.zeros(out_f, ng, device=dev)
 
-    # ---- 1) fixed salient grid for [0:group_k] (bit-identical to training fakequant) ----
+    # ---- 1) salient slice [0:group_k]: fixed canonical grid (amplified if AWQ). NO propagation. ----
     n_sal_g = group_k // group_size
-    salient_deq = None
     if group_k > 0:
         W_sal = W[:, :group_k]
         if awq_s is not None:
-            s = awq_s.to(torch.float32).view(1, -1).to(dev)        # [1, group_k]
+            s = awq_s.to(torch.float32).view(1, -1).to(dev)
             wi_s, sc_s, zp_s = group_quantize(W_sal * s, group_size, q_bits, symmetric, eps)
-            # deployed (de-amplified) value drives the OBS error propagation; stored ints stay
-            # in the amplified space (the /S is baked back into the dense weight at export).
-            salient_deq = (
-                group_dequantize(wi_s, sc_s, zp_s, group_size, group_k, symmetric).to(dev) / s
-            )
         else:
             wi_s, sc_s, zp_s = group_quantize(W_sal, group_size, q_bits, symmetric, eps)
-            salient_deq = group_dequantize(wi_s, sc_s, zp_s, group_size, group_k, symmetric).to(dev)
         W_int[:, :group_k] = wi_s.to(dev)
         scale[:, :n_sal_g]  = sc_s.to(dev)
         zp[:, :n_sal_g]     = zp_s.to(dev)
 
-    # ---- 2) Hessian inverse (upper Cholesky factor of H^{-1}) ----
-    Hinv = _gptq_cholesky_inv_upper(H, percdamp)
+    if group_k >= in_f:                          # nothing non-salient to GPTQ (shouldn't happen)
+        return W_int, scale, zp
 
-    # ---- 3) blocked column sweep (lazy-batch OBS update) ----
-    for i1 in range(0, in_f, blocksize):
-        i2 = min(i1 + blocksize, in_f)
-        W1    = W[:, i1:i2].clone()
+    # ---- 2) GPTQ on the NON-salient block [group_k:] only (target the fp16 W_n). ----
+    Wn = W[:, group_k:]                          # [out, in_n]  (never touched by the salient slice)
+    Hn = H[group_k:, group_k:]
+    in_n = in_f - group_k
+    Hinv = _gptq_cholesky_inv_upper(Hn, percdamp)
+
+    for i1 in range(0, in_n, blocksize):
+        i2 = min(i1 + blocksize, in_n)
+        W1    = Wn[:, i1:i2].clone()
         Err1  = torch.zeros_like(W1)
         Hinv1 = Hinv[i1:i2, i1:i2]
 
         for j in range(i2 - i1):
-            col = i1 + j
+            col = i1 + j                         # local column within the non-salient block
+            g   = n_sal_g + col // group_size    # global group index
             w   = W1[:, j]
             d   = Hinv1[j, j]
-            g   = col // group_size
 
-            if col < group_k:
-                q = salient_deq[:, col]                          # FIXED canonical value
-            else:
-                if col % group_size == 0:                        # new non-salient group → its grid
-                    Wg = W[:, col:col + group_size]              # block-start (compensated) weights
-                    if symmetric:
-                        s = _sym_scale(Wg, q_max, eps); z = torch.zeros_like(s)
-                    else:
-                        s, z = _asym_qparams(Wg, q_max, eps)
-                    scale[:, g] = s.squeeze(-1)
-                    zp[:, g]    = z.squeeze(-1)
-                s = scale[:, g].unsqueeze(-1)
-                z = zp[:, g].unsqueeze(-1)
+            if col % group_size == 0:            # new group → compute its grid from current Wn
+                Wg = Wn[:, col:col + group_size]
                 if symmetric:
-                    qi = torch.round(torch.clamp(w.unsqueeze(-1) / s, -q_max, q_max))
-                    q  = (qi * s).squeeze(-1)
+                    s = _sym_scale(Wg, q_max, eps); z = torch.zeros_like(s)
                 else:
-                    qi = torch.round(torch.clamp(w.unsqueeze(-1) / s + z, 0, q_max))
-                    q  = ((qi - z) * s).squeeze(-1)
-                W_int[:, col] = qi.squeeze(-1)
+                    s, z = _asym_qparams(Wg, q_max, eps)
+                scale[:, g] = s.squeeze(-1)
+                zp[:, g]    = z.squeeze(-1)
+            s = scale[:, g].unsqueeze(-1)
+            z = zp[:, g].unsqueeze(-1)
+            if symmetric:
+                qi = torch.round(torch.clamp(w.unsqueeze(-1) / s, -q_max, q_max))
+                q  = (qi * s).squeeze(-1)
+            else:
+                qi = torch.round(torch.clamp(w.unsqueeze(-1) / s + z, 0, q_max))
+                q  = ((qi - z) * s).squeeze(-1)
+            W_int[:, group_k + col] = qi.squeeze(-1)
 
             err = (w - q) / d
             W1[:, j:] -= err.unsqueeze(-1) * Hinv1[j, j:].unsqueeze(0)
             Err1[:, j] = err
 
-        W[:, i2:] -= Err1 @ Hinv[i1:i2, i2:]
+        Wn[:, i2:] -= Err1 @ Hinv[i1:i2, i2:]
 
     return W_int, scale, zp
 

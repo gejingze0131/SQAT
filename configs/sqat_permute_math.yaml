@@ -62,11 +62,12 @@ qat:
     stage: 2
 
     # gptq (Improvement 1): at export, quantize the ~97% NON-salient columns [group_k:] with
-    # GPTQ/OBS error compensation instead of plain RTN. The salient slice [0:group_k] keeps the
-    # EXACT canonical (training-consistent) grid; the non-salient cols additionally absorb the
-    # salient slice's quantization error. Uses the SAME group_size and asym/sym as QAT. Dense
-    # (--export_dequant) only; o_proj has no salient slice → fully GPTQ. Composes with awq_scale
-    # (salient slice fixed to the amplified grid). Calibrated on the training data in the permuted
+    # GPTQ/OBS instead of plain RTN. The salient slice [0:group_k] keeps the EXACT canonical
+    # (training-consistent) grid; the non-salient block is GPTQ'd INDEPENDENTLY (no salient-error
+    # leakage — the QAT/LoRA was trained to tolerate the salient quant error, so the non-salient
+    # cols must approximate their fp16 weights, not compensate for the salient slice). Uses the
+    # SAME group_size and asym/sym as QAT. Dense (--export_dequant) only; o_proj has no salient
+    # slice → fully GPTQ. Composes with awq_scale. Calibrated on the training data in the permuted
     # basis (boundary gathers active), sequential per decoder layer (memory-bounded).
     gptq:
       enabled: true

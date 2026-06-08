@@ -32,7 +32,7 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 DATASET_NAME="commonsense" # math or commonsense (must match the config yaml, which controls the boundary gather)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
-NUM_GPUS=4
+NUM_GPUS=2
 BITS=4
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
