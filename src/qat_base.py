@@ -266,17 +266,19 @@ class FullQATLoRAInjector(nn.Module):
     LR-QAT injector for ONE PEFT LoRA module: the low-rank term is INSIDE the quantizer.
 
     The frozen NF4 base is dequantized on the fly (no grad) and the low-rank term is added BEFORE
-    fake-quantization, so the quantizer sees the SAME merged weight the export will quantize:
+    fake-quantization, so the quantizer sees the SAME merged weight the export will quantize. The
+    module forward is REPLACED with a SINGLE fakequant GEMM:
 
-        W_curr = dequant(base) + (B @ A) * scaling           # base frozen; B/A trainable
-        out    = peft_forward(x)            (= W_curr @ x + bias)
-        return   out + (fakequant(W_curr) - W_curr) @ x       # == fakequant(W_curr) @ x + bias
+        W_curr = dequant(base) + (B @ A) * scaling            # base frozen; B/A trainable
+        y      = F.linear(x, fakequant(W_curr), bias)         # == fakequant(W_curr) @ x + bias
 
-    Only LoRA A/B receive gradients, through the STE fakequant, trained against the real INT4 grid
-    of the merged weight (train/deploy consistent). Nothing is cached — the base is re-dequantized
-    each forward — so the full-weight materialization is bounded by gradient checkpointing to one
-    decoder layer at a time. The PEFT module is left untouched (no base_layer surgery): uninstall
-    is just hook removal, and checkpoint/export see a normal bnb Linear4bit.
+    This avoids the original bnb base GEMM + two LoRA GEMMs + a separate delta GEMM (one GEMM per
+    layer instead of ~four), and never materializes the `W_fq - W_curr` delta (one fewer fp32
+    full-weight tensor). Only LoRA A/B receive gradients, through the STE fakequant, trained against
+    the real INT4 grid of the merged weight (train/deploy consistent). Nothing is cached — the base
+    is re-dequantized each forward (so the model stays a genuine NF4-base QLoRA, same memory
+    footprint as the other methods) — and the full-weight materialization is bounded by gradient
+    checkpointing to one decoder layer at a time. remove() restores the original forward.
     """
 
     def __init__(self, peft_module, group_size, q_bits, symmetric, lora_scaling, where=""):
@@ -291,29 +293,33 @@ class FullQATLoRAInjector(nn.Module):
         p = float(getattr(peft_module.lora_dropout[self.adapter], "p", 0.0) or 0.0)
         if p > 0.0:
             warnings.warn(
-                f"[FullQAT] {where}: lora_dropout={p:g} > 0. The LR-QAT delta uses the "
-                "dropout-free B@A, so it won't match the dropout-applied LoRA forward; set "
+                f"[FullQAT] {where}: lora_dropout={p:g} > 0. The single-GEMM LR-QAT forward uses "
+                "the dropout-free B@A, so it won't match a dropout-applied LoRA forward; set "
                 "lora_dropout=0 for full QAT.",
                 RuntimeWarning,
             )
-        self._handle = peft_module.register_forward_hook(self._hook)
+        self._orig_forward = peft_module.forward
+        peft_module.forward = self._forward          # replace the module forward (single GEMM)
 
-    def _hook(self, module, inp, out):
-        x = inp[0]
+    def _forward(self, x, *args, **kwargs):
+        m = self.m
         with torch.no_grad():
-            W_base = _dequant_bnb_4bit(module.base_layer)            # [out, in], frozen
-        A = module.lora_A[self.adapter].weight                       # [r, in]
-        B = module.lora_B[self.adapter].weight                       # [out, r]
+            W_base = _dequant_bnb_4bit(m.base_layer)                 # [out, in], frozen
+        A = m.lora_A[self.adapter].weight                            # [r, in]
+        B = m.lora_B[self.adapter].weight                            # [out, r]
+        # fp32 only where the rounding needs it; the GEMM runs in the activation dtype.
         W_curr = W_base.float() + (B @ A).float() * self.lora_scaling
         if self.symmetric:
             W_fq = groupwise_symmetric_fakequant(W_curr, self.group_size, float(self.q_max))
         else:
             W_fq = groupwise_asymmetric_fakequant(W_curr, self.group_size, int(self.q_max))
-        delta = (W_fq - W_curr).to(x.dtype)
-        return out + F.linear(x, delta)
+        bias = getattr(m.base_layer, "bias", None)
+        if bias is not None:
+            bias = bias.to(x.dtype)
+        return F.linear(x, W_fq.to(x.dtype), bias)
 
     def remove(self):
-        self._handle.remove()
+        self.m.forward = self._orig_forward
 
 
 class FullQAT(QATHandler):
