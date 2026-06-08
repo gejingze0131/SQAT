@@ -3,37 +3,31 @@ QAT Interface & Implementations.
 
 Three modes:
   - "none":  standard QLoRA, no quantization-aware training
-  - "full":  fakequant on ALL quantized weights each forward pass
+  - "full":  LR-QAT — fakequant the MERGED weight (frozen NF4 base + trainable LoRA) on every
+             forward, i.e. the low-rank term is INSIDE the quantizer (Q(W0 + s·B·A)). All target
+             weights are quantized; only LoRA trains.
   - "sqat":  selective salient QAT (only top-k channels by activation 2nd moment)
   - "qalora": group-wise QA-LoRA with affine asymmetric fakequant
 
-Fix notes vs previous version
------------------------------
-The previous FullQAT installed a forward pre-hook that computed a fakequant
-weight and wrote it into a cache attribute of a dangling Python object. The
-PEFT module's forward kept running against the original NF4-dequantized
-weight, so Full QAT training was silently equivalent to NoQAT. The dequant
-fallback also returned packed uint8 storage instead of real weights for bnb
-Params4bit.
-
-This version:
-  * Replaces each PEFT LoRA module's `base_layer` (a bnb Linear4bit) with
-    a real nn.Module wrapper whose forward dequantizes NF4, applies
-    group-wise symmetric fake-quantization (STE, fp32 rounding), and runs
-    the matmul. LoRA A/B sit on the outer PEFT module unchanged and
-    learn to compensate for the INT4 grid.
-  * Uses `bitsandbytes.functional.dequantize_4bit(w.data, w.quant_state)`
-    to dequantize — the only correct path for bnb 4-bit params.
-  * Restores the original base_layer in `on_train_end` so checkpoint
-    saving and the export pipeline see a normal bnb Linear4bit.
-  * Defaults `group_size` to 128 to match `export.merge_and_export`;
-    the training fakequant grid MUST equal the PTQ grid at export time.
+Full QAT = LR-QAT (LoRA inside the quantizer)
+---------------------------------------------
+The forward fake-quantizes  W_curr = dequant(base) + (B @ A) * scaling  — the SAME merged weight
+the export pipeline quantizes — so training and deployment share the exact INT4 grid (and the LoRA
+contribution is rounded at train time too, not just at export). This matches how Selective-QAT
+(qat_permute_sqat) treats its salient slice, making "full vs selective" a clean single-variable
+comparison (coverage only). It is implemented as a forward hook per PEFT module that adds
+`(fakequant(W_curr) - W_curr) @ x` to the module output (== fakequant(W_curr) @ x); the base is
+re-dequantized each forward (no cache, frozen / no grad), only LoRA A/B receive gradients through
+the STE. `group_size` defaults to 128 to match export.merge_and_export — the training fakequant
+grid MUST equal the PTQ grid at export time. With gradient checkpointing on, the full-weight
+materialization is bounded to one decoder layer at a time.
 """
 
 import math
+import warnings
 from enum import Enum
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple
+from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -264,109 +258,85 @@ class NoQAT(QATHandler):
 
 
 # ============================================================================
-# Full QAT — wrapper module that replaces PEFT's base_layer
+# Full QAT = LR-QAT — fakequant the MERGED weight (LoRA inside the quantizer)
 # ============================================================================
 
-class FullQATBaseLayer(nn.Module):
+class FullQATLoRAInjector(nn.Module):
     """
-    Drop-in replacement for a PEFT LoRA module's `base_layer` (bnb Linear4bit).
+    LR-QAT injector for ONE PEFT LoRA module: the low-rank term is INSIDE the quantizer.
 
-    On every forward:
-      1) dequantize the NF4 base weight to compute dtype (no grad; base is frozen),
-      2) apply group-wise symmetric fake-quantization (STE, fp32 rounding),
-      3) cast back to activation dtype,
-      4) run F.linear(x, W_fq, bias).
+    The frozen NF4 base is dequantized on the fly (no grad) and the low-rank term is added BEFORE
+    fake-quantization, so the quantizer sees the SAME merged weight the export will quantize:
 
-    LoRA A / B live on the OUTER PEFT module and are added as a delta on top
-    of base_layer(x); their gradients are produced normally and learn to
-    compensate for the INT4 quantization grid that now appears in the
-    forward graph.
+        W_curr = dequant(base) + (B @ A) * scaling           # base frozen; B/A trainable
+        out    = peft_forward(x)            (= W_curr @ x + bias)
+        return   out + (fakequant(W_curr) - W_curr) @ x       # == fakequant(W_curr) @ x + bias
+
+    Only LoRA A/B receive gradients, through the STE fakequant, trained against the real INT4 grid
+    of the merged weight (train/deploy consistent). Nothing is cached — the base is re-dequantized
+    each forward — so the full-weight materialization is bounded by gradient checkpointing to one
+    decoder layer at a time. The PEFT module is left untouched (no base_layer surgery): uninstall
+    is just hook removal, and checkpoint/export see a normal bnb Linear4bit.
     """
 
-    def __init__(
-        self,
-        orig_linear4bit: nn.Module,
-        group_size: int = 128,
-        q_bits: int = 4,
-    ):
+    def __init__(self, peft_module, group_size, q_bits, symmetric, lora_scaling, where=""):
         super().__init__()
-        # Keep the original bnb layer as a submodule so we retain quant_state,
-        # bias, shapes, and so restoring at on_train_end is a single attr swap.
-        self.orig = orig_linear4bit
+        self.m = peft_module
         self.group_size = int(group_size)
+        self.symmetric = bool(symmetric)
         self.q_bits = int(q_bits)
-        self.q_max = float(2 ** (q_bits - 1) - 1)
-        self.in_features = orig_linear4bit.in_features
-        self.out_features = orig_linear4bit.out_features
+        self.q_max = (2 ** (q_bits - 1) - 1) if symmetric else (2 ** q_bits - 1)
+        self.lora_scaling = float(lora_scaling)
+        self.adapter = list(peft_module.lora_A.keys())[0]
+        p = float(getattr(peft_module.lora_dropout[self.adapter], "p", 0.0) or 0.0)
+        if p > 0.0:
+            warnings.warn(
+                f"[FullQAT] {where}: lora_dropout={p:g} > 0. The LR-QAT delta uses the "
+                "dropout-free B@A, so it won't match the dropout-applied LoRA forward; set "
+                "lora_dropout=0 for full QAT.",
+                RuntimeWarning,
+            )
+        self._handle = peft_module.register_forward_hook(self._hook)
 
-    # PEFT sometimes reads these directly off base_layer for introspection.
-    @property
-    def weight(self):
-        return self.orig.weight
-
-    @property
-    def bias(self):
-        return getattr(self.orig, "bias", None)
-
-    def _fakequant_weight(self, ref_dtype: torch.dtype) -> torch.Tensor:
-        # Dequant under no_grad — base weight is frozen, no grad target upstream.
+    def _hook(self, module, inp, out):
+        x = inp[0]
         with torch.no_grad():
-            W = _dequant_bnb_4bit(self.orig)  # [out, in], compute dtype
-        # Rounding MUST be fp32.
-        W_fq_f32 = groupwise_symmetric_fakequant(
-            W.float(), self.group_size, self.q_max
-        )
-        return W_fq_f32.to(ref_dtype)
+            W_base = _dequant_bnb_4bit(module.base_layer)            # [out, in], frozen
+        A = module.lora_A[self.adapter].weight                       # [r, in]
+        B = module.lora_B[self.adapter].weight                       # [out, r]
+        W_curr = W_base.float() + (B @ A).float() * self.lora_scaling
+        if self.symmetric:
+            W_fq = groupwise_symmetric_fakequant(W_curr, self.group_size, float(self.q_max))
+        else:
+            W_fq = groupwise_asymmetric_fakequant(W_curr, self.group_size, int(self.q_max))
+        delta = (W_fq - W_curr).to(x.dtype)
+        return out + F.linear(x, delta)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        W_fq = self._fakequant_weight(x.dtype)
-        return F.linear(x, W_fq, self.bias)
-
-
-class FullQATBaseLayerAsymmetric(FullQATBaseLayer):
-    """Affine asymmetric variant of FullQATBaseLayer."""
-
-    def __init__(
-        self,
-        orig_linear4bit: nn.Module,
-        group_size: int = 128,
-        q_bits: int = 4,
-    ):
-        super().__init__(orig_linear4bit, group_size=group_size, q_bits=q_bits)
-        self.q_max = 2 ** q_bits - 1
-
-    def _fakequant_weight(self, ref_dtype: torch.dtype) -> torch.Tensor:
-        with torch.no_grad():
-            W = _dequant_bnb_4bit(self.orig)
-        W_fq_f32 = groupwise_asymmetric_fakequant(
-            W.float(), self.group_size, int(self.q_max)
-        )
-        return W_fq_f32.to(ref_dtype)
+    def remove(self):
+        self._handle.remove()
 
 
 class FullQAT(QATHandler):
     """
-    Full QAT: every target linear's frozen base weight is fakequanted on
-    each forward, so the LoRA adapter is trained against the actual INT4
-    quantization grid rather than the fp16 dequantization of NF4.
+    Full QAT in the LR-QAT paradigm: every target linear's MERGED weight (frozen NF4 base +
+    trainable LoRA) is fake-quantized on each forward, so the LoRA is trained INSIDE the quantizer
+    against the same INT4 grid the export uses — train/deploy consistent. Base stays frozen NF4;
+    only LoRA A/B train. (Contrast with Selective-QAT, which fakequants only the salient slice — so
+    this is the full-coverage counterpart with the SAME QAT formulation.)
 
-    Implementation: replace `module.base_layer` on each PEFT LoRA module
-    with a FullQATBaseLayer wrapper. Restore at on_train_end so
-    checkpoint saving and the export pipeline see a normal bnb Linear4bit.
+    Implemented as a forward hook per PEFT module (no base_layer surgery), removed at on_train_end.
     """
 
     def __init__(self):
-        # name -> (peft_module, original_base_layer)
-        self._originals: Dict[str, Tuple[nn.Module, nn.Module]] = {}
+        self.injectors: list = []
 
     def prepare_model(self, model, cfg, **kwargs):
         q_bits = cfg["model"]["quant_bits"]
-        # Default MUST match export.merge_and_export (also 128). If you change
-        # one, change the other — training fakequant grid must equal the PTQ
-        # grid at export time.
+        # Default MUST match export.merge_and_export (also 128). Training fakequant grid must equal
+        # the PTQ grid at export time.
         group_size = cfg["qat"].get("group_size", 128)
         symmetric = cfg["qat"].get("symmetric", True)
-        wrapper_cls = FullQATBaseLayer if symmetric else FullQATBaseLayerAsymmetric
+        lora_scaling = cfg["lora"]["alpha"] / cfg["lora"]["rank"]
         target_modules = set(cfg["lora"]["target_modules"])
 
         count = 0
@@ -378,25 +348,20 @@ class FullQAT(QATHandler):
             if not (hasattr(module, "base_layer") and hasattr(module, "lora_A")):
                 continue
 
-            orig_base = module.base_layer
-            # Only wrap if the base is actually bnb 4-bit quantized.
-            if not (hasattr(orig_base, "weight")
-                    and hasattr(orig_base.weight, "quant_state")
-                    and orig_base.weight.quant_state is not None):
+            base = module.base_layer
+            if not (hasattr(base, "weight")
+                    and getattr(base.weight, "quant_state", None) is not None):
                 skipped_not_quant += 1
                 continue
 
-            wrapper = wrapper_cls(
-                orig_base, group_size=group_size, q_bits=q_bits,
-            )
-            # Assigning a Module to an attribute of an nn.Module (the PEFT
-            # layer) correctly re-registers the submodule.
-            module.base_layer = wrapper
-            self._originals[name] = (module, orig_base)
+            self.injectors.append(FullQATLoRAInjector(
+                module, group_size=group_size, q_bits=q_bits, symmetric=symmetric,
+                lora_scaling=lora_scaling, where=name,
+            ))
             count += 1
 
         print(
-            f"[FullQAT] Wrapped {count} PEFT base_layers with fakequant "
+            f"[FullQAT] Installed LR-QAT injectors on {count} PEFT modules "
             f"(group_size={group_size}, bits={q_bits}, symmetric={symmetric})."
         )
         if skipped_not_quant:
@@ -406,7 +371,7 @@ class FullQAT(QATHandler):
             )
         if count == 0:
             print(
-                "[FullQAT] WARNING: no layers wrapped. Check target_modules "
+                "[FullQAT] WARNING: no modules injected. Check target_modules "
                 "and that the model is loaded in 4-bit."
             )
         return model
@@ -418,19 +383,12 @@ class FullQAT(QATHandler):
         pass
 
     def on_train_end(self, model):
-        """
-        Restore the original bnb base_layer on every wrapped PEFT module.
-
-        Essential: if we leave FullQATBaseLayer in place, the wrapper's
-        submodule tree (`.orig.weight`, etc.) leaks into any state_dict and
-        export._dequant_base_weight will no longer find `quant_state` at the
-        expected attribute path.
-        """
-        for name, (peft_mod, orig_base) in self._originals.items():
-            peft_mod.base_layer = orig_base
-        if self._originals:
-            print(f"[FullQAT] Restored {len(self._originals)} base_layers.")
-        self._originals.clear()
+        """Remove the LR-QAT hooks so checkpoint saving and export see a clean bnb Linear4bit."""
+        for inj in self.injectors:
+            inj.remove()
+        if self.injectors:
+            print(f"[FullQAT] Removed {len(self.injectors)} LR-QAT injectors.")
+        self.injectors = []
 
 
 # ============================================================================
