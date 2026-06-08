@@ -176,6 +176,9 @@ def main():
     parser.add_argument("--export_only", action="store_true")
     parser.add_argument("--export_dequant", action="store_true",
                         help="Export dequantized weights (FP16) instead of merged INT4")
+    parser.add_argument("--gptq_full", action="store_true",
+                        help="SQAT ablation: GPTQ the FULL merged weight (no salient slice, no "
+                             "AWQ) — isolates the Selective-QAT contribution. Needs --export_dequant.")
     parser.add_argument("--export_merged_only", action="store_true",
                         help="Export merged weights only (no quantize and dequantize)")
     parser.add_argument("--checkpoint_dir", type=str, default=None)
@@ -254,6 +257,7 @@ def main():
                 checkpoint_dir=args.checkpoint_dir,
                 output_dir=args.merge_output_dir,
                 sqat_metadata=sqat_metadata,
+                gptq_full=args.gptq_full,
             )
         return
 

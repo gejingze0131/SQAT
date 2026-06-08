@@ -1177,6 +1177,7 @@ def merge_and_export(
     sqat_metadata: Optional[Dict] = None,
     export_dequant: bool = False,
     dequant_dtype: str = "float16",
+    gptq_full: bool = False,
 ):
     """
     Full export pipeline.
@@ -1275,6 +1276,22 @@ def merge_and_export(
         print(f"[Export]   GPTQ non-salient ON (group_k={sp_perm_group_k}, "
               f"nsamples={sp_gptq_cfg.get('nsamples', 128)}, "
               f"percdamp={sp_gptq_cfg.get('percdamp', 0.01)})")
+
+    # SQAT ablation — GPTQ the FULL merged weight (no salient slice, no AWQ). Isolates the
+    # contribution of the Selective-QAT salient protection: the trained (permuted) model is
+    # exported as if it were a vanilla GPTQ quantization. Keeps the permuted base + boundary
+    # gathers so the merged model still runs correctly; only the salient-slice handling is removed.
+    if gptq_full and qat_mode == "sqat_permute":
+        if not export_dequant:
+            raise ValueError("gptq_full ablation requires --export_dequant (dense save).")
+        if not sqat_permute_meta:
+            raise ValueError("gptq_full ablation needs sqat_permute_meta (boundary gathers).")
+        sp_gptq         = True
+        sp_perm_group_k = 0                      # group_k=0 → every column GPTQ'd (no fixed slice)
+        sp_awq          = False                  # ablate AWQ scaling as well
+        sp_awq_scales   = None
+        sp_gptq_cfg     = sp_gptq_cfg or {}
+        print("[Export]   GPTQ-FULL ablation ON → GPTQ ALL columns (no salient slice, no AWQ)")
 
     if qat_mode in {"sqat"} and sqat_metadata is None and model is not None:
         print("[Export] Collecting SQAT metadata...")
@@ -1466,7 +1483,9 @@ def merge_and_export(
             # GPTQ guard: the EXPORTED salient ints must still equal the canonical training grid
             # (only the [group_k:] non-salient cols are GPTQ'd). The grid is checked in the same
             # (possibly AWQ-amplified) space the slice was quantized in. o_proj has no slice → skip.
-            if sp_gptq and name in quantized_layers and name.split(".")[-1] != "o_proj":
+            # gptq_full ablation GPTQ's the whole weight (no fixed slice), so skip this check.
+            if (sp_gptq and not gptq_full and name in quantized_layers
+                    and name.split(".")[-1] != "o_proj"):
                 wi, sc, zp = quantized_layers[name]
                 sal_dq = group_dequantize(
                     wi[:, :gk], sc[:, :n_sal_g], zp[:, :n_sal_g], group_size, gk, symmetric,
