@@ -247,5 +247,5 @@ class QALoRA(QATHandler):
     def on_step_end(self, model, step):
         pass
 
-    def on_train_end(self, model):
+    def on_train_end(self, model, output_dir=None):
         pass

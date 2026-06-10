@@ -27,7 +27,7 @@ import math
 import warnings
 from enum import Enum
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -171,6 +171,153 @@ def groupwise_asymmetric_fakequant(
 
 
 # ============================================================================
+# LSQ / LSQ+ learnable-scale quantization (LR-QAT style)
+# ============================================================================
+#
+# These are a SELF-CONTAINED single source of truth: the scale (and, for asym,
+# the zero-point) are learnable nn.Parameters of the model tree, trained jointly
+# with the LoRA adapter. The training fakequant and the export quantizer below
+# use the SAME Qn/Qp grid so the deployed INT weights are bit-identical to what
+# training saw.
+#
+# Grid convention (DO NOT mix with the min-max symmetric `[-q_max, q_max]`):
+#   symmetric  LSQ : Qn = -2^(b-1),   Qp = 2^(b-1) - 1   (one extra negative level)
+#   asymmetric LSQ+: Qn = 0,          Qp = 2^b - 1
+#
+# Initialization is `current_minmax` so that with enable_lsq the initial grid
+# equals the original min-max grid (no scale jump at step 0).
+
+def grad_scale(x: torch.Tensor, g: float) -> torch.Tensor:
+    """forward = x ; backward: grad *= g (LSQ scale-gradient damping)."""
+    return (x - x * g).detach() + x * g
+
+
+def _group_reshape(W: torch.Tensor, group_size: int) -> torch.Tensor:
+    """Pad columns to a multiple of group_size and reshape to [out, ng, gs]."""
+    out_f, in_f = W.shape
+    num_groups = math.ceil(in_f / group_size)
+    pad = num_groups * group_size - in_f
+    Wp = F.pad(W, (0, pad)) if pad > 0 else W
+    return Wp.view(out_f, num_groups, group_size)
+
+
+def _ungroup(Wg: torch.Tensor, in_f: int) -> torch.Tensor:
+    """Inverse of _group_reshape: [out, ng, gs] -> [out, in_f] (drop padding)."""
+    out_f = Wg.shape[0]
+    return Wg.reshape(out_f, -1)[:, :in_f]
+
+
+def _lsq_qn_qp(q_bits: int, symmetric: bool) -> Tuple[int, int]:
+    if symmetric:
+        return -(2 ** (q_bits - 1)), 2 ** (q_bits - 1) - 1
+    return 0, 2 ** q_bits - 1
+
+
+def groupwise_lsq_symmetric_fakequant(
+    W: torch.Tensor,
+    scale: torch.Tensor,
+    group_size: int,
+    q_bits: int,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """
+    Symmetric LSQ fakequant (only scale is learnable).
+
+    W:     [out, in] fp32
+    scale: [out, ng] (>0, learnable nn.Parameter)
+    """
+    out_f, in_f = W.shape
+    Qn, Qp = _lsq_qn_qp(q_bits, symmetric=True)
+    Wg = _group_reshape(W, group_size)                              # [out, ng, gs]
+    gfactor = 1.0 / math.sqrt(group_size * max(Qp, 1))
+    s = grad_scale(scale.clamp(min=eps)[..., None], gfactor)        # [out, ng, 1]
+    Wq = round_ste((Wg / s).clamp(Qn, Qp)) * s
+    return _ungroup(Wq, in_f)
+
+
+def groupwise_lsq_asym_fakequant(
+    W: torch.Tensor,
+    scale: torch.Tensor,
+    zp: torch.Tensor,
+    group_size: int,
+    q_bits: int,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """
+    Asymmetric LSQ+ fakequant (learnable scale + learnable zero-point).
+
+    scale: [out, ng] (>0, learnable) ; zp: [out, ng] (learnable real, STE-rounded)
+    dequant = (q - z) * s
+    """
+    out_f, in_f = W.shape
+    Qn, Qp = _lsq_qn_qp(q_bits, symmetric=False)
+    Wg = _group_reshape(W, group_size)
+    s = grad_scale(scale.clamp(min=eps)[..., None], 1.0 / math.sqrt(group_size * max(Qp, 1)))
+    z = grad_scale(zp[..., None], 1.0 / math.sqrt(group_size))
+    z = round_ste(z).clamp(Qn, Qp)                                 # zero-point rounded at train (STE)
+    q = round_ste((Wg / s + z).clamp(Qn, Qp))
+    Wq = (q - z) * s
+    return _ungroup(Wq, in_f)
+
+
+@torch.no_grad()
+def init_lsq_scale_sym(W: torch.Tensor, group_size: int, q_bits: int) -> torch.Tensor:
+    """current_minmax init for symmetric LSQ scale -> [out, ng]."""
+    Qp = 2 ** (q_bits - 1) - 1
+    Wg = _group_reshape(W, group_size)
+    return (Wg.abs().amax(dim=-1) / max(Qp, 1)).clamp(min=1e-8)
+
+
+@torch.no_grad()
+def init_lsq_scale_zp_asym(
+    W: torch.Tensor, group_size: int, q_bits: int
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    current_minmax init for asymmetric LSQ+ (scale, zp) -> ([out, ng], [out, ng]).
+
+    Matches the affine min/max formula on the asym grid [0, 2^b-1]:
+        scale = (wmax - wmin) / Qp ; zp = round(-wmin / scale), clamped to [0, Qp].
+    """
+    Qp = 2 ** q_bits - 1
+    Wg = _group_reshape(W, group_size)                             # [out, ng, gs]
+    wmax = Wg.amax(dim=-1)
+    wmin = Wg.amin(dim=-1)
+    scale = ((wmax - wmin) / max(Qp, 1)).clamp(min=1e-8)
+    zp = torch.round(-wmin / scale).clamp(0, Qp)
+    return scale, zp
+
+
+@torch.no_grad()
+def lsq_quantize_export_sym(
+    W: torch.Tensor, scale: torch.Tensor, group_size: int, q_bits: int
+) -> torch.Tensor:
+    """Export-time symmetric LSQ quantize with the learned scale -> int W [out, in]."""
+    out_f, in_f = W.shape
+    Qn, Qp = _lsq_qn_qp(q_bits, symmetric=True)
+    Wg = _group_reshape(W, group_size)
+    q = (Wg / scale[..., None]).round().clamp(Qn, Qp)
+    return _ungroup(q, in_f)
+
+
+@torch.no_grad()
+def lsq_quantize_export_asym(
+    W: torch.Tensor, scale: torch.Tensor, zp: torch.Tensor, group_size: int, q_bits: int
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Export-time asymmetric LSQ+ quantize -> (int W [out, in], z_int [out, ng]).
+
+    Training rounds zp with round_ste, export with .round() -> same integer value,
+    which is what keeps train==export. dequant = (q - z_int) * scale.
+    """
+    out_f, in_f = W.shape
+    Qn, Qp = _lsq_qn_qp(q_bits, symmetric=False)
+    z_int = zp.round().clamp(Qn, Qp)
+    Wg = _group_reshape(W, group_size)
+    q = (Wg / scale[..., None] + z_int[..., None]).round().clamp(Qn, Qp)
+    return _ungroup(q, in_f), z_int
+
+
+# ============================================================================
 # bnb 4-bit dequant helper
 # ============================================================================
 
@@ -232,8 +379,13 @@ class QATHandler(ABC):
         ...
 
     @abstractmethod
-    def on_train_end(self, model: nn.Module):
-        """Called at the end of training. Cleanup, unwrap, etc."""
+    def on_train_end(self, model: nn.Module, output_dir: Optional[str] = None):
+        """Called at the end of training. Cleanup, unwrap, etc.
+
+        output_dir (when given) is the trainer output dir, so handlers that
+        self-register extra params (e.g. LSQ scales) can persist them next to
+        the checkpoint before the model is unwrapped/saved.
+        """
         ...
 
 
@@ -253,7 +405,7 @@ class NoQAT(QATHandler):
     def on_step_end(self, model, step):
         pass
 
-    def on_train_end(self, model):
+    def on_train_end(self, model, output_dir=None):
         pass
 
 
@@ -281,7 +433,8 @@ class FullQATLoRAInjector(nn.Module):
     checkpointing to one decoder layer at a time. remove() restores the original forward.
     """
 
-    def __init__(self, peft_module, group_size, q_bits, symmetric, lora_scaling, where=""):
+    def __init__(self, peft_module, group_size, q_bits, symmetric, lora_scaling,
+                 where="", enable_lsq=False):
         super().__init__()
         self.m = peft_module
         self.group_size = int(group_size)
@@ -289,6 +442,7 @@ class FullQATLoRAInjector(nn.Module):
         self.q_bits = int(q_bits)
         self.q_max = (2 ** (q_bits - 1) - 1) if symmetric else (2 ** q_bits - 1)
         self.lora_scaling = float(lora_scaling)
+        self.enable_lsq = bool(enable_lsq)
         self.adapter = list(peft_module.lora_A.keys())[0]
         p = float(getattr(peft_module.lora_dropout[self.adapter], "p", 0.0) or 0.0)
         if p > 0.0:
@@ -298,6 +452,24 @@ class FullQATLoRAInjector(nn.Module):
                 "lora_dropout=0 for full QAT.",
                 RuntimeWarning,
             )
+
+        if self.enable_lsq:
+            # Register the learnable LSQ scale[, zp] as Parameters of the PEFT MODULE so the HF
+            # Trainer optimizer (and trainer.py's dedicated param group) can collect them. Init
+            # current_minmax from dequant(base); LoRA B is 0 at init so W_curr ≈ base — the
+            # initial grid equals the original min-max grid (no jump at step 0).
+            with torch.no_grad():
+                W_base = _dequant_bnb_4bit(peft_module.base_layer).float()
+            dev = W_base.device
+            if self.symmetric:
+                s0 = init_lsq_scale_sym(W_base, self.group_size, self.q_bits)
+                peft_module.lsq_w_scale = nn.Parameter(s0.to(dev), requires_grad=True)
+            else:
+                s0, z0 = init_lsq_scale_zp_asym(W_base, self.group_size, self.q_bits)
+                peft_module.lsq_w_scale = nn.Parameter(s0.to(dev), requires_grad=True)
+                peft_module.lsq_w_zp = nn.Parameter(z0.to(dev), requires_grad=True)
+            del W_base
+
         self._orig_forward = peft_module.forward
         peft_module.forward = self._forward          # replace the module forward (single GEMM)
 
@@ -309,7 +481,15 @@ class FullQATLoRAInjector(nn.Module):
         B = m.lora_B[self.adapter].weight                            # [out, r]
         # fp32 only where the rounding needs it; the GEMM runs in the activation dtype.
         W_curr = W_base.float() + (B @ A).float() * self.lora_scaling
-        if self.symmetric:
+        if self.enable_lsq:
+            if self.symmetric:
+                W_fq = groupwise_lsq_symmetric_fakequant(
+                    W_curr, m.lsq_w_scale.float(), self.group_size, self.q_bits)
+            else:
+                W_fq = groupwise_lsq_asym_fakequant(
+                    W_curr, m.lsq_w_scale.float(), m.lsq_w_zp.float(),
+                    self.group_size, self.q_bits)
+        elif self.symmetric:
             W_fq = groupwise_symmetric_fakequant(W_curr, self.group_size, float(self.q_max))
         else:
             W_fq = groupwise_asymmetric_fakequant(W_curr, self.group_size, int(self.q_max))
@@ -335,6 +515,9 @@ class FullQAT(QATHandler):
 
     def __init__(self):
         self.injectors: list = []
+        self.enable_lsq: bool = False
+        # {module_name: peft_module} for LSQ scale/zp save at train end.
+        self._lsq_modules: dict = {}
 
     def prepare_model(self, model, cfg, **kwargs):
         q_bits = cfg["model"]["quant_bits"]
@@ -344,6 +527,7 @@ class FullQAT(QATHandler):
         symmetric = cfg["qat"].get("symmetric", True)
         lora_scaling = cfg["lora"]["alpha"] / cfg["lora"]["rank"]
         target_modules = set(cfg["lora"]["target_modules"])
+        self.enable_lsq = bool(cfg["qat"].get("lsq", {}).get("enabled", False))
 
         count = 0
         skipped_not_quant = 0
@@ -362,14 +546,20 @@ class FullQAT(QATHandler):
 
             self.injectors.append(FullQATLoRAInjector(
                 module, group_size=group_size, q_bits=q_bits, symmetric=symmetric,
-                lora_scaling=lora_scaling, where=name,
+                lora_scaling=lora_scaling, where=name, enable_lsq=self.enable_lsq,
             ))
+            if self.enable_lsq:
+                self._lsq_modules[name] = module
             count += 1
 
         print(
             f"[FullQAT] Installed LR-QAT injectors on {count} PEFT modules "
-            f"(group_size={group_size}, bits={q_bits}, symmetric={symmetric})."
+            f"(group_size={group_size}, bits={q_bits}, symmetric={symmetric}, "
+            f"enable_lsq={self.enable_lsq})."
         )
+        if self.enable_lsq:
+            print(f"[FullQAT] LSQ {'+ (asym, learn scale+zp)' if not symmetric else '(sym, learn scale)'} "
+                  f"enabled on {count} modules; scale[,zp] registered as nn.Parameters.")
         if skipped_not_quant:
             print(
                 f"[FullQAT] Skipped {skipped_not_quant} target modules whose "
@@ -388,8 +578,35 @@ class FullQAT(QATHandler):
     def on_step_end(self, model, step):
         pass
 
-    def on_train_end(self, model):
-        """Remove the LR-QAT hooks so checkpoint saving and export see a clean bnb Linear4bit."""
+    def save_lsq_scales(self, output_dir: str) -> None:
+        """
+        Persist learned LSQ scale[, zp] to <output_dir>/lsq_scales.pt as
+        {module_name: {"scale": ..., "zp": ...}}. PEFT save_pretrained does NOT
+        save these self-registered params, so the export reads them from here.
+        Must run BEFORE remove()/save so the params still carry the trained values.
+        """
+        if not (self.enable_lsq and self._lsq_modules):
+            return
+        import os
+        payload = {}
+        for name, module in self._lsq_modules.items():
+            entry = {"scale": module.lsq_w_scale.detach().float().cpu().clone()}
+            if hasattr(module, "lsq_w_zp"):
+                entry["zp"] = module.lsq_w_zp.detach().float().cpu().clone()
+            payload[name] = entry
+        os.makedirs(output_dir, exist_ok=True)
+        path = os.path.join(output_dir, "lsq_scales.pt")
+        torch.save(payload, path)
+        print(f"[FullQAT] Saved LSQ scales for {len(payload)} modules to {path}")
+
+    def on_train_end(self, model, output_dir: Optional[str] = None):
+        """Remove the LR-QAT hooks so checkpoint saving and export see a clean bnb Linear4bit.
+
+        LSQ scales are saved separately (save_lsq_scales) BEFORE the injectors are removed —
+        the QATCallback passes output_dir so the lsq_scales.pt lands next to the checkpoint.
+        """
+        if output_dir is not None:
+            self.save_lsq_scales(output_dir)
         for inj in self.injectors:
             inj.remove()
         if self.injectors:

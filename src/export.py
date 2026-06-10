@@ -462,6 +462,13 @@ def collect_sqat_permute_metadata(model: nn.Module) -> Optional[Dict]:
     model_meta = getattr(model, "_sqat_permute_meta", None)
     if model_meta is None:
         return None
+    # LSQ: fold the learned per-proj scale[, zp] into the meta so they ride along the existing
+    # save/load (sqat_permute_meta.pt) path. Collected from live params here (after training).
+    if model_meta.get("lsq", False):
+        from .qat_permute_sqat import collect_lsq_scales_from_model
+        lsq_scales = collect_lsq_scales_from_model(model)
+        model_meta = {**model_meta, "lsq_scales": lsq_scales}
+        print(f"[Export] Collected LSQ scales for {len(lsq_scales)} sqat_permute projections")
     return {"layers": {}, "model": model_meta}
 
 
@@ -1057,6 +1064,41 @@ def _merge_lora_into_dense(
     return count
 
 
+def _group_quantize_sqat_permute_lsq(
+    W: torch.Tensor,
+    group_k: int,
+    group_size: int,
+    q_bits: int,
+    symmetric: bool,
+    fixed,                      # LSQ scale[, zp] for the salient slice (amplified space if AWQ)
+    awq_s,                      # [group_k] AWQ scale or None
+    group_quantize,            # the qat_permute_sqat.group_quantize callable
+):
+    """
+    RTN-export of a sqat_permute weight when LSQ is on: the salient slice [0:group_k] uses the
+    LEARNED scale[, zp] (LSQ grid, amplified space if AWQ); the non-salient block [group_k:] keeps
+    the per-step min-max grid (unchanged from the original scheme). Returns (W_int, scale, zp) in the
+    canonical group_quantize layout so the existing group_dequantize path reconstructs the weight.
+    """
+    import torch as _t
+    out_f, in_f = W.shape
+    n_sal_g = group_k // group_size
+    # salient slice (amplified if AWQ) → LSQ grid
+    W_sal = W[:, :group_k].clone()
+    if awq_s is not None:
+        W_sal = W_sal * awq_s.view(1, -1).to(W_sal.device)
+    wi_s, sc_s, zp_s = group_quantize(W_sal, group_size, q_bits, symmetric, fixed_scale=fixed)
+    if group_k >= in_f:
+        return wi_s, sc_s, zp_s
+    # non-salient block → min-max grid
+    W_non = W[:, group_k:]
+    wi_n, sc_n, zp_n = group_quantize(W_non, group_size, q_bits, symmetric)
+    W_int = _t.cat([wi_s, wi_n], dim=1)
+    scale = _t.cat([sc_s, sc_n], dim=1)
+    zp    = _t.cat([zp_s, zp_n], dim=1)
+    return W_int, scale, zp
+
+
 # ============================================================================
 # Per-layer quantization loop
 # ============================================================================
@@ -1071,6 +1113,7 @@ def _quantize_all_layers(
     symmetric: bool,
     awq_scales=None,
     perm_group_k: Optional[int] = None,
+    lsq_scales: Optional[Dict[str, dict]] = None,
 ) -> Tuple[Dict[str, Tuple], Dict[str, torch.Tensor]]:
     """
     Run PTQ on all target linear layers.
@@ -1105,11 +1148,25 @@ def _quantize_all_layers(
             # training fakequant uses (qat_permute_sqat.group_quantize) so the salient-slice
             # grid is IDENTICAL train↔export — the fix for the train/export quantizer mismatch.
             # (AWQ-scale, if on, amplifies the salient slice here and is baked back after dequant.)
-            from .qat_permute_sqat import group_quantize, awq_s_for_module
+            from .qat_permute_sqat import (
+                group_quantize, awq_s_for_module, lsq_scale_for_module,
+            )
             # AWQ-style scaling: quantize the salient slice in the amplified space (W[:, :gk]*S);
             # the /S is baked back into the dense weight after dequant (_unscale_salient_cols).
             s = awq_s_for_module(awq_scales, name) if awq_scales else None
-            if s is not None and perm_group_k:
+            # LSQ: the salient slice [0:group_k] uses the learned scale[, zp]; the non-salient
+            # columns keep the per-step min-max grid (group_quantize fixed_scale only covers the
+            # salient slice when given). When AWQ is on, the learned scale is in the amplified space.
+            fixed = (lsq_scale_for_module(lsq_scales, name, symmetric)
+                     if (lsq_scales and perm_group_k) else None)
+            if fixed is not None:
+                # group_quantize fixed_scale applies to the WHOLE weight; the sqat_permute non-salient
+                # cols must keep min-max. So quantize the salient slice and non-salient block apart,
+                # then stitch (this matches training: only [0:group_k] is LSQ-fakequant'd).
+                W_int, scales, zeros = _group_quantize_sqat_permute_lsq(
+                    W, perm_group_k, group_size, q_bits, symmetric, fixed, s, group_quantize,
+                )
+            elif s is not None and perm_group_k:
                 Wq = W.clone()
                 Wq[:, :perm_group_k] = Wq[:, :perm_group_k] * s.view(1, -1).to(Wq.device)
                 W_int, scales, zeros = group_quantize(Wq, group_size, q_bits, symmetric)
@@ -1145,6 +1202,21 @@ def _quantize_all_layers(
                     group_size=group_size,
                     q_bits=q_bits,
                 )
+        elif qat_mode == "full" and lsq_scales is not None and name in lsq_scales:
+            # Full QAT + LSQ: quantize with the LEARNED scale[,zp] (single source of truth that
+            # training used) on the SAME Qn/Qp grid — never re-run min-max. dequant=(q[-z])*scale
+            # is rebuilt in the save loop from these same stored scales.
+            from .qat_base import lsq_quantize_export_sym, lsq_quantize_export_asym
+            entry = lsq_scales[name]
+            scale = entry["scale"].float().cpu()
+            if symmetric:
+                W_int = lsq_quantize_export_sym(W, scale, group_size, q_bits)
+                scales, zeros = scale, torch.zeros_like(scale)
+            else:
+                zp = entry["zp"].float().cpu()
+                W_int, z_int = lsq_quantize_export_asym(W, scale, zp, group_size, q_bits)
+                scales, zeros = scale, z_int
+
         else:
             if symmetric:
                 W_int, scales, zeros = real_quantize_symmetric(
@@ -1264,6 +1336,28 @@ def merge_and_export(
             print(f"[Export]   AWQ-scale ON → amplified-space quant + /S bake-back "
                   f"(group_k={sp_group_k})")
 
+    # LSQ: resolve the learned per-proj salient-slice scale[, zp] from the meta. The salient slice
+    # is then exported on the learned LSQ grid (composes with AWQ + GPTQ); non-salient cols keep
+    # min-max/GPTQ. Requires --export_dequant (the learned grid stores a scale group_dequantize uses).
+    sp_lsq, sp_lsq_scales = False, None
+    if qat_mode == "sqat_permute" and sqat_permute_meta:
+        _mm2 = sqat_permute_meta.get("model", sqat_permute_meta) or {}
+        sp_lsq        = bool(_mm2.get("lsq", False))
+        sp_lsq_scales = _mm2.get("lsq_scales") if sp_lsq else None
+        if sp_lsq and not export_dequant:
+            raise ValueError(
+                "sqat_permute + LSQ export requires --export_dequant (the learned scale[,zp] grid "
+                "is stored as a dense quant→dequant weight)."
+            )
+        if sp_lsq and not sp_lsq_scales:
+            raise ValueError(
+                "sqat_permute lsq enabled but no lsq_scales in meta — the trained scales were not "
+                "collected. Re-collect via collect_sqat_permute_metadata after training."
+            )
+        if sp_lsq:
+            print(f"[Export]   LSQ ON → salient slice on learned scale[,zp] grid "
+                  f"({len(sp_lsq_scales)} projections)")
+
     # Improvement 1 — GPTQ (OBS) for the NON-salient columns. The salient slice [0:group_k] keeps
     # the canonical (training-consistent) grid; columns [group_k:] are GPTQ-quantized as an
     # INDEPENDENT block (no salient-error leakage — see gptq_quantize_layer). Same group_size +
@@ -1305,6 +1399,41 @@ def merge_and_export(
         print("[Export] Collecting SQAT metadata...")
         sqat_metadata = collect_sqat_metadata(model)
         print(f"[Export]   Found {len(sqat_metadata)} SQAT layers")
+
+    # Full QAT + LSQ: load the learned scale[,zp] saved next to the adapter (lsq_scales.pt). Keys
+    # are the PEFT module names; reindex to dense-model names below (after _strip_peft_prefix).
+    full_lsq_scales = None
+    if qat_mode == "full" and bool(cfg["qat"].get("lsq", {}).get("enabled", False)):
+        if checkpoint_dir is not None:
+            _lp = os.path.join(checkpoint_dir, "lsq_scales.pt")
+            if os.path.exists(_lp):
+                full_lsq_scales = torch.load(_lp, map_location="cpu")
+                print(f"[Export] Loaded {len(full_lsq_scales)} LSQ scale entries from {_lp}")
+            else:
+                raise FileNotFoundError(
+                    f"[Export] full+LSQ enabled but {_lp} not found. The learned LSQ grid is "
+                    f"required for a train↔export-consistent export — re-run training (it saves "
+                    f"lsq_scales.pt to <output_dir>/final) or disable lsq in the config."
+                )
+        elif model is not None:
+            # In-training export: read live params off the FullQAT injectors' modules.
+            full_lsq_scales = {}
+            for nm, mod in model.named_modules():
+                if hasattr(mod, "lsq_w_scale"):
+                    e = {"scale": mod.lsq_w_scale.detach().float().cpu().clone()}
+                    if hasattr(mod, "lsq_w_zp"):
+                        e["zp"] = mod.lsq_w_zp.detach().float().cpu().clone()
+                    full_lsq_scales[nm] = e
+            print(f"[Export] Collected {len(full_lsq_scales)} live LSQ scale entries from model")
+
+        # The LSQ grid (Qn/Qp) differs from the AWQ-packed `[-q_max, q_max]` grid, and the export
+        # stores a learned scale[,zp] that the AWQ qweight/qzeros packer cannot represent. Require
+        # the dequant (dense) export path — the same constraint already imposed on asymmetric.
+        if full_lsq_scales and not export_dequant:
+            raise ValueError(
+                "full + LSQ export requires --export_dequant (dense quantize->dequant with the "
+                "learned scale[,zp]); INT4 AWQ-packed export of the LSQ grid is not supported."
+            )
 
     # --- Prepare adapter checkpoint ---
     tmp_dir = None
@@ -1372,6 +1501,10 @@ def merge_and_export(
     if sqat_metadata:
         sqat_meta = {_strip_peft_prefix(k): v for k, v in sqat_metadata.items()}
 
+    # --- Reindex full-QAT LSQ scales to dense-model names (strip the PEFT prefix) ---
+    if full_lsq_scales:
+        full_lsq_scales = {_strip_peft_prefix(k): v for k, v in full_lsq_scales.items()}
+
     # --- AWQ path: fold D into graph, then move to GPU for packing ---
     # --- Dequant path: keep on CPU, D is handled inside quantizer ---
     if not export_dequant:
@@ -1420,6 +1553,7 @@ def merge_and_export(
                 blocksize=int(sp_gptq_cfg.get("blocksize", 128)),
                 nsamples=int(sp_gptq_cfg.get("nsamples", 128)),
                 awq_scales=sp_awq_scales,   # amplified salient grid when AWQ-scale is on
+                lsq_scales=sp_lsq_scales,   # learned salient-slice scale[,zp] when LSQ is on
             )
         except torch.cuda.OutOfMemoryError as e:
             # The training checkpoint is already saved before export, so nothing is lost — the
@@ -1437,10 +1571,14 @@ def merge_and_export(
             torch.cuda.empty_cache()
     else:
         print("[Export] Applying PTQ...")
+        # Route the right LSQ scales: full mode reads lsq_scales.pt (full_lsq_scales); sqat_permute
+        # reads the per-proj salient scales from the meta (sp_lsq_scales).
+        _lsq = sp_lsq_scales if qat_mode == "sqat_permute" else full_lsq_scales
         quantized_layers, quant_targets = _quantize_all_layers(
             merged_model, target_modules, qat_mode, sqat_meta,
             group_size, q_bits, export_dequant, symmetric,
             awq_scales=sp_awq_scales, perm_group_k=sp_group_k,
+            lsq_scales=_lsq,
         )
     print(f"[Export] Quantized {len(quantized_layers)} layers")
 
@@ -1470,7 +1608,7 @@ def merge_and_export(
     if qat_mode == "sqat_permute":
         from .qat_permute_sqat import (
             verify_permute_quant_consistency, group_fakequant, group_dequantize,
-            awq_s_for_module,
+            awq_s_for_module, lsq_scale_for_module,
         )
         gk = sp_group_k or group_size
         n_sal_g = gk // group_size
@@ -1482,8 +1620,10 @@ def merge_and_export(
             if checked >= 6:
                 break
             awq_s = awq_s_for_module(sp_awq_scales, name) if sp_awq else None
+            # LSQ: check the learned-scale grid (o_proj has no slice → None).
+            fixed = lsq_scale_for_module(sp_lsq_scales, name, symmetric) if sp_lsq else None
             err = verify_permute_quant_consistency(
-                W, gk, group_size, q_bits, symmetric, awq_s=awq_s,
+                W, gk, group_size, q_bits, symmetric, awq_s=awq_s, fixed_scale=fixed,
             )
             worst = max(worst, err)
             status = "OK" if err < 1e-4 else "MISMATCH"
@@ -1501,7 +1641,7 @@ def merge_and_export(
                 W_sal = W[:, :gk].float()
                 if awq_s is not None:
                     W_sal = W_sal * awq_s.view(1, -1)
-                canon = group_fakequant(W_sal, group_size, q_bits, symmetric)
+                canon = group_fakequant(W_sal, group_size, q_bits, symmetric, fixed_scale=fixed)
                 serr = (sal_dq - canon).abs().max().item()
                 worst_store = max(worst_store, serr)
                 line += f"  salient-stored max|Δ|={serr:.3e}"

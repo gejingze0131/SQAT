@@ -62,6 +62,14 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.qat_base import QATHandler
+from src.qat_base import (
+    groupwise_lsq_symmetric_fakequant as _lsq_sym_fq,
+    groupwise_lsq_asym_fakequant as _lsq_asym_fq,
+    init_lsq_scale_sym as _lsq_init_sym,
+    init_lsq_scale_zp_asym as _lsq_init_asym,
+    lsq_quantize_export_sym as _lsq_export_sym,
+    lsq_quantize_export_asym as _lsq_export_asym,
+)
 from src.qat_sqat import dequantize_layer
 
 
@@ -846,8 +854,22 @@ def groupwise_asymmetric_fakequant(
 
 def group_fakequant(
     W: torch.Tensor, group_size: int, q_bits: int, symmetric: bool,
+    fixed_scale=None,
 ) -> torch.Tensor:
-    """Training fakequant dispatch (STE). Returns dequantized W (same shape)."""
+    """
+    Training fakequant dispatch (STE). Returns dequantized W (same shape).
+
+    fixed_scale (LSQ): when given, the per-step min-max scale is replaced by a learned scale[, zp]
+    on the LSQ grid (the qat_base single-source-of-truth functions). sym → a scale tensor [out, ng];
+    asym → a (scale[out, ng], zp[out, ng]) tuple. The LSQ grid differs from the min-max grid
+    (sym Qn=-2^(b-1) vs the min-max -q_max), so train and export MUST both go through these LSQ
+    functions — they do (group_quantize/group_dequantize below take the same fixed_scale).
+    """
+    if fixed_scale is not None:
+        if symmetric:
+            return _lsq_sym_fq(W, fixed_scale, group_size, q_bits)
+        scale, zp = fixed_scale
+        return _lsq_asym_fq(W, scale, zp, group_size, q_bits)
     if symmetric:
         return groupwise_symmetric_fakequant(W, group_size, _sym_q_max(q_bits))
     return groupwise_asymmetric_fakequant(W, group_size, _asym_q_max(q_bits))
@@ -861,6 +883,7 @@ def group_fakequant(
 @torch.no_grad()
 def group_quantize(
     W: torch.Tensor, group_size: int, q_bits: int, symmetric: bool, eps: float = 1e-8,
+    fixed_scale=None,
 ):
     """
     Real group quantization for export. Pads in_features to a group multiple internally.
@@ -869,8 +892,24 @@ def group_quantize(
         W_int:  [out, in_features] int levels (float tensor of integers, trimmed to in_features)
         scale:  [out, num_groups]
         zp:     [out, num_groups]   (all zeros for the symmetric branch)
+
+    fixed_scale (LSQ): when given (sym: scale[out, ng]; asym: (scale, zp)), skip the min-max
+    amax/_asym_qparams and quantize with the LEARNED scale[, zp] on the LSQ grid via the qat_base
+    export quantizers. This is the export half of the train↔export single-source-of-truth: the
+    returned (scale, zp) are exactly what group_dequantize/group_fakequant(fixed_scale=...) use.
     """
     out_f, in_f = W.shape
+    if fixed_scale is not None:
+        if symmetric:
+            scale = fixed_scale.float()
+            W_int = _lsq_export_sym(W, scale, group_size, q_bits)
+            zp = torch.zeros_like(scale)
+        else:
+            scale, zp_in = fixed_scale
+            scale = scale.float()
+            W_int, z_int = _lsq_export_asym(W, scale, zp_in.float(), group_size, q_bits)
+            zp = z_int
+        return W_int.contiguous(), scale, zp
     ng  = math.ceil(in_f / group_size)
     pad = ng * group_size - in_f
     Wp  = F.pad(W, (0, pad)) if pad > 0 else W
@@ -908,10 +947,39 @@ def group_dequantize(
     return Wdq.reshape(out_f, -1)[:, :in_features]
 
 
+def _strip_peft_prefix(name: str) -> str:
+    """Strip the PEFT wrapper prefix so training-time names match export dense-model names."""
+    for prefix in ("base_model.model.", "base_model."):
+        if name.startswith(prefix):
+            return name[len(prefix):]
+    return name
+
+
+@torch.no_grad()
+def collect_lsq_scales_from_model(model: nn.Module) -> Dict[str, dict]:
+    """
+    Walk the model for proj modules carrying learned LSQ params (lsq_w_scale[, lsq_w_zp]) and
+    return {stripped_proj_name: {"scale": [out, n_sal_g], "zp": [out, n_sal_g]}}.
+
+    Keyed by the EXPORT (PEFT-prefix-stripped) name so export's per-module lookup is direct. The
+    scales are in the AMPLIFIED space when AWQ is on (training learned them there); export quantizes
+    W*S with these scales, then bakes /S into the dense weight — same as the training fakequant.
+    """
+    out = {}
+    for name, mod in model.named_modules():
+        if hasattr(mod, "lsq_w_scale"):
+            entry = {"scale": mod.lsq_w_scale.detach().float().cpu().clone()}
+            if hasattr(mod, "lsq_w_zp"):
+                entry["zp"] = mod.lsq_w_zp.detach().float().cpu().clone()
+            out[_strip_peft_prefix(name)] = entry
+    return out
+
+
 @torch.no_grad()
 def verify_permute_quant_consistency(
     W: torch.Tensor, group_k: int, group_size: int, q_bits: int, symmetric: bool,
     awq_s: Optional[torch.Tensor] = None,
+    fixed_scale=None,
 ) -> float:
     """
     Assert the SALIENT slice's training grid == export grid. Returns max|Δ| over [out, group_k]
@@ -919,16 +987,19 @@ def verify_permute_quant_consistency(
     qparams this must be ~0 (fp round-off only). If AWQ-style scaling is used, pass the per-channel
     `awq_s` the slice is quantized in (the amplify+de-amplify cancels, so it stays a self-check of
     the quantizer formulas in the amplified space).
+
+    fixed_scale (LSQ): when given, both the training fakequant and the export quant→dequant use the
+    learned scale[, zp] (LSQ grid) — the check then confirms the LSQ train↔export grids match.
     """
     W_s = W[:, :group_k].float()
     if awq_s is not None:
         s = awq_s.to(torch.float32).view(1, -1)
-        fq = group_fakequant(W_s * s, group_size, q_bits, symmetric) / s
-        wi, sc, zp = group_quantize(W_s * s, group_size, q_bits, symmetric)
+        fq = group_fakequant(W_s * s, group_size, q_bits, symmetric, fixed_scale=fixed_scale) / s
+        wi, sc, zp = group_quantize(W_s * s, group_size, q_bits, symmetric, fixed_scale=fixed_scale)
         dq = group_dequantize(wi, sc, zp, group_size, group_k, symmetric) / s
     else:
-        fq = group_fakequant(W_s, group_size, q_bits, symmetric)
-        wi, sc, zp = group_quantize(W_s, group_size, q_bits, symmetric)
+        fq = group_fakequant(W_s, group_size, q_bits, symmetric, fixed_scale=fixed_scale)
+        wi, sc, zp = group_quantize(W_s, group_size, q_bits, symmetric, fixed_scale=fixed_scale)
         dq = group_dequantize(wi, sc, zp, group_size, group_k, symmetric)
     return (fq - dq).abs().max().item()
 
@@ -990,6 +1061,7 @@ def gptq_quantize_layer(
     blocksize: int = 128,
     eps: float = 1e-8,
     awq_s: Optional[torch.Tensor] = None,   # [group_k] AWQ scale for the salient slice, or None
+    fixed_scale=None,                       # LSQ learned scale[, zp] for the salient slice, or None
 ):
     """
     Quantize the salient slice [0:group_k] to the canonical SQAT grid (training-consistent) and
@@ -1035,11 +1107,18 @@ def gptq_quantize_layer(
     n_sal_g = group_k // group_size
     if group_k > 0:
         W_sal = W[:, :group_k]
+        # LSQ: fixed_scale carries the learned scale[, zp]; group_quantize then uses the LSQ grid
+        # for the salient slice (identical to the training fakequant). Move to W's device.
+        fs = fixed_scale
+        if fs is not None:
+            fs = fs.to(dev) if torch.is_tensor(fs) else (fs[0].to(dev), fs[1].to(dev))
         if awq_s is not None:
             s = awq_s.to(torch.float32).view(1, -1).to(dev)
-            wi_s, sc_s, zp_s = group_quantize(W_sal * s, group_size, q_bits, symmetric, eps)
+            wi_s, sc_s, zp_s = group_quantize(W_sal * s, group_size, q_bits, symmetric, eps,
+                                              fixed_scale=fs)
         else:
-            wi_s, sc_s, zp_s = group_quantize(W_sal, group_size, q_bits, symmetric, eps)
+            wi_s, sc_s, zp_s = group_quantize(W_sal, group_size, q_bits, symmetric, eps,
+                                              fixed_scale=fs)
         W_int[:, :group_k] = wi_s.to(dev)
         scale[:, :n_sal_g]  = sc_s.to(dev)
         zp[:, :n_sal_g]     = zp_s.to(dev)
@@ -1126,6 +1205,33 @@ def awq_s_for_module(awq_scales: Optional[dict], name: str) -> Optional[torch.Te
     return torch.as_tensor(s, dtype=torch.float32)
 
 
+def lsq_scale_for_module(lsq_scales: Optional[dict], name: str, symmetric: bool):
+    """
+    Return the learned LSQ fixed_scale for a proj by name, or None.
+
+    sym  → scale tensor [out, n_sal_g]
+    asym → (scale [out, n_sal_g], zp [out, n_sal_g])
+
+    `lsq_scales` is keyed by the export (PEFT-prefix-stripped) name. Names are matched by exact
+    key, falling back to a suffix match (handles any residual prefix differences).
+    """
+    if not lsq_scales:
+        return None
+    entry = lsq_scales.get(name)
+    if entry is None:
+        # suffix fallback (e.g. caller passes a name with an extra prefix)
+        for k, v in lsq_scales.items():
+            if name.endswith(k) or k.endswith(name):
+                entry = v
+                break
+    if entry is None:
+        return None
+    scale = entry["scale"].float()
+    if symmetric:
+        return scale
+    return scale, entry["zp"].float()
+
+
 class _GPTQCatcherStop(Exception):
     """Raised by the layer-0 catcher to stop the forward after capturing the first input."""
 
@@ -1145,6 +1251,7 @@ def gptq_quantize_model_sequential(
     blocksize: int = 128,
     nsamples: int = 128,
     awq_scales: Optional[dict] = None,
+    lsq_scales: Optional[dict] = None,
 ) -> Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """
     In-place sequential GPTQ on a dense (permuted) fp16 model. For every nn.Linear whose terminal
@@ -1242,9 +1349,13 @@ def gptq_quantize_model_sequential(
         for nm, (mod, gk) in subs.items():
             W = mod.weight.data.float()
             awq_s = awq_s_for_module(awq_scales, nm)
+            # LSQ: salient slice uses the learned scale[, zp] (o_proj gk=0 → none).
+            fixed_scale = (lsq_scale_for_module(lsq_scales, nm, symmetric)
+                           if (lsq_scales and gk > 0) else None)
             W_int, sc, zp = gptq_quantize_layer(
                 W, Hs[nm], gk, group_size, q_bits, symmetric,
                 percdamp=percdamp, blocksize=blocksize, awq_s=awq_s,
+                fixed_scale=fixed_scale,
             )
             W_deq = group_dequantize(W_int, sc, zp, group_size, W.shape[1], symmetric)
             if awq_s is not None:
@@ -1313,6 +1424,8 @@ def fused_qat_residual_outputs(
     symmetric: bool,
     lora_scaling: float,
     awq_s: Optional[torch.Tensor] = None,   # [group_k] per-input-channel AWQ scale, or None
+    lsq_scale: Optional[torch.Tensor] = None,   # [sum_out, n_sal_g] learned LSQ scale, or None
+    lsq_zp: Optional[torch.Tensor] = None,      # [sum_out, n_sal_g] learned LSQ zp (asym), or None
 ) -> List[torch.Tensor]:
     """
     Compute the per-projection QAT residual outputs to be ADDED to each projection's output.
@@ -1333,17 +1446,26 @@ def fused_qat_residual_outputs(
     purely a better quantization grid (no runtime activation scaling, output bit-identical to a
     fold-1/S-into-the-preceding-LN deployment). The main NF4+LoRA path is untouched.
 
+    LSQ: if `lsq_scale` (+ `lsq_zp` for asym) is given, the inner fakequant uses the LEARNED scale[,
+    zp] on the LSQ grid instead of per-step min-max. It composes with AWQ — the scale/zp are learned
+    in the SAME amplified space the fakequant runs in (W_curr*S), so the outer *S … /S is untouched.
+    The scale rows are concatenated over the fused siblings in the SAME order as W_base_salient.
+
     The salient slice is the ONLY weight materialized. Quantization runs in fp32; the residual
     is cast back to X_S.dtype.
     """
     BA     = _fused_BA(A_S_list, B_list).to(torch.float32)         # [sum_out, group_k]
     W_curr = W_base_salient.to(torch.float32) + BA * lora_scaling  # [sum_out, group_k]
+    if lsq_scale is not None:
+        fixed = lsq_scale.float() if symmetric else (lsq_scale.float(), lsq_zp.float())
+    else:
+        fixed = None
     if awq_s is not None:
         s     = awq_s.to(torch.float32).view(1, -1)                # [1, group_k]
-        W_fq  = group_fakequant(W_curr * s, group_size, q_bits, symmetric)
+        W_fq  = group_fakequant(W_curr * s, group_size, q_bits, symmetric, fixed_scale=fixed)
         delta = (W_fq / s - W_curr).to(X_S.dtype)                  # STE residual (original space)
     else:
-        W_fq  = group_fakequant(W_curr, group_size, q_bits, symmetric)
+        W_fq  = group_fakequant(W_curr, group_size, q_bits, symmetric, fixed_scale=fixed)
         delta = (W_fq - W_curr).to(X_S.dtype)
     Y      = F.linear(X_S, delta)                                  # [..., sum_out], one GEMM
     return list(torch.split(Y, list(out_splits), dim=-1))
@@ -1421,6 +1543,7 @@ class _FusedSiblingQATInjector(nn.Module):
         lora_scaling: float,
         where: str,
         awq_s: Optional[torch.Tensor] = None,
+        enable_lsq: bool = False,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -1432,6 +1555,7 @@ class _FusedSiblingQATInjector(nn.Module):
         self.symmetric    = symmetric
         self.lora_scaling = lora_scaling
         self.where        = where
+        self.enable_lsq   = bool(enable_lsq)
 
         _warn_if_lora_dropout(self.projs, where)
 
@@ -1452,6 +1576,25 @@ class _FusedSiblingQATInjector(nn.Module):
             )
         else:
             self.awq_s = None
+
+        # LSQ: register a learned scale[, zp] PER PROJ (nn.Parameter on the proj module, so the HF
+        # Trainer optimizer collects it and export can look it up by the proj's module name). Shape
+        # [out_i, n_sal_g]. Init current_minmax from the base salient slice IN THE SAME (amplified)
+        # space the fakequant runs in, so the initial grid matches the old min-max grid (no jump).
+        if self.enable_lsq:
+            n_sal_g = group_k // group_size
+            for p, b in zip(self.projs, bases):
+                W0 = b.to(torch.float32)                           # [out_i, group_k]
+                if self.awq_s is not None:
+                    W0 = W0 * self.awq_s.view(1, -1).to(W0.device)
+                if symmetric:
+                    s0 = _lsq_init_sym(W0, group_size, q_bits)     # [out_i, n_sal_g]
+                    p.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+                else:
+                    s0, z0 = _lsq_init_asym(W0, group_size, q_bits)
+                    p.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+                    p.lsq_w_zp = nn.Parameter(z0.to(W0.device), requires_grad=True)
+                assert p.lsq_w_scale.shape[1] == n_sal_g
 
         self._deltas: Optional[List[torch.Tensor]] = None
         self._handles: List[torch.utils.hooks.RemovableHandle] = []
@@ -1474,10 +1617,16 @@ class _FusedSiblingQATInjector(nn.Module):
         X_S = hidden_states[..., :self.group_k]
         A_S_list = [_lora_A_S(p, self.group_k) for p in self.projs]
         B_list   = [_lora_B(p) for p in self.projs]
+        lsq_scale = lsq_zp = None
+        if self.enable_lsq:
+            # Concatenate the per-proj learned scale[, zp] in the SAME order as W_base_salient.
+            lsq_scale = torch.cat([p.lsq_w_scale for p in self.projs], dim=0)
+            if not self.symmetric:
+                lsq_zp = torch.cat([p.lsq_w_zp for p in self.projs], dim=0)
         self._deltas = fused_qat_residual_outputs(
             self.W_base_salient, A_S_list, B_list, self.out_splits, X_S,
             self.group_size, self.q_bits, self.symmetric, self.lora_scaling,
-            awq_s=self.awq_s,
+            awq_s=self.awq_s, lsq_scale=lsq_scale, lsq_zp=lsq_zp,
         )
         return None  # do not modify the block inputs
 
@@ -1536,6 +1685,7 @@ class DownProjQATInjector(nn.Module):
         symmetric: bool,
         lora_scaling: float,
         awq_s: Optional[torch.Tensor] = None,
+        enable_lsq: bool = False,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -1546,6 +1696,7 @@ class DownProjQATInjector(nn.Module):
         self.q_bits       = q_bits
         self.symmetric    = symmetric
         self.lora_scaling = lora_scaling
+        self.enable_lsq   = bool(enable_lsq)
 
         _warn_if_lora_dropout([down_proj], "mlp(down)")
         self.register_buffer(
@@ -1561,16 +1712,35 @@ class DownProjQATInjector(nn.Module):
         else:
             self.awq_s = None
         self.out_splits = (self.W_base_salient.shape[0],)
+
+        # LSQ: learned scale[, zp] for down_proj's salient slice (registered on the proj module).
+        if self.enable_lsq:
+            W0 = self.W_base_salient.to(torch.float32)
+            if self.awq_s is not None:
+                W0 = W0 * self.awq_s.view(1, -1).to(W0.device)
+            if symmetric:
+                s0 = _lsq_init_sym(W0, group_size, q_bits)
+                down_proj.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+            else:
+                s0, z0 = _lsq_init_asym(W0, group_size, q_bits)
+                down_proj.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+                down_proj.lsq_w_zp = nn.Parameter(z0.to(W0.device), requires_grad=True)
+
         self._handles = [down_proj.register_forward_hook(self._hook)]
 
     def _hook(self, module, inp, out):
         X_S = inp[0][..., :self.group_k]
         A_S = _lora_A_S(self.down_proj, self.group_k)
         B   = _lora_B(self.down_proj)
+        lsq_scale = lsq_zp = None
+        if self.enable_lsq:
+            lsq_scale = self.down_proj.lsq_w_scale
+            if not self.symmetric:
+                lsq_zp = self.down_proj.lsq_w_zp
         (delta_out,) = fused_qat_residual_outputs(
             self.W_base_salient, [A_S], [B], self.out_splits, X_S,
             self.group_size, self.q_bits, self.symmetric, self.lora_scaling,
-            awq_s=self.awq_s,
+            awq_s=self.awq_s, lsq_scale=lsq_scale, lsq_zp=lsq_zp,
         )
         return out + delta_out
 
@@ -1594,6 +1764,7 @@ def install_fused_selective_qat(
     target_modules: Sequence[str],
     include_down_proj: bool = True,
     awq_scales: Optional[dict] = None,
+    enable_lsq: bool = False,
 ) -> List[nn.Module]:
     """
     Install block-level fused Selective-QAT injectors on every decoder layer.
@@ -1612,7 +1783,7 @@ def install_fused_selective_qat(
     """
     common = dict(
         group_k=group_k, group_size=group_size, q_bits=q_bits,
-        symmetric=symmetric, lora_scaling=lora_scaling,
+        symmetric=symmetric, lora_scaling=lora_scaling, enable_lsq=enable_lsq,
     )
 
     def _s(src: str, l: int) -> Optional[torch.Tensor]:
@@ -1652,7 +1823,7 @@ def install_fused_selective_qat(
         f"{sum(isinstance(i, FusedMLPQATInjector) for i in injectors)} mlp, "
         f"{sum(isinstance(i, DownProjQATInjector) for i in injectors)} down  "
         f"(group_k={group_k}, group_size={group_size}, symmetric={symmetric}, "
-        f"awq_scale={'on' if awq_scales else 'off'})"
+        f"awq_scale={'on' if awq_scales else 'off'}, enable_lsq={enable_lsq})"
     )
     return injectors
 
@@ -1921,6 +2092,8 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         self.boundary_perms:       List[torch.LongTensor] = []
         self.segment_perms:        Dict[int, List[int]] = {}
         self.block_internal_perms: Dict[str, List[int]] = {}
+        self.enable_lsq:           bool = False
+        self._lsq_proj_names:      Dict[int, Tuple[str, nn.Module]] = {}
 
     def prepare_model(
         self,
@@ -1944,6 +2117,7 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         q_bits         = cfg["model"]["quant_bits"]
         symmetric      = cfg["qat"].get("symmetric", True)
         awq_enabled    = bool((sp_cfg.get("awq_scale", {}) or {}).get("enabled", False))
+        enable_lsq     = bool(cfg["qat"].get("lsq", {}).get("enabled", False))
         lora_scaling   = cfg["lora"]["alpha"] / cfg["lora"]["rank"]
         target_modules = cfg["lora"]["target_modules"]
         d_model        = perm_meta["d_model"]
@@ -1964,6 +2138,7 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         )
 
         # ---- 2) Stage 2 — install block-level fused Selective-QAT injectors. ----
+        self.enable_lsq = enable_lsq
         if stage >= 2:
             self.injectors = install_fused_selective_qat(
                 model,
@@ -1975,19 +2150,28 @@ class SegmentPermutedSelectiveQAT(QATHandler):
                 target_modules=target_modules,
                 include_down_proj=True,
                 awq_scales=awq_scales,
+                enable_lsq=enable_lsq,
             )
 
         # ---- 3) Attach export metadata (perm_meta + q_bits + symmetric + awq flag). ----
         model._sqat_permute_meta = {
             **perm_meta, "q_bits": q_bits, "symmetric": symmetric,
-            "awq_scale": awq_enabled,
+            "awq_scale": awq_enabled, "lsq": enable_lsq,
         }
+        # Keep a reference so collect (after training) can read the learned scales off the live
+        # proj modules. The proj→name map lets us key lsq_scales by the export (stripped) name.
+        self._lsq_proj_names = {}
+        if enable_lsq:
+            for name, mod in model.named_modules():
+                if hasattr(mod, "lsq_w_scale"):
+                    self._lsq_proj_names[id(mod)] = (name, mod)
+
         print(f"[SegPerm] prepare_model done: stage={stage}, "
               f"num_runtime_permutes={len(self.boundary_perms)}, "
               f"group_k={group_k}, group_size={group_size}, symmetric={symmetric}, "
-              f"awq_scale={awq_enabled}")
+              f"awq_scale={awq_enabled}, enable_lsq={enable_lsq}")
         return model
 
     def on_train_begin(self, model: nn.Module): pass
     def on_step_end(self, model: nn.Module, step: int): pass
-    def on_train_end(self, model: nn.Module): pass
+    def on_train_end(self, model: nn.Module, output_dir=None): pass

@@ -42,17 +42,22 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # ---------------------------------------------------------------------------
 # Config — read the SAME sqat_permute config to keep all non-method params equal
 # ---------------------------------------------------------------------------
-DATASET_NAME="commonsense" # "math" or "commonsense" (must match the config yaml)
+DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=4
-BITS=4
+BITS=3
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 EVAL_GPU=0                # single GPU used for export + evaluation
 
 # Dedicated output dir so a full-QAT run never clobbers a permuted/none run.
 OUTPUT_DIR="outputs/qlora-full-${DATASET_NAME}"
+
+# LSQ / LSQ+ learnable quantization scale (LR-QAT style). true → --enable_lsq,
+# false → --no_enable_lsq (original per-step min-max scale). The flag is threaded
+# through the train AND export-only commands so the export reads the learned grid.
+ENABLE_LSQ=true
 
 SKIP_TRAIN=false
 SKIP_EVAL=false
@@ -71,9 +76,18 @@ while [[ $# -gt 0 ]]; do
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --output_dir)     OUTPUT_DIR="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
+        --enable_lsq)     ENABLE_LSQ=true;    shift ;;
+        --no_enable_lsq)  ENABLE_LSQ=false;   shift ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+# Resolve the LSQ flag passed to scripts/train.py (train + export-only commands).
+if [ "$ENABLE_LSQ" = true ]; then
+    LSQ_FLAG="--enable_lsq"
+else
+    LSQ_FLAG="--no_enable_lsq"
+fi
 
 DEQUANT_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-full-dequant-eval"
 MERGED_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-full-merged-eval"
@@ -100,6 +114,7 @@ if [ "$SKIP_TRAIN" = false ]; then
         --qat_mode   full \
         --bits       "$BITS" \
         --asymmetric \
+        $LSQ_FLAG \
         --output_dir "$OUTPUT_DIR" \
         --export_dequant \
         --report_to wandb
@@ -118,6 +133,7 @@ if [ "$SKIP_TRAIN" = false ]; then
         --qat_mode         full \
         --bits             "$BITS" \
         --asymmetric \
+        $LSQ_FLAG \
         --export_only \
         --export_merged_only \
         --checkpoint_dir   "$CHECKPOINT_DIR" \
@@ -136,6 +152,7 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
         --qat_mode         full \
         --bits             "$BITS" \
         --asymmetric \
+        $LSQ_FLAG \
         --export_only \
         --export_dequant \
         --checkpoint_dir   "$CHECKPOINT_DIR" \
@@ -147,6 +164,7 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
         --qat_mode         full \
         --bits             "$BITS" \
         --asymmetric \
+        $LSQ_FLAG \
         --export_only \
         --export_merged_only \
         --checkpoint_dir   "$CHECKPOINT_DIR" \

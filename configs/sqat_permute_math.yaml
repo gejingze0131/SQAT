@@ -1,6 +1,6 @@
 model:
   name: "meta-llama/Llama-2-7b-hf"
-  quant_bits: 2
+  quant_bits: 3
   double_quant: true
   quant_type: "nf4"
   dtype: "bfloat16"
@@ -30,11 +30,20 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric affine (same as QA-LoRA convention)
-  group_size: 16          # group_k % group_size == 0 required.
+  group_size: 64          # group_k % group_size == 0 required.
                             # group_k=128 + group_size=16 → fakequant first 8 groups (cols 0–127)
                             # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
                             # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
                             # (2-bit: small group_size matters a lot — only 4 levels per group)
+
+  # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
+  # fakequant scale is replaced by a learnable nn.Parameter (asym → learn scale+zp, sym → learn
+  # scale only), initialized current_minmax so the initial grid matches the old min-max grid.
+  # Applies to full QAT and the sqat_permute salient slice. enabled=false → bit-identical to the
+  # original min-max path. scales_lr is a dedicated (small) optimizer lr for the scale/zp group.
+  lsq:
+    enabled: false
+    scales_lr: 1.0e-5
 
   # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
   sqat:

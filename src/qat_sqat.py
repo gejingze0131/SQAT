@@ -1245,6 +1245,6 @@ class SelectiveSalientQAT(QATHandler):
         if refreshed > 0 and step > 0:
             print(f"[SQAT] Step {step}: refreshed base ranges for {refreshed} layers")
 
-    def on_train_end(self, model):
+    def on_train_end(self, model, output_dir=None):
         if hasattr(self, '_refresh_interval') and self._refresh_interval > 0:
             self._refresh_base_max(model, step=-1)

@@ -84,6 +84,8 @@ def load_config(config_path: str, overrides: dict) -> dict:
     if overrides.get("gptq_nonsalient") is not None:
         cfg["qat"].setdefault("sqat_permute", {}).setdefault("gptq", {})["enabled"] = \
             overrides["gptq_nonsalient"]
+    if overrides.get("enable_lsq") is not None:
+        cfg["qat"].setdefault("lsq", {})["enabled"] = overrides["enable_lsq"]
     if overrides.get("report_to"):
         cfg["training"]["report_to"] = overrides["report_to"]
 
@@ -155,6 +157,14 @@ def main():
     parser.add_argument("--no_gptq_nonsalient", dest="gptq_nonsalient",
                         action="store_false",
                         help="sqat_permute: disable GPTQ for non-salient cols (plain RTN export).")
+    parser.add_argument("--enable_lsq", dest="enable_lsq",
+                        action="store_true", default=None,
+                        help="Use LSQ/LSQ+ learnable quantization scale (asym→learn scale+zp, "
+                             "sym→learn scale), init current_minmax. Replaces min-max fakequant "
+                             "for full QAT (and sqat_permute salient slice). Default off.")
+    parser.add_argument("--no_enable_lsq", dest="enable_lsq",
+                        action="store_false",
+                        help="Disable LSQ (use the original per-step min-max scale).")
     parser.add_argument("--report_to", type=str, default=None)
 
     # Data overrides
@@ -425,6 +435,13 @@ def main():
         meta_path = os.path.join(final_dir, "sqat_metadata.pt")
         torch.save(sqat_metadata, meta_path)
         print(f"SQAT metadata saved to {meta_path}")
+
+    # FullQAT + LSQ: the learned scale[,zp] are self-registered nn.Parameters that PEFT
+    # save_pretrained does NOT persist. Save them next to the final adapter so --export_only
+    # can read the exact training grid. The injectors' remove() (on_train_end) only restores
+    # the module forward, so the params still hold their trained values here.
+    if qat_mode == "full" and hasattr(qat_handler, "save_lsq_scales"):
+        qat_handler.save_lsq_scales(final_dir)
 
     if sqat_permute_metadata:
         from src.export import save_sqat_permute_meta

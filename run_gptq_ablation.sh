@@ -28,12 +28,12 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # ---------------------------------------------------------------------------
 # Config — must match the run that produced the checkpoint
 # ---------------------------------------------------------------------------
-DATASET_NAME="commonsense" # "math" or "commonsense" (must match the config yaml)
+DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
-BITS=4
+BITS=3
 EVAL_GPU=0
 
-CHECKPOINT_DIR=""          # empty → auto-detect latest outputs/qlora-sqat-permute*/final
+CHECKPOINT_DIR="outputs/qlora-sqat-permute-3bit-sqat_permute/final"          # empty → auto-detect latest outputs/qlora-sqat-permute*/final
 SKIP_EVAL=false
 
 # ---------------------------------------------------------------------------
