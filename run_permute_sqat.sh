@@ -15,6 +15,9 @@
 #   bash run_permute_sqat.sh --skip_eval              # train+export, no benchmarks
 #   bash run_permute_sqat.sh --skip_train             # export + eval from latest checkpoint
 #   bash run_permute_sqat.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
+#   bash run_permute_sqat.sh --resume_from <ckpt>     # CONTINUE training from a Trainer checkpoint
+#                                                     #   (reuses permuted base; raise num_epochs to
+#                                                     #    train past the original max_steps)
 #   bash run_permute_sqat.sh --num_gpus 2 --config configs/sqat_permute.yaml
 # =============================================================================
 
@@ -29,11 +32,11 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # ---------------------------------------------------------------------------
 # Config (BOUNDARY_SIZES / GROUP_K must match the chosen --config yaml)
 # ---------------------------------------------------------------------------
-DATASET_NAME="commonsense" # math or commonsense (must match the config yaml, which controls the boundary gather)
+DATASET_NAME="math" # math or commonsense (must match the config yaml, which controls the boundary gather)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
-NUM_GPUS=2
-BITS=4
+NUM_GPUS=4
+BITS=2          # 2 / 3 / 4  (must match configs/*.yaml model.quant_bits; base stays NF4)
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 BOUNDARY_SIZES="2 30"     # must match configs/sqat_permute_${DATASET_NAME}.yaml: qat.sqat_permute.boundary_sizes
@@ -55,6 +58,10 @@ SKIP_TRAIN=false
 SKIP_EVAL=false
 # CHECKPOINT_DIR="outputs/qlora-sqat-permute-4bit-sqat_permute/final"
 CHECKPOINT_DIR=""
+# 从某个 Trainer checkpoint 恢复继续训练（例：outputs/qlora-sqat-permute-3bit-sqat_permute/checkpoint-6000）。
+# 留空 = 全新训练。sqat_permute 恢复时会复用已有的 <output_dir>/permuted_fp16_base（不重新生成 permute，
+# 否则与 checkpoint 的 LoRA 不匹配）。注意：若 checkpoint 已接近 max_steps，想多训需在 config 调大 num_epochs。
+RESUME_FROM=""
 
 # ---------------------------------------------------------------------------
 # Parse arguments
@@ -65,6 +72,7 @@ while [[ $# -gt 0 ]]; do
         --skip_train)     SKIP_TRAIN=true;    shift ;;
         --skip_eval)      SKIP_EVAL=true;     shift ;;
         --checkpoint_dir) CHECKPOINT_DIR="$2"; SKIP_TRAIN=true; shift 2 ;;
+        --resume_from)    RESUME_FROM="$2";   shift 2 ;;
         --num_gpus)       NUM_GPUS="$2";      shift 2 ;;
         --config)         CONFIG="$2";        shift 2 ;;
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
@@ -89,6 +97,16 @@ else
     GPTQ_FLAG="--no_gptq_nonsalient"
 fi
 
+# Resume: continue TRAINING from the checkpoint (reuses the permuted base; does NOT skip train).
+RESUME_FLAG=""
+if [ -n "$RESUME_FROM" ]; then
+    if [ ! -d "$RESUME_FROM" ]; then
+        echo "ERROR: --resume_from checkpoint dir not found: $RESUME_FROM"; exit 1
+    fi
+    RESUME_FLAG="--resume_from_checkpoint $RESUME_FROM"
+    SKIP_TRAIN=false
+fi
+
 echo "============================================================"
 echo "  Permuted Selective-QAT Pipeline"
 echo "  Config:      $CONFIG"
@@ -97,6 +115,7 @@ echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (eval)"
 echo "  Boundaries:  [$BOUNDARY_SIZES]   group_k=$GROUP_K   bits=$BITS"
 echo "  AWQ-scale:     $AWQ_SCALE"
 echo "  GPTQ non-sal:  $GPTQ_NONSALIENT"
+[ -n "$RESUME_FROM" ] && echo "  Resume from:   $RESUME_FROM"
 echo "============================================================"
 
 # ---------------------------------------------------------------------------
@@ -126,6 +145,7 @@ if [ "$SKIP_TRAIN" = false ]; then
         --asymmetric \
         $AWQ_FLAG \
         $GPTQ_FLAG \
+        $RESUME_FLAG \
         --export_dequant \
         --report_to wandb
 

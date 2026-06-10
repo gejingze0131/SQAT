@@ -1,6 +1,6 @@
 model:
   name: "meta-llama/Llama-2-7b-hf"
-  quant_bits: 4
+  quant_bits: 2
   double_quant: true
   quant_type: "nf4"
   dtype: "bfloat16"
@@ -29,15 +29,16 @@ lora:
 
 qat:
   mode: "sqat_permute"
-  symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
-  group_size: 64           # group_k % group_size == 0 required.
-                            # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
+  symmetric: false          # asymmetric affine (same as QA-LoRA convention)
+  group_size: 16          # group_k % group_size == 0 required.
+                            # group_k=128 + group_size=16 → fakequant first 8 groups (cols 0–127)
                             # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
-                            # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
+                            # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
+                            # (2-bit: small group_size matters a lot — only 4 levels per group)
 
   # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
   sqat:
-    calibration_samples: 512
+    calibration_samples: 256
     calibration_seq_len: 2048
 
   sqat_permute:
@@ -116,9 +117,9 @@ training:
   # Fix B: halve the micro-batch and double accumulation → same effective batch
   # (2 x 8 x 4 GPUs = 64) but ~half the peak activation memory, leaving headroom
   # for the longest sequences. group_by_length keeps padding waste low.
-  per_device_train_batch_size: 4
-  per_device_eval_batch_size: 4
-  gradient_accumulation_steps: 4
+  per_device_train_batch_size: 8
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 2
   group_by_length: true
   learning_rate: 2.0e-4
   weight_decay: 0.01

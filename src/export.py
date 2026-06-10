@@ -1232,6 +1232,14 @@ def merge_and_export(
             print(f"[Export]   sqat_permute metadata: "
                   f"num_boundaries={len(mm.get('boundary_perms', []))}, "
                   f"group_k={mm.get('group_k')}, group_size={mm.get('group_size')}")
+            # The training fakequant used the group_size recorded in the permuted base's meta.
+            # Trust that over the (possibly edited) config so train↔export grids stay consistent
+            # — critical when resuming/exporting an older checkpoint whose config has since changed.
+            meta_gs = mm.get("group_size")
+            if meta_gs and meta_gs != group_size:
+                print(f"[Export]   sqat_permute: overriding export group_size "
+                      f"{group_size} → {meta_gs} (from meta, matches training fakequant)")
+                group_size = meta_gs
 
     # Improvement 2 — AWQ-style per-channel salient scaling. Resolve the per-(layer,source) scales
     # + group_k from the (training-set) meta. When enabled, the salient slice is quantized in the

@@ -28,14 +28,13 @@ def _get_bnb_config(cfg: dict) -> BitsAndBytesConfig:
             bnb_4bit_compute_dtype=compute_dtype,
             bnb_4bit_use_double_quant=cfg["model"]["double_quant"],
         )
-    elif bits == 3:
-        # bitsandbytes doesn't natively support 3-bit.
-        # Strategy: use 4-bit NF4 config as base, then we override the
-        # quantization map in a post-processing step (see qat_base.py).
-        # Alternatively, use GPTQ/AutoGPTQ with 3-bit calibration.
-        # For now, we use 4-bit and flag for downstream handling.
-        print("[WARN] 3-bit requested. Using 4-bit NF4 as base; "
-              "3-bit rounding will be applied in QAT layer.")
+    elif bits in (2, 3):
+        # bitsandbytes has no native 2-/3-bit. Strategy: load the QLoRA base in 4-bit NF4 and
+        # apply the actual 2-/3-bit rounding downstream — in the QAT fakequant (salient slice)
+        # and at export (salient = canonical grid, non-salient = GPTQ). For sqat_permute the
+        # permuted base is the NF4 base; quant_bits only sets the fakequant/export target.
+        print(f"[WARN] {bits}-bit requested. Using 4-bit NF4 as the QLoRA base; "
+              f"{bits}-bit rounding is applied in the QAT/export quantizer.")
         return BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -43,7 +42,7 @@ def _get_bnb_config(cfg: dict) -> BitsAndBytesConfig:
             bnb_4bit_use_double_quant=cfg["model"]["double_quant"],
         )
     else:
-        raise ValueError(f"Unsupported quant_bits={bits}. Use 3 or 4.")
+        raise ValueError(f"Unsupported quant_bits={bits}. Use 2, 3 or 4.")
 
 
 def _get_lora_config(cfg: dict) -> LoraConfig:

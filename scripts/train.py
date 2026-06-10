@@ -120,7 +120,7 @@ def main():
         choices=["none", "full", "sqat", "qalora", "sqat_permute"],
         default=None,
     )
-    parser.add_argument("--bits", type=int, choices=[3, 4], default=None)
+    parser.add_argument("--bits", type=int, choices=[2, 3, 4], default=None)
     parser.add_argument("--symmetric", dest="symmetric", action="store_true", default=None,
                         help="Use symmetric quantization kernels.")
     parser.add_argument("--asymmetric", dest="symmetric", action="store_false",
@@ -171,6 +171,15 @@ def main():
                         help="If dataset has no validation split, carve one out from train "
                              "(e.g. 0.01 or 1000 if using datasets train_test_split semantics).")
     parser.add_argument("--num_proc", type=int, default=None)
+
+    # Resume training from a Trainer checkpoint (e.g. .../checkpoint-6000). For sqat_permute this
+    # REUSES the existing permuted fp16 base (it must NOT be regenerated — a fresh permute would
+    # not match the checkpoint's LoRA). Optionally override the base dir with --permuted_base_dir.
+    parser.add_argument("--resume_from_checkpoint", type=str, default=None,
+                        help="Path to a Trainer checkpoint dir to resume training from.")
+    parser.add_argument("--permuted_base_dir", type=str, default=None,
+                        help="sqat_permute: explicit permuted fp16 base dir to reuse on resume "
+                             "(defaults to <output_dir>/permuted_fp16_base).")
 
     # Export mode
     parser.add_argument("--export_only", action="store_true")
@@ -274,9 +283,22 @@ def main():
         from transformers import DataCollatorForSeq2Seq
 
         sp_cfg       = cfg["qat"]["sqat_permute"]
-        permuted_dir = os.path.join(cfg["training"]["output_dir"], "permuted_fp16_base")
+        permuted_dir = args.permuted_base_dir or os.path.join(
+            cfg["training"]["output_dir"], "permuted_fp16_base")
 
-        if accelerator.is_main_process:
+        if args.resume_from_checkpoint:
+            # 恢复训练：必须复用原训练的 permuted base，绝不重新生成 —— 新的 saliency/permute
+            # 会与 checkpoint 里的 LoRA 错位，训练会立刻崩坏。
+            _meta_pt = os.path.join(permuted_dir, "sqat_permute_meta.pt")
+            if not (os.path.isdir(permuted_dir) and os.path.exists(_meta_pt)):
+                raise FileNotFoundError(
+                    f"[SQAT-Permute][Resume] 找不到原训练的 permuted base: {permuted_dir} "
+                    f"(缺 sqat_permute_meta.pt)。恢复训练必须复用与 checkpoint 一致的 permuted "
+                    f"base — 用 --permuted_base_dir 显式指定，或确认它未被删除。"
+                )
+            if accelerator.is_main_process:
+                print(f"\n[SQAT-Permute][Resume] 复用已有 permuted base（不重新生成）: {permuted_dir}")
+        elif accelerator.is_main_process:
             print("\n[SQAT-Permute] Building permuted fp16 base (permute BEFORE NF4)...")
             sp_tok = AutoTokenizer.from_pretrained(
                 cfg["model"]["name"], use_fast=True, trust_remote_code=True
@@ -370,7 +392,16 @@ def main():
 
     # --- Train ---
     print("\n[5/5] Starting training...")
-    trainer.train()
+    if args.resume_from_checkpoint:
+        print(f"  Resuming from checkpoint: {args.resume_from_checkpoint}")
+        if qat_mode == "sqat_permute":
+            _awq = bool((cfg["qat"]["sqat_permute"].get("awq_scale", {}) or {}).get("enabled", False))
+            print(f"  [一致性提醒] 本次 awq_scale={_awq}, group_size={perm_meta['group_size']} "
+                  f"(来自复用的 permuted base)。AWQ 改变训练时的 fakequant 网格——必须与该 checkpoint "
+                  f"原始训练时一致，否则 resume 后 loss 会跳变。GPTQ 仅在导出生效，不影响训练连续性。")
+        trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    else:
+        trainer.train()
 
     # --- Collect metadata BEFORE any save/unwrap ---
     sqat_metadata = None
