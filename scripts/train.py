@@ -260,6 +260,28 @@ def main():
             else:
                 print(f"[Export] WARNING: sqat_permute mode but no metadata at {perm_meta_path}")
 
+        if qat_mode == "qalora":
+            # The adapter was trained against the frozen GPTQ INT-b base; reload that exact base for
+            # the dequant export. For merged-only (no-quant upper bound) use the ORIGINAL fp16 base.
+            qa_meta_path  = os.path.join(args.checkpoint_dir, "qalora_meta.pt")
+            intb_base_dir = (torch.load(qa_meta_path, map_location="cpu").get("intb_base_dir")
+                             if os.path.exists(qa_meta_path) else None)
+            if not (intb_base_dir and os.path.isdir(intb_base_dir)):
+                raise FileNotFoundError(
+                    f"[Export] QA-LoRA intb base dir missing/not found ({intb_base_dir!r}). The "
+                    f"export REQUIRES the GPTQ base the adapter was trained against — re-check "
+                    f"{qa_meta_path} (was the base dir deleted?). Refusing to export the wrong base."
+                )
+            elif args.export_merged_only:
+                _bm_path = os.path.join(intb_base_dir, "qalora_base_meta.pt")
+                _orig    = (torch.load(_bm_path, map_location="cpu").get("orig_base_name")
+                            if os.path.exists(_bm_path) else None)
+                cfg["model"]["name"] = _orig or intb_base_dir
+                print(f"[Export] QA-LoRA merged-only: original fp16 base {cfg['model']['name']}")
+            else:
+                cfg["model"]["name"] = intb_base_dir
+                print(f"[Export] QA-LoRA: GPTQ INT-b base {intb_base_dir}")
+
         # Don't need to load quantized model — export loads FP16 base separately
         tokenizer = AutoTokenizer.from_pretrained(args.checkpoint_dir)
         if args.export_merged_only:
@@ -348,6 +370,66 @@ def main():
         print(f"[SQAT-Permute] Using permuted base {permuted_dir} "
               f"(num_runtime_permutes={len(perm_meta['boundary_perms'])})")
 
+    # --- QA-LoRA: build the GPTQ INT-b frozen base BEFORE loading (faithful, no NF4 double-quant) --
+    # The official QA-LoRA trains on a REAL GPTQ INT-b base (no NF4). Rank 0 quantizes the fp16 base
+    # to INT-b g{group_size} once (calibrated), saves it; all ranks then load THAT fp16 checkpoint
+    # frozen via model_loader's qalora path. The grid is identical train↔export (same checkpoint).
+    # NB: build the base under the SAME "-{bits}bit-{mode}" dir the Trainer uses (src/trainer.py), so
+    # it sits next to the final/ checkpoint regardless of the un-suffixed cfg output_dir.
+    if qat_mode == "qalora":
+        from src.qalora import build_qalora_intb_base
+        from transformers import DataCollatorForSeq2Seq
+
+        _suffixed_out = f"{cfg['training']['output_dir']}-{bits}bit-{qat_mode}"
+        qa_base_dir = os.path.join(_suffixed_out, "qalora_intb_base")
+        qa_gptq = (cfg["qat"].get("qalora", {}) or {}).get("gptq", {}) or {}
+
+        if args.resume_from_checkpoint:
+            if not (os.path.isdir(qa_base_dir)
+                    and os.path.exists(os.path.join(qa_base_dir, "qalora_base_meta.pt"))):
+                raise FileNotFoundError(
+                    f"[QA-LoRA][Resume] missing GPTQ base {qa_base_dir}; resume must reuse the base "
+                    f"the checkpoint was trained against (a fresh GPTQ base would not match the LoRA)."
+                )
+            if accelerator.is_main_process:
+                print(f"\n[QA-LoRA][Resume] reusing existing GPTQ base: {qa_base_dir}")
+        elif accelerator.is_main_process:
+            print("\n[QA-LoRA] Building GPTQ INT-b base (quantize BEFORE training, no NF4)...")
+            qa_tok = AutoTokenizer.from_pretrained(
+                cfg["model"]["name"], use_fast=True, trust_remote_code=True
+            )
+            if qa_tok.pad_token is None:
+                qa_tok.pad_token    = qa_tok.eos_token
+                qa_tok.pad_token_id = qa_tok.eos_token_id
+            cal_dataset  = load_calibration_data(cfg, qa_tok)
+            cal_collator = DataCollatorForSeq2Seq(
+                tokenizer=qa_tok, padding=True, return_tensors="pt",
+            )
+            cal_dataloader = DataLoader(
+                cal_dataset,
+                batch_size=int(qa_gptq.get("batch_size", 2)),
+                collate_fn=cal_collator, shuffle=False,
+            )
+            build_qalora_intb_base(
+                model_name=cfg["model"]["name"],
+                tokenizer=qa_tok,
+                calibration_dataloader=cal_dataloader,
+                target_terminals=cfg["lora"]["target_modules"],
+                group_size=cfg["qat"].get("group_size", 128),
+                q_bits=cfg["model"]["quant_bits"],
+                symmetric=cfg["qat"].get("symmetric", False),
+                save_dir=qa_base_dir,
+                device=accelerator.device,
+                percdamp=float(qa_gptq.get("percdamp", 0.01)),
+                blocksize=int(qa_gptq.get("blocksize", 128)),
+                nsamples=int(qa_gptq.get("nsamples", 128)),
+                dtype=getattr(torch, cfg["model"]["dtype"]),
+            )
+        accelerator.wait_for_everyone()
+        # All ranks: load the GPTQ INT-b base in fp16 (model_loader's qalora path), not NF4.
+        cfg["model"]["name"] = qa_base_dir
+        print(f"[QA-LoRA] Using GPTQ INT-b base {qa_base_dir}")
+
     # --- Load model ---
     print("\n[1/5] Loading model and tokenizer...")
     model, tokenizer, base_model_ref = load_model_and_tokenizer(cfg)
@@ -435,6 +517,15 @@ def main():
         meta_path = os.path.join(final_dir, "sqat_metadata.pt")
         torch.save(sqat_metadata, meta_path)
         print(f"SQAT metadata saved to {meta_path}")
+
+    # QA-LoRA: record the GPTQ INT-b base dir so --export_only can reload the exact frozen base the
+    # adapter was trained against (cfg["model"]["name"] is already that dir here).
+    if qat_mode == "qalora":
+        torch.save(
+            {"intb_base_dir": cfg["model"]["name"]},
+            os.path.join(final_dir, "qalora_meta.pt"),
+        )
+        print(f"QA-LoRA base dir recorded: {cfg['model']['name']}")
 
     # FullQAT + LSQ: the learned scale[,zp] are self-registered nn.Parameters that PEFT
     # save_pretrained does NOT persist. Save them next to the final adapter so --export_only

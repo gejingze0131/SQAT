@@ -42,7 +42,7 @@ qat:
   # Applies to full QAT and the sqat_permute salient slice. enabled=false → bit-identical to the
   # original min-max path. scales_lr is a dedicated (small) optimizer lr for the scale/zp group.
   lsq:
-    enabled: false
+    enabled: true
     scales_lr: 1.0e-5
 
   # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])

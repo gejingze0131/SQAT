@@ -79,6 +79,34 @@ def load_model_and_tokenizer(cfg: dict):
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
+    # --- QA-LoRA: fp16 frozen base (GPTQ INT-b grid pre-baked into the weights) -----------------
+    # QA-LoRA trains on the ACTUAL quantized base (the official repo uses a GPTQ INT-b model, no
+    # NF4). cfg["model"]["name"] has already been pointed at the build_qalora_intb_base checkpoint
+    # by scripts/train.py, so we load it in fp16 (NOT NF4 — that would re-quantize the INT-b grid)
+    # and freeze it. The qalora forward never re-quantizes; the adapter folds into the zero-points.
+    if cfg["qat"].get("mode") == "qalora":
+        attn_impl = cfg["model"].get("attn_implementation", None)
+        model_kwargs = dict(
+            pretrained_model_name_or_path=model_name,
+            dtype=getattr(torch, cfg["model"]["dtype"]),
+            low_cpu_mem_usage=True,
+            trust_remote_code=True,
+        )
+        if attn_impl:
+            model_kwargs["attn_implementation"] = attn_impl
+        model = AutoModelForCausalLM.from_pretrained(**model_kwargs)
+        for p in model.parameters():
+            p.requires_grad_(False)
+        # Gradient checkpointing keeps the fp16 base (~13GB) trainable within memory; the frozen
+        # base needs input grads enabled so gradients reach the LoRA adapter through checkpoints.
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        model.enable_input_require_grads()
+        base_model_ref = model
+        lora_config = _get_lora_config(cfg)
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
+        return model, tokenizer, base_model_ref
+
     # --- Quantized base model ---
     bnb_config = _get_bnb_config(cfg)
 

@@ -36,7 +36,7 @@ DATASET_NAME="math" # math or commonsense (must match the config yaml, which con
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=4
-BITS=2          # 2 / 3 / 4  (must match configs/*.yaml model.quant_bits; base stays NF4)
+BITS=3          # 2 / 3 / 4  (must match configs/*.yaml model.quant_bits; base stays NF4)
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 BOUNDARY_SIZES="2 30"     # must match configs/sqat_permute_${DATASET_NAME}.yaml: qat.sqat_permute.boundary_sizes
@@ -52,6 +52,13 @@ AWQ_SCALE=true
 # false → non-salient cols use plain RTN (original export)
 # Composes with AWQ_SCALE (salient slice fixed to the amplified grid, non-salient GPTQ'd).
 GPTQ_NONSALIENT=true
+# LSQ / LSQ+ learnable quantization scale (LR-QAT style) on the salient slice; overrides the yaml.
+# true  → the salient slice [0:group_k] is fakequant'd with a LEARNED scale[,zp] (asym→scale+zp),
+#         init current_minmax, learned in the AWQ-amplified space when AWQ_SCALE=true. Aimed at
+#         low-bit (W2/W3) stability. Composes with AWQ_SCALE and GPTQ_NONSALIENT.
+# false → per-step min-max scale (original scheme).
+# The export reads the learned scales from sqat_permute_meta.pt, so Stage-2 export needs no flag.
+ENABLE_LSQ=true
 
 SKIP_VALIDATE=true
 SKIP_TRAIN=false
@@ -79,6 +86,7 @@ while [[ $# -gt 0 ]]; do
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
         --awq_scale)              AWQ_SCALE="$2";            shift 2 ;;
         --gptq_nonsalient)        GPTQ_NONSALIENT="$2";      shift 2 ;;
+        --enable_lsq)             ENABLE_LSQ="$2";           shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -95,6 +103,13 @@ if [ "$GPTQ_NONSALIENT" = "true" ]; then
     GPTQ_FLAG="--gptq_nonsalient"
 else
     GPTQ_FLAG="--no_gptq_nonsalient"
+fi
+
+# Map the LSQ toggle to the train.py flag (config yaml is the fallback default).
+if [ "$ENABLE_LSQ" = "true" ]; then
+    LSQ_FLAG="--enable_lsq"
+else
+    LSQ_FLAG="--no_enable_lsq"
 fi
 
 # Resume: continue TRAINING from the checkpoint (reuses the permuted base; does NOT skip train).
@@ -115,6 +130,7 @@ echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (eval)"
 echo "  Boundaries:  [$BOUNDARY_SIZES]   group_k=$GROUP_K   bits=$BITS"
 echo "  AWQ-scale:     $AWQ_SCALE"
 echo "  GPTQ non-sal:  $GPTQ_NONSALIENT"
+echo "  LSQ:           $ENABLE_LSQ"
 [ -n "$RESUME_FROM" ] && echo "  Resume from:   $RESUME_FROM"
 echo "============================================================"
 
@@ -145,6 +161,7 @@ if [ "$SKIP_TRAIN" = false ]; then
         --asymmetric \
         $AWQ_FLAG \
         $GPTQ_FLAG \
+        $LSQ_FLAG \
         $RESUME_FLAG \
         --export_dequant \
         --report_to wandb

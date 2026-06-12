@@ -1130,6 +1130,23 @@ def gptq_quantize_layer(
     Wn = W[:, group_k:]                          # [out, in_n]  (never touched by the salient slice)
     Hn = H[group_k:, group_k:]
     in_n = in_f - group_k
+
+    # STATIC groups: precompute every group's scale/zp from the ORIGINAL weights and keep them
+    # FIXED during the sweep. GPTQ updates the not-yet-quantized columns (error compensation), so
+    # a grid recomputed mid-sweep from the partially-updated weights is "stale" for the rest of the
+    # group — that breaks OBS's fixed-grid assumption and makes the compensation INCREASE the output
+    # error (GPTQ worse than RTN), worsening as the group grows / bits shrink. A fixed grid restores
+    # OBS optimality (GPTQ ≤ RTN). (Standard GPTQ "static_groups".)
+    ng_n = in_n // group_size
+    for gi in range(ng_n):
+        Wg = Wn[:, gi * group_size:(gi + 1) * group_size]
+        if symmetric:
+            s = _sym_scale(Wg, q_max, eps); z = torch.zeros_like(s)
+        else:
+            s, z = _asym_qparams(Wg, q_max, eps)
+        scale[:, n_sal_g + gi] = s.squeeze(-1)
+        zp[:, n_sal_g + gi]    = z.squeeze(-1)
+
     Hinv = _gptq_cholesky_inv_upper(Hn, percdamp)
 
     for i1 in range(0, in_n, blocksize):
@@ -1144,15 +1161,7 @@ def gptq_quantize_layer(
             w   = W1[:, j]
             d   = Hinv1[j, j]
 
-            if col % group_size == 0:            # new group → compute its grid from current Wn
-                Wg = Wn[:, col:col + group_size]
-                if symmetric:
-                    s = _sym_scale(Wg, q_max, eps); z = torch.zeros_like(s)
-                else:
-                    s, z = _asym_qparams(Wg, q_max, eps)
-                scale[:, g] = s.squeeze(-1)
-                zp[:, g]    = z.squeeze(-1)
-            s = scale[:, g].unsqueeze(-1)
+            s = scale[:, g].unsqueeze(-1)        # FIXED grid (precomputed above)
             z = zp[:, g].unsqueeze(-1)
             if symmetric:
                 qi = torch.round(torch.clamp(w.unsqueeze(-1) / s, -q_max, q_max))

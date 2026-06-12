@@ -1027,8 +1027,19 @@ def _merge_lora_into_dense(
     lora_scaling: float,
     qat_mode: str = "none",
     group_size: int = 128,
+    q_bits: int = 4,
+    quantize_base_qalora: bool = False,
 ) -> int:
-    """Dequant NF4 base + LoRA delta -> copy into dense model. Returns layer count."""
+    """Dequant NF4 base + LoRA delta -> copy into dense model. Returns layer count.
+
+    QA-LoRA (qat_mode="qalora"):
+      The adapter is a group-pooled low-rank path whose delta is constant within each input
+      group, so it folds into the affine zero-points on top of the FROZEN INT-b base. With
+      quantize_base_qalora=True (the deployed/dequant export) the base is first quantized to
+      INT-b with the SAME affine grid the training forward used, then the expanded group delta is
+      added — i.e. dequant_b(W_base) + expand_delta, NOT quant(W_base + delta). With it False (the
+      merged-only upper bound) the raw fp base is kept (W_base + expand_delta, no quant error).
+    """
     import bitsandbytes as bnb
 
     modules_map = _get_named_modules(merged_model)
@@ -1049,6 +1060,14 @@ def _merge_lora_into_dense(
             from .qalora import expand_qalora_delta
             delta_group = (B @ A) * lora_scaling
             delta = expand_qalora_delta(delta_group, in_f, group_size)
+            if quantize_base_qalora:
+                # Freeze the base on the INT-b affine grid (identical fn + dequant source as the
+                # training forward → bit-identical base grid), then fold the group delta into the
+                # dequantized zero-points by adding it on top.
+                from .qat_base import groupwise_asymmetric_fakequant
+                W_base = groupwise_asymmetric_fakequant(
+                    W_base.float(), group_size=group_size, q_max=2 ** q_bits - 1,
+                )
         else:
             delta = (B @ A) * lora_scaling
         W_merged = (W_base + delta).half()
@@ -1490,11 +1509,33 @@ def merge_and_export(
         lora_scaling,
         qat_mode=qat_mode,
         group_size=group_size,
+        q_bits=q_bits,
+        # QA-LoRA dequant export: quantize the base to INT-b and fold the group adapter into the
+        # (dequantized) zero-points inside the merge. Never reached for symmetric/AWQ packing.
+        quantize_base_qalora=(qat_mode == "qalora"),
     )
     print(f"[Export] Merged {count} layers")
 
     del peft_model, base_model_nf4
     torch.cuda.empty_cache()
+
+    # --- QA-LoRA: the merge already produced the deployed dense weights -----------------------
+    # deployed = dequant_b(W_base) + expand_delta, i.e. the frozen INT-b base with the group adapter
+    # folded into the affine zero-points (paper Eq. 7). There is NO re-quantization of (base+delta)
+    # — doing so would move the base grid and destroy the merge-into-zero-point property. Skip the
+    # PTQ/verify path (which assumes a re-quantized merged weight) and save the dense weights as-is.
+    if qat_mode == "qalora":
+        save_dtype = (
+            torch.float16
+            if dequant_dtype.lower() in ("fp16", "float16", "half")
+            else torch.bfloat16
+        )
+        save_dequantized_model(merged_model, tokenizer, output_dir, cfg, dtype=save_dtype)
+        print(f"[Export] Saved QA-LoRA deployed model "
+              f"(frozen INT{q_bits} base + adapter-in-zero-point) to {output_dir}")
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        return output_dir
 
     # --- Reindex SQAT metadata to dense-model names ---
     sqat_meta = {}
