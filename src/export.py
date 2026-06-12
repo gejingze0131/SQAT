@@ -1027,18 +1027,15 @@ def _merge_lora_into_dense(
     lora_scaling: float,
     qat_mode: str = "none",
     group_size: int = 128,
-    q_bits: int = 4,
-    quantize_base_qalora: bool = False,
 ) -> int:
-    """Dequant NF4 base + LoRA delta -> copy into dense model. Returns layer count.
+    """Dequant base + LoRA delta -> copy into dense model. Returns layer count.
 
     QA-LoRA (qat_mode="qalora"):
-      The adapter is a group-pooled low-rank path whose delta is constant within each input
-      group, so it folds into the affine zero-points on top of the FROZEN INT-b base. With
-      quantize_base_qalora=True (the deployed/dequant export) the base is first quantized to
-      INT-b with the SAME affine grid the training forward used, then the expanded group delta is
-      added — i.e. dequant_b(W_base) + expand_delta, NOT quant(W_base + delta). With it False (the
-      merged-only upper bound) the raw fp base is kept (W_base + expand_delta, no quant error).
+      The base is ALREADY the frozen GPTQ INT-b grid (loaded in fp16). The adapter is a group-pooled
+      low-rank path whose delta is constant within each input group, so deployed = W_base_intb +
+      expand_delta (the group delta folds into the affine zero-points). The base is NOT re-quantized
+      here. For the merged-only upper bound the caller loads the ORIGINAL fp16 base instead, giving
+      W_fp16 + expand_delta (no quant error).
     """
     import bitsandbytes as bnb
 
@@ -1060,14 +1057,6 @@ def _merge_lora_into_dense(
             from .qalora import expand_qalora_delta
             delta_group = (B @ A) * lora_scaling
             delta = expand_qalora_delta(delta_group, in_f, group_size)
-            if quantize_base_qalora:
-                # Freeze the base on the INT-b affine grid (identical fn + dequant source as the
-                # training forward → bit-identical base grid), then fold the group delta into the
-                # dequantized zero-points by adding it on top.
-                from .qat_base import groupwise_asymmetric_fakequant
-                W_base = groupwise_asymmetric_fakequant(
-                    W_base.float(), group_size=group_size, q_max=2 ** q_bits - 1,
-                )
         else:
             delta = (B @ A) * lora_scaling
         W_merged = (W_base + delta).half()
@@ -1471,24 +1460,37 @@ def merge_and_export(
         # [FIX] Remap keys if checkpoint was saved with SQAT wrappers active
         _remap_adapter_keys_if_needed(adapter_path)
 
-    # --- Load NF4 base + LoRA adapter ---
+    # --- Load base + LoRA adapter ---
     import bitsandbytes as bnb
     from transformers import BitsAndBytesConfig
 
-    print("[Export] Loading base model in NF4...")
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type=cfg["model"].get("quant_type", "nf4"),
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=cfg["model"].get("double_quant", True),
-    )
-    base_model_nf4 = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        quantization_config=bnb_config,
-        device_map="auto",
-        torch_dtype=torch.float16,
-        trust_remote_code=True,
-    )
+    if qat_mode == "qalora":
+        # QA-LoRA's base is a REAL fp16 GPTQ INT-b checkpoint (build_qalora_intb_base): load it in
+        # fp16, NOT NF4 (NF4 would re-quantize the INT-b grid). Its weights ARE the deployed INT-b
+        # values; the group adapter is added on top (= folded into the affine zero-points). The
+        # merged-only export instead points base_model_name at the ORIGINAL fp16 base (upper bound).
+        print("[Export] Loading QA-LoRA fp16 base (already on the GPTQ INT-b grid)...")
+        base_model_nf4 = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+    else:
+        print("[Export] Loading base model in NF4...")
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type=cfg["model"].get("quant_type", "nf4"),
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=cfg["model"].get("double_quant", True),
+        )
+        base_model_nf4 = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            quantization_config=bnb_config,
+            device_map="auto",
+            torch_dtype=torch.float16,
+            trust_remote_code=True,
+        )
 
     print("[Export] Loading LoRA adapter...")
     peft_model = _load_adapter_for_export(base_model_nf4, adapter_path, cfg)
@@ -1502,6 +1504,9 @@ def merge_and_export(
         trust_remote_code=True,
     )
 
+    # QA-LoRA: base is already the frozen GPTQ INT-b grid, so DO NOT re-quantize — just add the
+    # expanded group delta (W_base_intb + expand_delta = the deployed weight). Other modes merge
+    # the NF4-dequant base + full-rank delta as before.
     count = _merge_lora_into_dense(
         peft_model,
         merged_model,
@@ -1509,10 +1514,6 @@ def merge_and_export(
         lora_scaling,
         qat_mode=qat_mode,
         group_size=group_size,
-        q_bits=q_bits,
-        # QA-LoRA dequant export: quantize the base to INT-b and fold the group adapter into the
-        # (dequantized) zero-points inside the merge. Never reached for symmetric/AWQ packing.
-        quantize_base_qalora=(qat_mode == "qalora"),
     )
     print(f"[Export] Merged {count} layers")
 
@@ -1840,24 +1841,36 @@ def export_merged_only(
     else:
         _remap_adapter_keys_if_needed(adapter_path)
 
-    # --- Load NF4 base + LoRA adapter ---
+    # --- Load base + LoRA adapter ---
     import bitsandbytes as bnb
     from transformers import BitsAndBytesConfig
 
-    print("[Export] Loading base model in NF4...")
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type=cfg["model"].get("quant_type", "nf4"),
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=cfg["model"].get("double_quant", True),
-    )
-    base_model_nf4 = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        quantization_config=bnb_config,
-        device_map="auto",
-        torch_dtype=torch.float16,
-        trust_remote_code=True,
-    )
+    if qat_mode == "qalora":
+        # QA-LoRA never uses NF4 (the patch_qalora_model guard rejects an NF4 base). For the merged
+        # upper bound load the ORIGINAL fp16 base (set by train.py export-only) — fp16 + expand_delta
+        # is the true no-quant reference.
+        print("[Export] Loading QA-LoRA fp16 base (merged upper bound, no quant)...")
+        base_model_nf4 = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+    else:
+        print("[Export] Loading base model in NF4...")
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type=cfg["model"].get("quant_type", "nf4"),
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=cfg["model"].get("double_quant", True),
+        )
+        base_model_nf4 = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            quantization_config=bnb_config,
+            device_map="auto",
+            torch_dtype=torch.float16,
+            trust_remote_code=True,
+        )
 
     print("[Export] Loading LoRA adapter...")
     peft_model = _load_adapter_for_export(base_model_nf4, adapter_path, cfg)
