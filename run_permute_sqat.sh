@@ -61,10 +61,10 @@ GPTQ_NONSALIENT=true
 ENABLE_LSQ=true
 
 SKIP_VALIDATE=true
-SKIP_TRAIN=false
+SKIP_TRAIN=true
 SKIP_EVAL=false
 # CHECKPOINT_DIR="outputs/qlora-sqat-permute-4bit-sqat_permute/final"
-CHECKPOINT_DIR=""
+CHECKPOINT_DIR="outputs/qlora-sqat-permute-3bit-sqat_permute/final"
 # 从某个 Trainer checkpoint 恢复继续训练（例：outputs/qlora-sqat-permute-3bit-sqat_permute/checkpoint-6000）。
 # 留空 = 全新训练。sqat_permute 恢复时会复用已有的 <output_dir>/permuted_fp16_base（不重新生成 permute，
 # 否则与 checkpoint 的 LoRA 不匹配）。注意：若 checkpoint 已接近 max_steps，想多训需在 config 调大 num_epochs。
