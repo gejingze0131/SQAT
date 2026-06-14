@@ -42,11 +42,11 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # ---------------------------------------------------------------------------
 # Config — read the SAME sqat_permute config to keep all non-method params equal
 # ---------------------------------------------------------------------------
-DATASET_NAME="commonsense" # "math" or "commonsense" (must match the config yaml)
+DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
-NUM_GPUS=4
-BITS=4
+NUM_GPUS=2
+BITS=3
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 EVAL_GPU=0                # single GPU used for export + evaluation
@@ -111,17 +111,17 @@ if [ "$SKIP_TRAIN" = false ]; then
     fi
     echo ">>> Training done. Checkpoint: $CHECKPOINT_DIR"
 
-    # --- Stage 1b: Export merged-only (FP16, no quant) --------------------
-    echo -e "\n>>> Stage 1b: Export merged-only (FP16, no quant error)"
-    CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
-        --config           "$CONFIG" \
-        --qat_mode         full \
-        --bits             "$BITS" \
-        --asymmetric \
-        --export_only \
-        --export_merged_only \
-        --checkpoint_dir   "$CHECKPOINT_DIR" \
-        --merge_output_dir "$MERGED_EVAL_DIR"
+    # # --- Stage 1b: Export merged-only (FP16, no quant) --------------------
+    # echo -e "\n>>> Stage 1b: Export merged-only (FP16, no quant error)"
+    # CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
+    #     --config           "$CONFIG" \
+    #     --qat_mode         full \
+    #     --bits             "$BITS" \
+    #     --asymmetric \
+    #     --export_only \
+    #     --export_merged_only \
+    #     --checkpoint_dir   "$CHECKPOINT_DIR" \
+    #     --merge_output_dir "$MERGED_EVAL_DIR"
 fi
 
 # ---------------------------------------------------------------------------
@@ -141,16 +141,16 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
         --checkpoint_dir   "$CHECKPOINT_DIR" \
         --merge_output_dir "$DEQUANT_EVAL_DIR"
 
-    echo "  (b) merged-only export (FP16, no quant error)"
-    CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
-        --config           "$CONFIG" \
-        --qat_mode         full \
-        --bits             "$BITS" \
-        --asymmetric \
-        --export_only \
-        --export_merged_only \
-        --checkpoint_dir   "$CHECKPOINT_DIR" \
-        --merge_output_dir "$MERGED_EVAL_DIR"
+    # echo "  (b) merged-only export (FP16, no quant error)"
+    # CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
+    #     --config           "$CONFIG" \
+    #     --qat_mode         full \
+    #     --bits             "$BITS" \
+    #     --asymmetric \
+    #     --export_only \
+    #     --export_merged_only \
+    #     --checkpoint_dir   "$CHECKPOINT_DIR" \
+    #     --merge_output_dir "$MERGED_EVAL_DIR"
 fi
 
 # ---------------------------------------------------------------------------

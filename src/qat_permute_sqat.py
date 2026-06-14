@@ -990,6 +990,7 @@ def gptq_quantize_layer(
     blocksize: int = 128,
     eps: float = 1e-8,
     awq_s: Optional[torch.Tensor] = None,   # [group_k] AWQ scale for the salient slice, or None
+    keep_salient_fp16: bool = False,        # ablation: leave the salient slice as fp16 (no quant)
 ):
     """
     Quantize the salient slice [0:group_k] to the canonical SQAT grid (training-consistent) and
@@ -1032,8 +1033,13 @@ def gptq_quantize_layer(
     zp    = torch.zeros(out_f, ng, device=dev)
 
     # ---- 1) salient slice [0:group_k]: fixed canonical grid (amplified if AWQ). NO propagation. ----
+    # ABLATION (keep_salient_fp16): the salient slice is NOT quantized at all — it is deployed at
+    # fp16 (the methodology upper bound: "what if the QAT-protected slice were full precision?").
+    # We leave W_int/scale/zp at zero for those leading columns; the caller restores the original
+    # fp16 weight into the dequantized dense weight. The non-salient GPTQ block below is identical
+    # either way (it already targets the fp16 W_n with the independent non-salient sub-Hessian).
     n_sal_g = group_k // group_size
-    if group_k > 0:
+    if group_k > 0 and not keep_salient_fp16:
         W_sal = W[:, :group_k]
         if awq_s is not None:
             s = awq_s.to(torch.float32).view(1, -1).to(dev)
@@ -1145,6 +1151,7 @@ def gptq_quantize_model_sequential(
     blocksize: int = 128,
     nsamples: int = 128,
     awq_scales: Optional[dict] = None,
+    keep_salient_fp16: bool = False,
 ) -> Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """
     In-place sequential GPTQ on a dense (permuted) fp16 model. For every nn.Linear whose terminal
@@ -1245,8 +1252,13 @@ def gptq_quantize_model_sequential(
             W_int, sc, zp = gptq_quantize_layer(
                 W, Hs[nm], gk, group_size, q_bits, symmetric,
                 percdamp=percdamp, blocksize=blocksize, awq_s=awq_s,
+                keep_salient_fp16=keep_salient_fp16,
             )
             W_deq = group_dequantize(W_int, sc, zp, group_size, W.shape[1], symmetric)
+            if keep_salient_fp16 and gk > 0:
+                # Ablation: restore the un-quantized fp16 salient slice (group_dequantize left it 0).
+                # The cross-layer propagation below then sees the salient slice at full precision.
+                W_deq[:, :gk] = W[:, :gk]
             if awq_s is not None:
                 # bake 1/S back into the salient columns so the in-place (and exported) dense
                 # weight is the deployed value W_fq/S — matching the training fakequant.

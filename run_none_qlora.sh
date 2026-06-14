@@ -37,11 +37,11 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # ---------------------------------------------------------------------------
 # Config — read the SAME sqat_permute config to keep all non-method params equal
 # ---------------------------------------------------------------------------
-DATASET_NAME="commonsense" # "math" or "commonsense" (must match the config yaml)
+DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
-NUM_GPUS=4
-BITS=4
+NUM_GPUS=2
+BITS=3
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 EVAL_GPU=0                # single GPU used for export + evaluation
@@ -49,9 +49,10 @@ EVAL_GPU=0                # single GPU used for export + evaluation
 # Dedicated output dir so a plain-QLoRA run never clobbers a real sqat_permute run.
 OUTPUT_DIR="outputs/qlora-none-${DATASET_NAME}"
 
-SKIP_TRAIN=true
+SKIP_TRAIN=false
 SKIP_EVAL=false
-CHECKPOINT_DIR="outputs/qlora-none-commonsense-4bit-none/final"
+# CHECKPOINT_DIR="outputs/qlora-none-commonsense-4bit-none/final"
+CHECKPOINT_DIR=""
 
 # ---------------------------------------------------------------------------
 # Parse arguments
@@ -133,15 +134,15 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
         --checkpoint_dir   "$CHECKPOINT_DIR" \
         --merge_output_dir "$DEQUANT_EVAL_DIR"
 
-    echo "  (b) merged-only export (FP16 upper bound)"
-    CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
-        --config           "$CONFIG" \
-        --qat_mode         none \
-        --bits             "$BITS" \
-        --export_only \
-        --export_merged_only \
-        --checkpoint_dir   "$CHECKPOINT_DIR" \
-        --merge_output_dir "$MERGED_EVAL_DIR"
+    # echo "  (b) merged-only export (FP16 upper bound)"
+    # CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
+    #     --config           "$CONFIG" \
+    #     --qat_mode         none \
+    #     --bits             "$BITS" \
+    #     --export_only \
+    #     --export_merged_only \
+    #     --checkpoint_dir   "$CHECKPOINT_DIR" \
+    #     --merge_output_dir "$MERGED_EVAL_DIR"
 fi
 
 # ---------------------------------------------------------------------------

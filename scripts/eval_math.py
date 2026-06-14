@@ -33,7 +33,7 @@ import argparse
 from datetime import datetime
 
 
-DEFAULT_TASKS = ["gsm8k", "hendrycks_math500"]
+DEFAULT_TASKS = ["gsm8k"] # "hendrycks_math500"
 
 
 def _format_metric_value(value):
