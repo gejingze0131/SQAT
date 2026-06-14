@@ -30,7 +30,7 @@ set -euo pipefail
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 # ---------------------------------------------------------------------------
-# Config (BOUNDARY_SIZES / GROUP_K must match the chosen --config yaml)
+# Config
 # ---------------------------------------------------------------------------
 DATASET_NAME="math" # math or commonsense (must match the config yaml, which controls the boundary gather)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
@@ -39,8 +39,8 @@ NUM_GPUS=4
 BITS=3          # 2 / 3 / 4  (must match configs/*.yaml model.quant_bits; base stays NF4)
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
-BOUNDARY_SIZES="2 30"     # must match configs/sqat_permute_${DATASET_NAME}.yaml: qat.sqat_permute.boundary_sizes
-GROUP_K=128
+VALIDATION_BOUNDARY_SIZES="2 30"  # optional legacy Stage-0 sanity check only
+VALIDATION_GROUP_K=128
 EVAL_GPU=0                # single GPU used for export + evaluation
 # Improvement 2: AWQ-style per-channel scaling of the salient slice; overrides the yaml.
 # true  → quantize the salient slice in the amplified space W*S (q/k/v share S1, gate/up S2,
@@ -53,7 +53,7 @@ AWQ_SCALE=true
 # Composes with AWQ_SCALE (salient slice fixed to the amplified grid, non-salient GPTQ'd).
 GPTQ_NONSALIENT=true
 # LSQ / LSQ+ learnable quantization scale (LR-QAT style) on the salient slice; overrides the yaml.
-# true  → the salient slice [0:group_k] is fakequant'd with a LEARNED scale[,zp] (asym→scale+zp),
+# true  → each salient slice [0:layer_group_k] is fakequant'd with a LEARNED scale[,zp] (asym→scale+zp),
 #         init current_minmax, learned in the AWQ-amplified space when AWQ_SCALE=true. Aimed at
 #         low-bit (W2/W3) stability. Composes with AWQ_SCALE and GPTQ_NONSALIENT.
 # false → per-step min-max scale (original scheme).
@@ -61,10 +61,10 @@ GPTQ_NONSALIENT=true
 ENABLE_LSQ=true
 
 SKIP_VALIDATE=true
-SKIP_TRAIN=true
+SKIP_TRAIN=false
 SKIP_EVAL=false
 # CHECKPOINT_DIR="outputs/qlora-sqat-permute-4bit-sqat_permute/final"
-CHECKPOINT_DIR="outputs/qlora-sqat-permute-3bit-sqat_permute/final"
+CHECKPOINT_DIR=""
 # 从某个 Trainer checkpoint 恢复继续训练（例：outputs/qlora-sqat-permute-3bit-sqat_permute/checkpoint-6000）。
 # 留空 = 全新训练。sqat_permute 恢复时会复用已有的 <output_dir>/permuted_fp16_base（不重新生成 permute，
 # 否则与 checkpoint 的 LoRA 不匹配）。注意：若 checkpoint 已接近 max_steps，想多训需在 config 调大 num_epochs。
@@ -127,7 +127,7 @@ echo "  Permuted Selective-QAT Pipeline"
 echo "  Config:      $CONFIG"
 echo "  Model:       $MODEL_NAME"
 echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (eval)"
-echo "  Boundaries:  [$BOUNDARY_SIZES]   group_k=$GROUP_K   bits=$BITS"
+echo "  Segments:    auto (<= config qat.sqat_permute.max_segments); bits=$BITS"
 echo "  AWQ-scale:     $AWQ_SCALE"
 echo "  GPTQ non-sal:  $GPTQ_NONSALIENT"
 echo "  LSQ:           $ENABLE_LSQ"
@@ -138,11 +138,11 @@ echo "============================================================"
 # Stage 0: Permutation equivalence verification (P_k + P4 + Hadamard, fp32)
 # ---------------------------------------------------------------------------
 if [ "$SKIP_VALIDATE" = false ]; then
-    echo -e "\n>>> Stage 0: Permutation equivalence verification (fp32, no training)"
+    echo -e "\n>>> Stage 0: Legacy fixed-segment permutation verification (fp32, no training)"
     bash run_validation.sh \
         --model_name     "$MODEL_NAME" \
-        --boundary_sizes $BOUNDARY_SIZES \
-        --group_k        $GROUP_K
+        --boundary_sizes $VALIDATION_BOUNDARY_SIZES \
+        --group_k        $VALIDATION_GROUP_K
     echo ">>> Stage 0 PASSED — proceeding"
 fi
 

@@ -351,9 +351,9 @@ def main():
                 model_name=cfg["model"]["name"],
                 tokenizer=sp_tok,
                 calibration_dataloader=cal_dataloader,
-                boundary_sizes=sp_cfg["boundary_sizes"],
+                boundary_sizes=sp_cfg.get("boundary_sizes"),
                 save_dir=permuted_dir,
-                group_k=sp_cfg.get("group_k", 128),
+                group_k=sp_cfg.get("group_k"),
                 group_size=cfg["qat"].get("group_size", 128),
                 top_k_ratio=sp_cfg.get("top_k_ratio", 0.01),
                 outlier_log_sigma=sp_cfg.get("outlier_log_sigma", 3.0),
@@ -361,6 +361,8 @@ def main():
                 device=accelerator.device,
                 awq_alpha=(sp_cfg.get("awq_scale", {}) or {}).get("alpha", 0.5),
                 awq_max=(sp_cfg.get("awq_scale", {}) or {}).get("max", 2.0),
+                group_k_candidates=sp_cfg.get("group_k_candidates", [64, 128, 256]),
+                max_segments=sp_cfg.get("max_segments", 4),
             )
         accelerator.wait_for_everyone()
 

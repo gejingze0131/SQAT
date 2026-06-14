@@ -12,11 +12,11 @@ lora:
   dropout: 0.0
   # All 7 projections participate in LoRA fine-tuning.
   # QAT fakequant coverage differs by projection type:
-  #   q/k/v/gate/up_proj : residual-stream P_k permute → QAT on salient cols [0:group_k]
-  #   down_proj          : block-internal P4_l permute (salient-first) → QAT on [0:group_k]
+  #   q/k/v/gate/up_proj : residual-stream P_k permute → QAT on salient cols [0:layer_group_k]
+  #   down_proj          : block-internal P4_l permute (salient-first) → QAT on [0:layer_group_k]
   #                        (arbitrary intermediate-dim permutation, no multi-head constraint)
   #   o_proj             : per-head Hadamard fold (H into v_proj + H^T into o_proj), NO QAT
-  #                        (within-head permutation can't produce contiguous [0:group_k] slice)
+  #                        (within-head permutation can't produce contiguous salient slice)
   target_modules:
     - "q_proj"
     - "k_proj"
@@ -30,11 +30,9 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric affine (same as QA-LoRA convention)
-  group_size: 64          # group_k % group_size == 0 required.
-                            # group_k=128 + group_size=16 → fakequant first 8 groups (cols 0–127)
-                            # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
-                            # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
-                            # (2-bit: small group_size matters a lot — only 4 levels per group)
+  group_size: 64          # every auto-selected per-segment group_k must be a multiple of this.
+                            # With group_k_candidates [64, 128, 256], salient cols occupy
+                            # exactly 1/2/4 complete quantization groups.
 
   # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
   # fakequant scale is replaced by a learnable nn.Parameter (asym → learn scale+zp, sym → learn
@@ -51,19 +49,19 @@ qat:
     calibration_seq_len: 2048
 
   sqat_permute:
-    # Segment partition: sum must equal model.config.num_hidden_layers (32 for Llama-2-7b)
-    # Each segment gets an independent residual-stream permutation P_k.
-    # num_runtime_permutes = len(boundary_sizes) - 1  (one index_select gather per boundary)
-    boundary_sizes: [2, 30]
-
-    # Salient channels per segment in d_model space.
-    # Must be a multiple of group_size (= 128) so salient cols occupy exactly
-    # group_k/group_size complete quantization groups at physical positions [0:group_k].
-    group_k: 128
-
-    # Per-source top-k fraction for residual-stream salient selection
-    # (outlier-first fill: log-space z-score outliers take priority).
-    top_k_ratio: 0.01
+    # Segment partition + per-segment group_k are selected automatically from calibration E[x²].
+    # Rule:
+    #   1. Detect true per-source residual outliers by log(E[x²]) > mean + sigma * std.
+    #   2. Search contiguous segmentations with num_segments <= max_segments.
+    #   3. Snap each segment's group_k to one of group_k_candidates.
+    #   4. Pick the segmentation with 100% true-outlier capture and minimum
+    #      sum(segment_num_layers * group_k).
+    #
+    # The resulting metadata records:
+    #   boundary_sizes, segment_group_ks, layer_group_ks, segment_perms
+    # and train/export both use the per-layer group_k from that metadata.
+    max_segments: 4
+    group_k_candidates: [64, 128, 256]
 
     # Log-space z-score threshold for outlier detection.
     outlier_log_sigma: 3.0
@@ -71,8 +69,8 @@ qat:
     # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
     stage: 2
 
-    # gptq (Improvement 1): at export, quantize the ~97% NON-salient columns [group_k:] with
-    # GPTQ/OBS instead of plain RTN. The salient slice [0:group_k] keeps the EXACT canonical
+    # gptq (Improvement 1): at export, quantize the NON-salient columns [layer_group_k:] with
+    # GPTQ/OBS instead of plain RTN. The salient slice [0:layer_group_k] keeps the EXACT canonical
     # (training-consistent) grid; the non-salient block is GPTQ'd INDEPENDENTLY (no salient-error
     # leakage — the QAT/LoRA was trained to tolerate the salient quant error, so the non-salient
     # cols must approximate their fp16 weights, not compensate for the salient slice). Uses the
@@ -90,8 +88,8 @@ qat:
       blocksize: 128
       batch_size: 2          # calibration micro-batch (keeps activation memory low)
 
-    # awq_scale (Improvement 2): AWQ-style per-input-channel scaling of the salient slice
-    # [0:group_k]. Within each block, q/k/v share one scale S1 (they read the same input), gate/up
+    # awq_scale (Improvement 2): AWQ-style per-input-channel scaling of the per-layer salient slice
+    # [0:layer_group_k]. Within each block, q/k/v share one scale S1 (they read the same input), gate/up
     # share S2, down_proj uses its own S3 (on its P4 intermediate slice); o_proj is untouched (it
     # keeps its per-head Hadamard, NO QAT). S_j = (E[x²]_j)^alpha normalized so min=1, clamped to
     # [1, max]. Training fakequants in the amplified space W*S; export bakes 1/S into the dense
