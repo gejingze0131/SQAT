@@ -30,17 +30,17 @@ set -euo pipefail
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 # ---------------------------------------------------------------------------
-# Config (BOUNDARY_SIZES / GROUP_K must match the chosen --config yaml)
+# Config
 # ---------------------------------------------------------------------------
 DATASET_NAME="math" # math or commonsense (must match the config yaml, which controls the boundary gather)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=2
-BITS=2
+BITS=3
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
-BOUNDARY_SIZES="2 30"     # must match configs/sqat_permute_${DATASET_NAME}.yaml: qat.sqat_permute.boundary_sizes
-GROUP_K=128
+VALIDATION_BOUNDARY_SIZES="2 30"  # optional legacy Stage-0 sanity check only
+VALIDATION_GROUP_K=128
 EVAL_GPU=0                # single GPU used for export + evaluation
 # Improvement 2: AWQ-style per-channel scaling of the salient slice; overrides the yaml.
 # true  → quantize the salient slice in the amplified space W*S (q/k/v share S1, gate/up S2,
@@ -79,6 +79,7 @@ while [[ $# -gt 0 ]]; do
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
         --awq_scale)              AWQ_SCALE="$2";            shift 2 ;;
         --gptq_nonsalient)        GPTQ_NONSALIENT="$2";      shift 2 ;;
+        --enable_lsq)             ENABLE_LSQ="$2";           shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -97,6 +98,13 @@ else
     GPTQ_FLAG="--no_gptq_nonsalient"
 fi
 
+# Map the LSQ toggle to the train.py flag (config yaml is the fallback default).
+if [ "$ENABLE_LSQ" = "true" ]; then
+    LSQ_FLAG="--enable_lsq"
+else
+    LSQ_FLAG="--no_enable_lsq"
+fi
+
 # Resume: continue TRAINING from the checkpoint (reuses the permuted base; does NOT skip train).
 RESUME_FLAG=""
 if [ -n "$RESUME_FROM" ]; then
@@ -112,9 +120,10 @@ echo "  Permuted Selective-QAT Pipeline"
 echo "  Config:      $CONFIG"
 echo "  Model:       $MODEL_NAME"
 echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (eval)"
-echo "  Boundaries:  [$BOUNDARY_SIZES]   group_k=$GROUP_K   bits=$BITS"
+echo "  Segments:    auto (<= config qat.sqat_permute.max_segments); bits=$BITS"
 echo "  AWQ-scale:     $AWQ_SCALE"
 echo "  GPTQ non-sal:  $GPTQ_NONSALIENT"
+echo "  LSQ:           $ENABLE_LSQ"
 [ -n "$RESUME_FROM" ] && echo "  Resume from:   $RESUME_FROM"
 echo "============================================================"
 
@@ -122,11 +131,11 @@ echo "============================================================"
 # Stage 0: Permutation equivalence verification (P_k + P4 + Hadamard, fp32)
 # ---------------------------------------------------------------------------
 if [ "$SKIP_VALIDATE" = false ]; then
-    echo -e "\n>>> Stage 0: Permutation equivalence verification (fp32, no training)"
+    echo -e "\n>>> Stage 0: Legacy fixed-segment permutation verification (fp32, no training)"
     bash run_validation.sh \
         --model_name     "$MODEL_NAME" \
-        --boundary_sizes $BOUNDARY_SIZES \
-        --group_k        $GROUP_K
+        --boundary_sizes $VALIDATION_BOUNDARY_SIZES \
+        --group_k        $VALIDATION_GROUP_K
     echo ">>> Stage 0 PASSED — proceeding"
 fi
 
@@ -145,6 +154,7 @@ if [ "$SKIP_TRAIN" = false ]; then
         --asymmetric \
         $AWQ_FLAG \
         $GPTQ_FLAG \
+        $LSQ_FLAG \
         $RESUME_FLAG \
         --export_dequant \
         --report_to wandb

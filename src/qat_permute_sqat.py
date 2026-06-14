@@ -4,17 +4,17 @@ qat_permute_sqat.py — Segment-shared input-channel permutation + block-level f
 This single module owns the whole permuted-QLoRA Selective-QAT stack:
 
   Offline equivalence transforms (model output unchanged; applied on a clean fp16 base):
-    (A) Residual-stream permutation P_k (per segment): top group_k salient d_model channels →
-        physical positions [0, group_k). Covers q/k/v/gate/up input cols + o/down output rows
+    (A) Residual-stream permutation P_k (per segment): top layer_group_k salient d_model channels →
+        physical positions [0, layer_group_k). Covers q/k/v/gate/up input cols + o/down output rows
         + LNs + embed/lm_head. Needs num_segments-1 runtime boundary gathers on the residual.
-    (B) MLP block-internal permutation P4_l (per layer): top group_k salient down_proj input
-        channels → [0, group_k); folded into gate/up output rows + down input cols.
+    (B) MLP block-internal permutation P4_l (per layer): top layer_group_k salient down_proj input
+        channels → [0, layer_group_k); folded into gate/up output rows + down input cols.
     (C) Per-head Hadamard rotation H on v_proj/o_proj (per layer): SpinQuant-style PTQ floor;
         no QAT on o_proj. Skipped for GQA.
 
   Stage-2 training (the from-scratch fused Selective-QAT forward):
     Fakequant is implemented HERE (not imported from qat_base): per-output-row, per-input-group,
-    STE, on the permuted physical columns [0:group_k] only. A `symmetric` flag selects the
+    STE, on the permuted physical columns [0:layer_group_k] only. A `symmetric` flag selects the
     symmetric vs affine-asymmetric branch.
 
     Injection is BLOCK-LEVEL and FUSED via hooks (no forward replacement):
@@ -28,10 +28,10 @@ This single module owns the whole permuted-QLoRA Selective-QAT stack:
 
 Hard invariants:
   * Never materialize the full merged weight W + B@A. Only the salient slice
-    W_curr_S = W_base_salient + (B @ A_S) * lora_scaling  of shape [out, group_k].
+    W_curr_S = W_base_salient + (B @ A_S) * lora_scaling  of shape [out, layer_group_k].
   * Never replace the BnB/QLoRA projection forward — deltas are ADDED via forward hooks.
-  * group_k % group_size == 0. No pre-permutation salient_idx, no index_select/gather on the
-    salient slice. X_S = hidden_states[..., :group_k].
+  * layer_group_k % group_size == 0. No pre-permutation salient_idx, no index_select/gather on the
+    salient slice. X_S = hidden_states[..., :layer_group_k].
   * QKV never share qparams; Gate/Up never share qparams — fakequant is per-output-row, so
     concatenating along the output dim before quantizing is identical to quantizing separately.
 
@@ -62,6 +62,14 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.qat_base import QATHandler
+from src.qat_base import (
+    groupwise_lsq_symmetric_fakequant as _lsq_sym_fq,
+    groupwise_lsq_asym_fakequant as _lsq_asym_fq,
+    init_lsq_scale_sym as _lsq_init_sym,
+    init_lsq_scale_zp_asym as _lsq_init_asym,
+    lsq_quantize_export_sym as _lsq_export_sym,
+    lsq_quantize_export_asym as _lsq_export_asym,
+)
 from src.qat_sqat import dequantize_layer
 
 
@@ -173,6 +181,307 @@ def _collect_second_moments(
 # Part 2 — Salient channel selection
 # ============================================================================
 
+DEFAULT_GROUP_K_CANDIDATES: Tuple[int, ...] = (64, 128, 256)
+TARGET_OUTLIER_CAPTURE = 1.0
+
+
+def _normalize_group_k_candidates(
+    group_k_candidates: Optional[Sequence[int]],
+    group_size: int,
+) -> List[int]:
+    candidates = list(group_k_candidates or DEFAULT_GROUP_K_CANDIDATES)
+    candidates = sorted({int(k) for k in candidates})
+    if not candidates:
+        raise ValueError("group_k_candidates must not be empty")
+    bad = [k for k in candidates if k <= 0 or k % group_size != 0]
+    if bad:
+        raise ValueError(
+            f"group_k_candidates={candidates} must be positive multiples of group_size={group_size}"
+        )
+    return candidates
+
+
+def _boundary_offsets(boundary_sizes: Sequence[int]) -> List[int]:
+    return [0] + list(itertools.accumulate(boundary_sizes))
+
+
+def _unwrap_perm_model_meta(meta: Optional[dict]) -> Optional[dict]:
+    """Accept both raw perm_meta and saved {"model": perm_meta} export metadata."""
+    if not meta:
+        return None
+    if isinstance(meta, dict) and "boundary_perms" not in meta and "model" in meta:
+        return meta["model"]
+    return meta
+
+
+def _expand_segment_group_ks(
+    boundary_sizes: Sequence[int],
+    segment_group_ks: Sequence[int],
+) -> List[int]:
+    assert len(boundary_sizes) == len(segment_group_ks), (
+        f"len(boundary_sizes)={len(boundary_sizes)} != "
+        f"len(segment_group_ks)={len(segment_group_ks)}"
+    )
+    out: List[int] = []
+    for size, gk in zip(boundary_sizes, segment_group_ks):
+        out.extend([int(gk)] * int(size))
+    return out
+
+
+def layer_group_ks_from_meta(meta: Optional[dict]) -> Optional[List[int]]:
+    meta = _unwrap_perm_model_meta(meta)
+    if not meta:
+        return None
+    if "layer_group_ks" in meta:
+        return [int(x) for x in meta["layer_group_ks"]]
+    if "boundary_sizes" in meta and "segment_group_ks" in meta:
+        return _expand_segment_group_ks(meta["boundary_sizes"], meta["segment_group_ks"])
+    if "boundary_sizes" in meta and "group_k" in meta:
+        return [int(meta["group_k"])] * int(sum(meta["boundary_sizes"]))
+    return None
+
+
+def _layer_idx_from_module_name(name: str) -> Optional[int]:
+    parts = name.split(".")
+    for i, part in enumerate(parts[:-1]):
+        if part == "layers" and parts[i + 1].isdigit():
+            return int(parts[i + 1])
+    return None
+
+
+def group_k_for_module_name(
+    name: str,
+    perm_meta: Optional[dict] = None,
+    default_group_k: Optional[int] = None,
+) -> int:
+    """Return the active salient slice width for a projection name."""
+    terminal = name.split(".")[-1] if name else ""
+    if terminal == "o_proj":
+        return 0
+    if default_group_k == 0:
+        return 0
+    layer_group_ks = layer_group_ks_from_meta(perm_meta)
+    layer_idx = _layer_idx_from_module_name(name)
+    if layer_group_ks is not None and layer_idx is not None and layer_idx < len(layer_group_ks):
+        return int(layer_group_ks[layer_idx])
+    if default_group_k is not None:
+        return int(default_group_k)
+    mm = _unwrap_perm_model_meta(perm_meta)
+    if mm and "group_k" in mm:
+        return int(mm["group_k"])
+    return 0
+
+
+def _normalized_residual_scores(
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+) -> Dict[Tuple[int, str], torch.Tensor]:
+    normalized: Dict[Tuple[int, str], torch.Tensor] = {}
+    for key, val in second_moments.items():
+        if key[1] not in ("attn", "mlp"):
+            continue
+        mx = val.max().item()
+        normalized[key] = val / mx if mx > 0 else val.clone()
+    return normalized
+
+
+def _source_outliers(val: torch.Tensor, outlier_log_sigma: float) -> torch.Tensor:
+    log_v = torch.log(val.clamp(min=1e-30))
+    thr = log_v.mean().item() + outlier_log_sigma * log_v.std(unbiased=False).item()
+    return torch.where(log_v > thr)[0].to(torch.long)
+
+
+def _residual_outlier_sets(
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+    outlier_log_sigma: float,
+) -> Dict[Tuple[int, str], torch.Tensor]:
+    return {
+        key: _source_outliers(val, outlier_log_sigma)
+        for key, val in second_moments.items()
+        if key[1] in ("attn", "mlp")
+    }
+
+
+def _snap_group_k(required_count: int, candidates: Sequence[int]) -> int:
+    for gk in candidates:
+        if required_count <= gk:
+            return int(gk)
+    return int(candidates[-1])
+
+
+def _segment_sources(start: int, end: int) -> List[Tuple[int, str]]:
+    return [(l, s) for l in range(start, end) for s in ("attn", "mlp")]
+
+
+def _segment_aggregate_score(
+    b_sources: Sequence[Tuple[int, str]],
+    normalized: Dict[Tuple[int, str], torch.Tensor],
+    hidden_size: int,
+) -> torch.Tensor:
+    agg = torch.zeros(hidden_size, dtype=torch.float32)
+    for key in b_sources:
+        agg.add_(normalized[key])
+    return agg
+
+
+def _segment_outlier_mask(
+    b_sources: Sequence[Tuple[int, str]],
+    outlier_sets: Dict[Tuple[int, str], torch.Tensor],
+    hidden_size: int,
+) -> torch.Tensor:
+    mask = torch.zeros(hidden_size, dtype=torch.bool)
+    for key in b_sources:
+        mask[outlier_sets[key]] = True
+    return mask
+
+
+def _select_bucket_from_mask(
+    agg: torch.Tensor,
+    outlier_mask: torch.Tensor,
+    group_k: int,
+) -> List[int]:
+    sorted_by_score = torch.argsort(agg, descending=True).tolist()
+    selected: List[int] = []
+    selected_set = set()
+
+    for idx in sorted_by_score:
+        if len(selected) >= group_k:
+            break
+        if outlier_mask[idx].item() and idx not in selected_set:
+            selected.append(idx)
+            selected_set.add(idx)
+
+    for idx in sorted_by_score:
+        if len(selected) >= group_k:
+            break
+        if idx not in selected_set:
+            selected.append(idx)
+            selected_set.add(idx)
+
+    return sorted(selected)
+
+
+def _segment_group_ks_for_boundaries(
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+    hidden_size: int,
+    boundary_sizes: Sequence[int],
+    group_k_candidates: Sequence[int],
+    outlier_log_sigma: float,
+) -> List[int]:
+    outlier_sets = _residual_outlier_sets(second_moments, outlier_log_sigma)
+    offsets = _boundary_offsets(boundary_sizes)
+    out: List[int] = []
+    for seg in range(len(boundary_sizes)):
+        sources = _segment_sources(offsets[seg], offsets[seg + 1])
+        mask = _segment_outlier_mask(sources, outlier_sets, hidden_size)
+        union_count = int(mask.sum().item())
+        gk = _snap_group_k(union_count, group_k_candidates)
+        if union_count > gk:
+            raise RuntimeError(
+                f"Manual segment {seg} L{offsets[seg]}-{offsets[seg + 1] - 1} has "
+                f"{union_count} true outliers, larger than max group_k candidate {gk}."
+            )
+        out.append(gk)
+    return out
+
+
+def auto_segment_by_outliers(
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+    hidden_size: int,
+    num_layers: int,
+    group_size: int,
+    group_k_candidates: Optional[Sequence[int]] = None,
+    max_segments: int = 4,
+    outlier_log_sigma: float = 3.0,
+) -> Tuple[List[int], List[int], Dict]:
+    """
+    Choose contiguous residual segments automatically.
+
+    Hard constraint: every true per-source outlier, detected from that source's
+    log(E[x^2]) distribution, must fit in its segment bucket. Objective under
+    num_segments <= max_segments: minimize sum(segment_num_layers * group_k).
+    """
+    candidates = _normalize_group_k_candidates(group_k_candidates, group_size)
+    max_segments = min(int(max_segments), int(num_layers))
+    outlier_sets = _residual_outlier_sets(second_moments, outlier_log_sigma)
+
+    seg_group_k: Dict[Tuple[int, int], int] = {}
+    seg_union_count: Dict[Tuple[int, int], int] = {}
+    feasible: Dict[Tuple[int, int], bool] = {}
+    for start in range(num_layers):
+        for end in range(start + 1, num_layers + 1):
+            sources = _segment_sources(start, end)
+            mask = _segment_outlier_mask(sources, outlier_sets, hidden_size)
+            union_count = int(mask.sum().item())
+            gk = _snap_group_k(union_count, candidates)
+            key = (start, end)
+            seg_group_k[key] = gk
+            seg_union_count[key] = union_count
+            feasible[key] = union_count <= gk
+
+    inf = float("inf")
+    dp = torch.full((max_segments + 1, num_layers + 1), inf, dtype=torch.float64)
+    prev = torch.full((max_segments + 1, num_layers + 1), -1, dtype=torch.long)
+    dp[0, 0] = 0.0
+    for nseg in range(1, max_segments + 1):
+        for end in range(1, num_layers + 1):
+            for start in range(0, end):
+                key = (start, end)
+                if not feasible[key] or not torch.isfinite(dp[nseg - 1, start]):
+                    continue
+                cost = dp[nseg - 1, start] + (end - start) * seg_group_k[key]
+                if cost < dp[nseg, end]:
+                    dp[nseg, end] = cost
+                    prev[nseg, end] = start
+
+    curve = []
+    best_nseg = -1
+    best_cost = inf
+    for nseg in range(1, max_segments + 1):
+        ok = bool(torch.isfinite(dp[nseg, num_layers]))
+        cost = float(dp[nseg, num_layers].item()) if ok else None
+        curve.append({"num_segments": nseg, "feasible": ok, "selection_cost": cost})
+        if ok and cost < best_cost - 1e-9:
+            best_cost = float(cost)
+            best_nseg = nseg
+    if best_nseg < 0:
+        raise RuntimeError(
+            "No automatic SQAT segment partition can capture all true outliers with "
+            f"max_segments={max_segments}, candidates={candidates}. Increase max_segments, "
+            "increase group_k_candidates, or raise outlier_log_sigma."
+        )
+
+    ranges: List[Tuple[int, int]] = []
+    end = num_layers
+    for nseg in range(best_nseg, 0, -1):
+        start = int(prev[nseg, end].item())
+        if start < 0:
+            raise RuntimeError("Automatic segment DP reconstruction failed.")
+        ranges.append((start, end))
+        end = start
+    ranges.reverse()
+
+    boundary_sizes = [end - start for start, end in ranges]
+    segment_group_ks = [seg_group_k[(start, end)] for start, end in ranges]
+    summary = {
+        "rule": "minimize sum(segment_layers * group_k) subject to 100% true-outlier capture",
+        "target_capture": TARGET_OUTLIER_CAPTURE,
+        "outlier_log_sigma": float(outlier_log_sigma),
+        "group_k_candidates": list(candidates),
+        "max_segments": int(max_segments),
+        "cost_curve": curve,
+        "segments": [
+            {
+                "layers": [start, end - 1],
+                "size": end - start,
+                "group_k": seg_group_k[(start, end)],
+                "outlier_union_count": seg_union_count[(start, end)],
+                "headroom": seg_group_k[(start, end)] - seg_union_count[(start, end)],
+            }
+            for start, end in ranges
+        ],
+    }
+    return boundary_sizes, segment_group_ks, summary
+
 def select_salient_channels(
     second_moments: Dict[Tuple[int, str], torch.Tensor],
     hidden_size: int,
@@ -197,58 +506,45 @@ def select_salient_channels(
     """
     assert group_k % group_size == 0, \
         f"group_k={group_k} must be a multiple of group_size={group_size}"
+    return select_salient_channels_variable(
+        second_moments=second_moments,
+        hidden_size=hidden_size,
+        boundary_sizes=boundary_sizes,
+        segment_group_ks=[int(group_k)] * len(boundary_sizes),
+        group_size=group_size,
+        outlier_log_sigma=outlier_log_sigma,
+    )
 
-    b_offsets    = [0] + list(itertools.accumulate(boundary_sizes))
-    num_segments = len(boundary_sizes)
+
+def select_salient_channels_variable(
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+    hidden_size: int,
+    boundary_sizes: List[int],
+    segment_group_ks: Sequence[int],
+    group_size: int = 128,
+    outlier_log_sigma: float = 3.0,
+) -> Dict[int, List[int]]:
+    """Select salient residual channels with a potentially different group_k per segment."""
+    assert len(boundary_sizes) == len(segment_group_ks), (
+        f"len(boundary_sizes)={len(boundary_sizes)} != "
+        f"len(segment_group_ks)={len(segment_group_ks)}"
+    )
+    bad = [int(k) for k in segment_group_ks if int(k) <= 0 or int(k) % group_size != 0]
+    assert not bad, f"segment_group_ks must be positive multiples of group_size={group_size}: {bad}"
+
+    b_offsets    = _boundary_offsets(boundary_sizes)
     result: Dict[int, List[int]] = {}
+    normalized_all = _normalized_residual_scores(second_moments)
+    outlier_sets_all = _residual_outlier_sets(second_moments, outlier_log_sigma)
 
-    for seg in range(num_segments):
+    for seg in range(len(boundary_sizes)):
         b_start, b_end = b_offsets[seg], b_offsets[seg + 1]
-        b_sources = [(l, s) for l in range(b_start, b_end) for s in ("attn", "mlp")]
+        b_sources = _segment_sources(b_start, b_end)
+        group_k = int(segment_group_ks[seg])
 
-        # Per-source normalize
-        normalized = {}
-        for key in b_sources:
-            val = second_moments[key]
-            mx  = val.max().item()
-            normalized[key] = val / mx if mx > 0 else val.clone()
-
-        # Per-source outlier sets
-        outlier_sets = {}
-        for key in b_sources:
-            val   = second_moments[key]
-            log_v = torch.log(val.clamp(min=1e-30))
-            thr   = log_v.mean().item() + outlier_log_sigma * log_v.std().item()
-            outlier_sets[key] = torch.where(log_v > thr)[0]
-
-        # Aggregate score
-        agg = torch.zeros(hidden_size, dtype=torch.float32)
-        for key in b_sources:
-            agg.add_(normalized[key])
-
-        # Segment outlier union
-        seg_outlier = torch.zeros(hidden_size, dtype=torch.bool)
-        for key in b_sources:
-            seg_outlier[outlier_sets[key]] = True
-
-        sorted_by_score = torch.argsort(agg, descending=True)
-
-        selected: List[int] = []
-        sel_set:  set       = set()
-
-        for idx in sorted_by_score.tolist():      # tier-1: outliers
-            if len(selected) >= group_k:
-                break
-            if seg_outlier[idx].item() and idx not in sel_set:
-                selected.append(idx); sel_set.add(idx)
-
-        for idx in sorted_by_score.tolist():      # tier-2: top energy
-            if len(selected) >= group_k:
-                break
-            if idx not in sel_set:
-                selected.append(idx); sel_set.add(idx)
-
-        salient = sorted(selected)
+        agg = _segment_aggregate_score(b_sources, normalized_all, hidden_size)
+        seg_outlier = _segment_outlier_mask(b_sources, outlier_sets_all, hidden_size)
+        salient = _select_bucket_from_mask(agg, seg_outlier, group_k)
         result[seg] = salient
 
         sel_t      = torch.tensor(salient, dtype=torch.long)
@@ -261,6 +557,11 @@ def select_salient_channels(
             f"energy_cov={e_sel/(e_total+1e-30)*100:.1f}%, "
             f"first10={salient[:10]}"
         )
+        if n_outliers > group_k:
+            print(
+                f"[SegPerm] WARNING: seg {seg} has {n_outliers} true outliers but "
+                f"group_k={group_k}; only the highest aggregate-score outliers fit."
+            )
 
     return result
 
@@ -269,6 +570,7 @@ def select_internal_salient_channels(
     second_moments: Dict[Tuple[int, str], torch.Tensor],
     num_layers: int,
     group_k: int = 128,
+    layer_group_ks: Optional[Sequence[int]] = None,
 ) -> Dict[Tuple[int, str], List[int]]:
     """
     Per-block salient channel selection for down_proj only → full permutations.
@@ -287,7 +589,8 @@ def select_internal_salient_channels(
         if key_d in second_moments:
             sm      = second_moments[key_d]
             down_in = sm.shape[0]
-            k       = min(group_k, down_in)
+            layer_k = int(layer_group_ks[l]) if layer_group_ks is not None else int(group_k)
+            k       = min(layer_k, down_in)
             result[key_d] = _build_segment_perm(sm.topk(k).indices.tolist(), down_in)
     return result
 
@@ -299,20 +602,30 @@ def compute_awq_scales(
     boundary_sizes: List[int],
     num_layers: int,
     group_k: int,
+    layer_group_ks: Optional[Sequence[int]] = None,
     alpha: float = 0.5,
     max_s: float = 2.0,
     eps: float = 1e-12,
 ) -> Dict[str, torch.Tensor]:
     """
-    AWQ-style per-input-channel scale S on the salient slice [0:group_k], per (layer, source):
+    AWQ-style per-input-channel scale S on the salient slice [0:layer_group_k], per (layer, source):
       attn (q/k/v share)   ← (l,'attn')      E[x²] at the segment's salient channels
       mlp  (gate/up share) ← (l,'mlp')       E[x²] at the same salient channels
       down (down_proj)     ← (l,'down_proj') E[x²] at the P4 salient channels
     S_j = (E[x²]_j)^alpha, normalized so min over the slice = 1, clamped to [1, max_s] (so S≥1,
-    i.e. salient channels are only ever amplified). Returns {"attn"/"mlp"/"down": [L, group_k]}
-    float32 (1.0 where a source is unavailable). Indexed by PERMUTED position (matches the slice).
+    i.e. salient channels are only ever amplified). Returns {"attn"/"mlp"/"down": [L, max_group_k]}
+    float32 (1.0 where a source is unavailable or where a layer's active group_k is smaller than
+    max_group_k). Indexed by PERMUTED position (matches the slice).
     """
     b_off = [0] + list(itertools.accumulate(boundary_sizes))
+    if layer_group_ks is None:
+        layer_group_ks = [int(group_k)] * num_layers
+    else:
+        layer_group_ks = [int(x) for x in layer_group_ks]
+        assert len(layer_group_ks) == num_layers, (
+            f"len(layer_group_ks)={len(layer_group_ks)} != num_layers={num_layers}"
+        )
+    max_group_k = int(group_k)
 
     def seg_of(l: int) -> int:
         for s in range(len(boundary_sizes)):
@@ -325,21 +638,22 @@ def compute_awq_scales(
         d = d / d.min()
         return d.clamp(max=max_s).float()
 
-    attn = torch.ones(num_layers, group_k)
-    mlp  = torch.ones(num_layers, group_k)
-    down = torch.ones(num_layers, group_k)
+    attn = torch.ones(num_layers, max_group_k)
+    mlp  = torch.ones(num_layers, max_group_k)
+    down = torch.ones(num_layers, max_group_k)
     for l in range(num_layers):
+        gk_l = min(int(layer_group_ks[l]), max_group_k)
         sal = residual_salient.get(seg_of(l))
-        if sal is not None:
-            idx = torch.as_tensor(list(sal)[:group_k], dtype=torch.long)
+        if sal is not None and gk_l > 0:
+            idx = torch.as_tensor(list(sal)[:gk_l], dtype=torch.long)
             if (l, "attn") in second_moments:
-                attn[l] = _scale_from(second_moments[(l, "attn")][idx])
+                attn[l, :gk_l] = _scale_from(second_moments[(l, "attn")][idx])
             if (l, "mlp") in second_moments:
-                mlp[l] = _scale_from(second_moments[(l, "mlp")][idx])
+                mlp[l, :gk_l] = _scale_from(second_moments[(l, "mlp")][idx])
         dperm = internal_salient.get((l, "down_proj"))
-        if dperm is not None and (l, "down_proj") in second_moments:
-            didx = torch.as_tensor(list(dperm)[:group_k], dtype=torch.long)
-            down[l] = _scale_from(second_moments[(l, "down_proj")][didx])
+        if dperm is not None and (l, "down_proj") in second_moments and gk_l > 0:
+            didx = torch.as_tensor(list(dperm)[:gk_l], dtype=torch.long)
+            down[l, :gk_l] = _scale_from(second_moments[(l, "down_proj")][didx])
     return {"attn": attn, "mlp": mlp, "down": down}
 
 
@@ -846,8 +1160,22 @@ def groupwise_asymmetric_fakequant(
 
 def group_fakequant(
     W: torch.Tensor, group_size: int, q_bits: int, symmetric: bool,
+    fixed_scale=None,
 ) -> torch.Tensor:
-    """Training fakequant dispatch (STE). Returns dequantized W (same shape)."""
+    """
+    Training fakequant dispatch (STE). Returns dequantized W (same shape).
+
+    fixed_scale (LSQ): when given, the per-step min-max scale is replaced by a learned scale[, zp]
+    on the LSQ grid (the qat_base single-source-of-truth functions). sym → a scale tensor [out, ng];
+    asym → a (scale[out, ng], zp[out, ng]) tuple. The LSQ grid differs from the min-max grid
+    (sym Qn=-2^(b-1) vs the min-max -q_max), so train and export MUST both go through these LSQ
+    functions — they do (group_quantize/group_dequantize below take the same fixed_scale).
+    """
+    if fixed_scale is not None:
+        if symmetric:
+            return _lsq_sym_fq(W, fixed_scale, group_size, q_bits)
+        scale, zp = fixed_scale
+        return _lsq_asym_fq(W, scale, zp, group_size, q_bits)
     if symmetric:
         return groupwise_symmetric_fakequant(W, group_size, _sym_q_max(q_bits))
     return groupwise_asymmetric_fakequant(W, group_size, _asym_q_max(q_bits))
@@ -861,6 +1189,7 @@ def group_fakequant(
 @torch.no_grad()
 def group_quantize(
     W: torch.Tensor, group_size: int, q_bits: int, symmetric: bool, eps: float = 1e-8,
+    fixed_scale=None,
 ):
     """
     Real group quantization for export. Pads in_features to a group multiple internally.
@@ -869,8 +1198,24 @@ def group_quantize(
         W_int:  [out, in_features] int levels (float tensor of integers, trimmed to in_features)
         scale:  [out, num_groups]
         zp:     [out, num_groups]   (all zeros for the symmetric branch)
+
+    fixed_scale (LSQ): when given (sym: scale[out, ng]; asym: (scale, zp)), skip the min-max
+    amax/_asym_qparams and quantize with the LEARNED scale[, zp] on the LSQ grid via the qat_base
+    export quantizers. This is the export half of the train↔export single-source-of-truth: the
+    returned (scale, zp) are exactly what group_dequantize/group_fakequant(fixed_scale=...) use.
     """
     out_f, in_f = W.shape
+    if fixed_scale is not None:
+        if symmetric:
+            scale = fixed_scale.float()
+            W_int = _lsq_export_sym(W, scale, group_size, q_bits)
+            zp = torch.zeros_like(scale)
+        else:
+            scale, zp_in = fixed_scale
+            scale = scale.float()
+            W_int, z_int = _lsq_export_asym(W, scale, zp_in.float(), group_size, q_bits)
+            zp = z_int
+        return W_int.contiguous(), scale, zp
     ng  = math.ceil(in_f / group_size)
     pad = ng * group_size - in_f
     Wp  = F.pad(W, (0, pad)) if pad > 0 else W
@@ -908,10 +1253,39 @@ def group_dequantize(
     return Wdq.reshape(out_f, -1)[:, :in_features]
 
 
+def _strip_peft_prefix(name: str) -> str:
+    """Strip the PEFT wrapper prefix so training-time names match export dense-model names."""
+    for prefix in ("base_model.model.", "base_model."):
+        if name.startswith(prefix):
+            return name[len(prefix):]
+    return name
+
+
+@torch.no_grad()
+def collect_lsq_scales_from_model(model: nn.Module) -> Dict[str, dict]:
+    """
+    Walk the model for proj modules carrying learned LSQ params (lsq_w_scale[, lsq_w_zp]) and
+    return {stripped_proj_name: {"scale": [out, n_sal_g], "zp": [out, n_sal_g]}}.
+
+    Keyed by the EXPORT (PEFT-prefix-stripped) name so export's per-module lookup is direct. The
+    scales are in the AMPLIFIED space when AWQ is on (training learned them there); export quantizes
+    W*S with these scales, then bakes /S into the dense weight — same as the training fakequant.
+    """
+    out = {}
+    for name, mod in model.named_modules():
+        if hasattr(mod, "lsq_w_scale"):
+            entry = {"scale": mod.lsq_w_scale.detach().float().cpu().clone()}
+            if hasattr(mod, "lsq_w_zp"):
+                entry["zp"] = mod.lsq_w_zp.detach().float().cpu().clone()
+            out[_strip_peft_prefix(name)] = entry
+    return out
+
+
 @torch.no_grad()
 def verify_permute_quant_consistency(
     W: torch.Tensor, group_k: int, group_size: int, q_bits: int, symmetric: bool,
     awq_s: Optional[torch.Tensor] = None,
+    fixed_scale=None,
 ) -> float:
     """
     Assert the SALIENT slice's training grid == export grid. Returns max|Δ| over [out, group_k]
@@ -919,16 +1293,19 @@ def verify_permute_quant_consistency(
     qparams this must be ~0 (fp round-off only). If AWQ-style scaling is used, pass the per-channel
     `awq_s` the slice is quantized in (the amplify+de-amplify cancels, so it stays a self-check of
     the quantizer formulas in the amplified space).
+
+    fixed_scale (LSQ): when given, both the training fakequant and the export quant→dequant use the
+    learned scale[, zp] (LSQ grid) — the check then confirms the LSQ train↔export grids match.
     """
     W_s = W[:, :group_k].float()
     if awq_s is not None:
         s = awq_s.to(torch.float32).view(1, -1)
-        fq = group_fakequant(W_s * s, group_size, q_bits, symmetric) / s
-        wi, sc, zp = group_quantize(W_s * s, group_size, q_bits, symmetric)
+        fq = group_fakequant(W_s * s, group_size, q_bits, symmetric, fixed_scale=fixed_scale) / s
+        wi, sc, zp = group_quantize(W_s * s, group_size, q_bits, symmetric, fixed_scale=fixed_scale)
         dq = group_dequantize(wi, sc, zp, group_size, group_k, symmetric) / s
     else:
-        fq = group_fakequant(W_s, group_size, q_bits, symmetric)
-        wi, sc, zp = group_quantize(W_s, group_size, q_bits, symmetric)
+        fq = group_fakequant(W_s, group_size, q_bits, symmetric, fixed_scale=fixed_scale)
+        wi, sc, zp = group_quantize(W_s, group_size, q_bits, symmetric, fixed_scale=fixed_scale)
         dq = group_dequantize(wi, sc, zp, group_size, group_k, symmetric)
     return (fq - dq).abs().max().item()
 
@@ -937,12 +1314,11 @@ def verify_permute_quant_consistency(
 # Part 8b — GPTQ (Optimal Brain Quantization) for the NON-salient columns.
 #
 # Improvement over plain RTN export: the ~97% non-salient columns are quantized with OBS error
-# compensation instead of round-to-nearest. The salient slice [0:group_k] is the QAT-protected
+# compensation instead of round-to-nearest. The salient slice [0:layer_group_k] is the QAT-protected
 # part and MUST keep the EXACT canonical group_quantize grid the LoRA was trained against (else
 # the QAT benefit does not transfer — the earlier min/max-vs-pos/neg regression). So GPTQ here:
-#   * fixes columns [0:group_k] to the canonical RTN grid (training-consistent) and propagates
-#     their quantization error into the non-salient columns, and
-#   * GPTQ-quantizes columns [group_k:] with OBS compensation (same group_size and asym/sym as QAT).
+#   * fixes columns [0:layer_group_k] to the canonical RTN grid (training-consistent), and
+#   * GPTQ-quantizes columns [layer_group_k:] with OBS compensation (same group_size and asym/sym as QAT).
 # o_proj carries no salient slice (group_k=0) → it is fully GPTQ-quantized.
 #
 # The Hessian H = X^T X must be in the SAME (permuted) basis as the weight columns — collect it on
@@ -991,6 +1367,7 @@ def gptq_quantize_layer(
     eps: float = 1e-8,
     awq_s: Optional[torch.Tensor] = None,   # [group_k] AWQ scale for the salient slice, or None
     keep_salient_fp16: bool = False,        # ablation: leave the salient slice as fp16 (no quant)
+    fixed_scale=None,                       # LSQ learned scale[, zp] for the salient slice, or None
 ):
     """
     Quantize the salient slice [0:group_k] to the canonical SQAT grid (training-consistent) and
@@ -1041,11 +1418,18 @@ def gptq_quantize_layer(
     n_sal_g = group_k // group_size
     if group_k > 0 and not keep_salient_fp16:
         W_sal = W[:, :group_k]
+        # LSQ: fixed_scale carries the learned scale[, zp]; group_quantize then uses the LSQ grid
+        # for the salient slice (identical to the training fakequant). Move to W's device.
+        fs = fixed_scale
+        if fs is not None:
+            fs = fs.to(dev) if torch.is_tensor(fs) else (fs[0].to(dev), fs[1].to(dev))
         if awq_s is not None:
             s = awq_s.to(torch.float32).view(1, -1).to(dev)
-            wi_s, sc_s, zp_s = group_quantize(W_sal * s, group_size, q_bits, symmetric, eps)
+            wi_s, sc_s, zp_s = group_quantize(W_sal * s, group_size, q_bits, symmetric, eps,
+                                              fixed_scale=fs)
         else:
-            wi_s, sc_s, zp_s = group_quantize(W_sal, group_size, q_bits, symmetric, eps)
+            wi_s, sc_s, zp_s = group_quantize(W_sal, group_size, q_bits, symmetric, eps,
+                                              fixed_scale=fs)
         W_int[:, :group_k] = wi_s.to(dev)
         scale[:, :n_sal_g]  = sc_s.to(dev)
         zp[:, :n_sal_g]     = zp_s.to(dev)
@@ -1057,6 +1441,23 @@ def gptq_quantize_layer(
     Wn = W[:, group_k:]                          # [out, in_n]  (never touched by the salient slice)
     Hn = H[group_k:, group_k:]
     in_n = in_f - group_k
+
+    # STATIC groups: precompute every group's scale/zp from the ORIGINAL weights and keep them
+    # FIXED during the sweep. GPTQ updates the not-yet-quantized columns (error compensation), so
+    # a grid recomputed mid-sweep from the partially-updated weights is "stale" for the rest of the
+    # group — that breaks OBS's fixed-grid assumption and makes the compensation INCREASE the output
+    # error (GPTQ worse than RTN), worsening as the group grows / bits shrink. A fixed grid restores
+    # OBS optimality (GPTQ ≤ RTN). (Standard GPTQ "static_groups".)
+    ng_n = in_n // group_size
+    for gi in range(ng_n):
+        Wg = Wn[:, gi * group_size:(gi + 1) * group_size]
+        if symmetric:
+            s = _sym_scale(Wg, q_max, eps); z = torch.zeros_like(s)
+        else:
+            s, z = _asym_qparams(Wg, q_max, eps)
+        scale[:, n_sal_g + gi] = s.squeeze(-1)
+        zp[:, n_sal_g + gi]    = z.squeeze(-1)
+
     Hinv = _gptq_cholesky_inv_upper(Hn, percdamp)
 
     for i1 in range(0, in_n, blocksize):
@@ -1071,15 +1472,7 @@ def gptq_quantize_layer(
             w   = W1[:, j]
             d   = Hinv1[j, j]
 
-            if col % group_size == 0:            # new group → compute its grid from current Wn
-                Wg = Wn[:, col:col + group_size]
-                if symmetric:
-                    s = _sym_scale(Wg, q_max, eps); z = torch.zeros_like(s)
-                else:
-                    s, z = _asym_qparams(Wg, q_max, eps)
-                scale[:, g] = s.squeeze(-1)
-                zp[:, g]    = z.squeeze(-1)
-            s = scale[:, g].unsqueeze(-1)
+            s = scale[:, g].unsqueeze(-1)        # FIXED grid (precomputed above)
             z = zp[:, g].unsqueeze(-1)
             if symmetric:
                 qi = torch.round(torch.clamp(w.unsqueeze(-1) / s, -q_max, q_max))
@@ -1101,7 +1494,7 @@ def gptq_quantize_layer(
 # ----------------------------------------------------------------------------
 # AWQ-style per-input-channel scale S for the salient slice (Improvement 2).
 # S is per (decoder layer, projection group): q/k/v share the "attn" S, gate/up share "mlp",
-# down_proj has its own "down" S. Stored in perm_meta["awq_scales"] = {src: [num_layers, group_k]}.
+# down_proj has its own "down" S. Stored in perm_meta["awq_scales"] = {src: [num_layers, max_group_k]}.
 # ----------------------------------------------------------------------------
 
 _AWQ_SOURCE = {
@@ -1111,25 +1504,53 @@ _AWQ_SOURCE = {
 }
 
 
-def _layer_index_from_name(name: str) -> Optional[int]:
-    import re
-    m = re.search(r"layers\.(\d+)\.", name)
-    return int(m.group(1)) if m else None
-
-
-def awq_s_for_module(awq_scales: Optional[dict], name: str) -> Optional[torch.Tensor]:
+def awq_s_for_module(
+    awq_scales: Optional[dict],
+    name: str,
+    group_k: Optional[int] = None,
+) -> Optional[torch.Tensor]:
     """Return the [group_k] AWQ scale for a linear by full name, or None (o_proj / disabled)."""
     if not awq_scales:
         return None
     src = _AWQ_SOURCE.get(name.split(".")[-1])
     if src is None or src not in awq_scales:
         return None
-    l = _layer_index_from_name(name)
+    l = _layer_idx_from_module_name(name)
     if l is None:
         return None
     s = awq_scales[src]
     s = s[l] if not torch.is_tensor(s) or s.dim() == 2 else s
-    return torch.as_tensor(s, dtype=torch.float32)
+    s = torch.as_tensor(s, dtype=torch.float32)
+    if group_k is not None:
+        s = s[:int(group_k)]
+    return s
+
+
+def lsq_scale_for_module(lsq_scales: Optional[dict], name: str, symmetric: bool):
+    """
+    Return the learned LSQ fixed_scale for a proj by name, or None.
+
+    sym  → scale tensor [out, n_sal_g]
+    asym → (scale [out, n_sal_g], zp [out, n_sal_g])
+
+    `lsq_scales` is keyed by the export (PEFT-prefix-stripped) name. Names are matched by exact
+    key, falling back to a suffix match (handles any residual prefix differences).
+    """
+    if not lsq_scales:
+        return None
+    entry = lsq_scales.get(name)
+    if entry is None:
+        # suffix fallback (e.g. caller passes a name with an extra prefix)
+        for k, v in lsq_scales.items():
+            if name.endswith(k) or k.endswith(name):
+                entry = v
+                break
+    if entry is None:
+        return None
+    scale = entry["scale"].float()
+    if symmetric:
+        return scale
+    return scale, entry["zp"].float()
 
 
 class _GPTQCatcherStop(Exception):
@@ -1152,12 +1573,14 @@ def gptq_quantize_model_sequential(
     nsamples: int = 128,
     awq_scales: Optional[dict] = None,
     keep_salient_fp16: bool = False,
+    lsq_scales: Optional[dict] = None,
 ) -> Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """
     In-place sequential GPTQ on a dense (permuted) fp16 model. For every nn.Linear whose terminal
     name is in `target_terminals`:
-       * q/k/v/gate/up/down_proj → columns [0:perm_group_k] fixed to the canonical SQAT grid, the
-         rest GPTQ-quantized;
+       * q/k/v/gate/up/down_proj → columns [0:layer_group_k] fixed to the canonical SQAT grid, the
+         rest GPTQ-quantized. layer_group_k is read from perm_meta when present, otherwise
+         perm_group_k is used for backward compatibility;
        * o_proj                  → no salient slice (group_k=0) → fully GPTQ.
     Each decoder layer is quantized using the ALREADY-quantized previous layers' outputs (true
     cross-layer sequential GPTQ): weights are replaced in place with their quantize→dequant values,
@@ -1222,7 +1645,11 @@ def gptq_quantize_model_sequential(
         for sub in layer.modules():
             if isinstance(sub, nn.Linear) and name_of[sub].split(".")[-1] in target_terminals:
                 term = name_of[sub].split(".")[-1]
-                subs[name_of[sub]] = (sub, 0 if term == "o_proj" else perm_group_k)
+                nm = name_of[sub]
+                gk = 0 if term == "o_proj" else group_k_for_module_name(
+                    nm, perm_meta=perm_meta, default_group_k=perm_group_k,
+                )
+                subs[nm] = (sub, gk)
         if not subs:
             continue
 
@@ -1248,11 +1675,15 @@ def gptq_quantize_model_sequential(
         # 2) GPTQ each sublayer; replace its weight with quantize->dequant
         for nm, (mod, gk) in subs.items():
             W = mod.weight.data.float()
-            awq_s = awq_s_for_module(awq_scales, nm)
+            awq_s = awq_s_for_module(awq_scales, nm, gk) if gk > 0 else None
+            # LSQ: salient slice uses the learned scale[, zp] (o_proj gk=0 → none).
+            fixed_scale = (lsq_scale_for_module(lsq_scales, nm, symmetric)
+                           if (lsq_scales and gk > 0) else None)
             W_int, sc, zp = gptq_quantize_layer(
                 W, Hs[nm], gk, group_size, q_bits, symmetric,
                 percdamp=percdamp, blocksize=blocksize, awq_s=awq_s,
                 keep_salient_fp16=keep_salient_fp16,
+                fixed_scale=fixed_scale,
             )
             W_deq = group_dequantize(W_int, sc, zp, group_size, W.shape[1], symmetric)
             if keep_salient_fp16 and gk > 0:
@@ -1325,6 +1756,8 @@ def fused_qat_residual_outputs(
     symmetric: bool,
     lora_scaling: float,
     awq_s: Optional[torch.Tensor] = None,   # [group_k] per-input-channel AWQ scale, or None
+    lsq_scale: Optional[torch.Tensor] = None,   # [sum_out, n_sal_g] learned LSQ scale, or None
+    lsq_zp: Optional[torch.Tensor] = None,      # [sum_out, n_sal_g] learned LSQ zp (asym), or None
 ) -> List[torch.Tensor]:
     """
     Compute the per-projection QAT residual outputs to be ADDED to each projection's output.
@@ -1345,17 +1778,26 @@ def fused_qat_residual_outputs(
     purely a better quantization grid (no runtime activation scaling, output bit-identical to a
     fold-1/S-into-the-preceding-LN deployment). The main NF4+LoRA path is untouched.
 
+    LSQ: if `lsq_scale` (+ `lsq_zp` for asym) is given, the inner fakequant uses the LEARNED scale[,
+    zp] on the LSQ grid instead of per-step min-max. It composes with AWQ — the scale/zp are learned
+    in the SAME amplified space the fakequant runs in (W_curr*S), so the outer *S … /S is untouched.
+    The scale rows are concatenated over the fused siblings in the SAME order as W_base_salient.
+
     The salient slice is the ONLY weight materialized. Quantization runs in fp32; the residual
     is cast back to X_S.dtype.
     """
     BA     = _fused_BA(A_S_list, B_list).to(torch.float32)         # [sum_out, group_k]
     W_curr = W_base_salient.to(torch.float32) + BA * lora_scaling  # [sum_out, group_k]
+    if lsq_scale is not None:
+        fixed = lsq_scale.float() if symmetric else (lsq_scale.float(), lsq_zp.float())
+    else:
+        fixed = None
     if awq_s is not None:
         s     = awq_s.to(torch.float32).view(1, -1)                # [1, group_k]
-        W_fq  = group_fakequant(W_curr * s, group_size, q_bits, symmetric)
+        W_fq  = group_fakequant(W_curr * s, group_size, q_bits, symmetric, fixed_scale=fixed)
         delta = (W_fq / s - W_curr).to(X_S.dtype)                  # STE residual (original space)
     else:
-        W_fq  = group_fakequant(W_curr, group_size, q_bits, symmetric)
+        W_fq  = group_fakequant(W_curr, group_size, q_bits, symmetric, fixed_scale=fixed)
         delta = (W_fq - W_curr).to(X_S.dtype)
     Y      = F.linear(X_S, delta)                                  # [..., sum_out], one GEMM
     return list(torch.split(Y, list(out_splits), dim=-1))
@@ -1433,6 +1875,7 @@ class _FusedSiblingQATInjector(nn.Module):
         lora_scaling: float,
         where: str,
         awq_s: Optional[torch.Tensor] = None,
+        enable_lsq: bool = False,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -1444,6 +1887,7 @@ class _FusedSiblingQATInjector(nn.Module):
         self.symmetric    = symmetric
         self.lora_scaling = lora_scaling
         self.where        = where
+        self.enable_lsq   = bool(enable_lsq)
 
         _warn_if_lora_dropout(self.projs, where)
 
@@ -1464,6 +1908,25 @@ class _FusedSiblingQATInjector(nn.Module):
             )
         else:
             self.awq_s = None
+
+        # LSQ: register a learned scale[, zp] PER PROJ (nn.Parameter on the proj module, so the HF
+        # Trainer optimizer collects it and export can look it up by the proj's module name). Shape
+        # [out_i, n_sal_g]. Init current_minmax from the base salient slice IN THE SAME (amplified)
+        # space the fakequant runs in, so the initial grid matches the old min-max grid (no jump).
+        if self.enable_lsq:
+            n_sal_g = group_k // group_size
+            for p, b in zip(self.projs, bases):
+                W0 = b.to(torch.float32)                           # [out_i, group_k]
+                if self.awq_s is not None:
+                    W0 = W0 * self.awq_s.view(1, -1).to(W0.device)
+                if symmetric:
+                    s0 = _lsq_init_sym(W0, group_size, q_bits)     # [out_i, n_sal_g]
+                    p.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+                else:
+                    s0, z0 = _lsq_init_asym(W0, group_size, q_bits)
+                    p.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+                    p.lsq_w_zp = nn.Parameter(z0.to(W0.device), requires_grad=True)
+                assert p.lsq_w_scale.shape[1] == n_sal_g
 
         self._deltas: Optional[List[torch.Tensor]] = None
         self._handles: List[torch.utils.hooks.RemovableHandle] = []
@@ -1486,10 +1949,16 @@ class _FusedSiblingQATInjector(nn.Module):
         X_S = hidden_states[..., :self.group_k]
         A_S_list = [_lora_A_S(p, self.group_k) for p in self.projs]
         B_list   = [_lora_B(p) for p in self.projs]
+        lsq_scale = lsq_zp = None
+        if self.enable_lsq:
+            # Concatenate the per-proj learned scale[, zp] in the SAME order as W_base_salient.
+            lsq_scale = torch.cat([p.lsq_w_scale for p in self.projs], dim=0)
+            if not self.symmetric:
+                lsq_zp = torch.cat([p.lsq_w_zp for p in self.projs], dim=0)
         self._deltas = fused_qat_residual_outputs(
             self.W_base_salient, A_S_list, B_list, self.out_splits, X_S,
             self.group_size, self.q_bits, self.symmetric, self.lora_scaling,
-            awq_s=self.awq_s,
+            awq_s=self.awq_s, lsq_scale=lsq_scale, lsq_zp=lsq_zp,
         )
         return None  # do not modify the block inputs
 
@@ -1536,7 +2005,7 @@ class DownProjQATInjector(nn.Module):
     """
     Single-projection QAT residual for down_proj (no sibling to fuse with). A self-contained
     forward_hook reads the projection input (the act(gate)*up activation, already permuted by P4
-    so the salient channels are at [0:group_k]) and adds one small delta GEMM to the output.
+    so the salient channels are at [0:layer_group_k]) and adds one small delta GEMM to the output.
     """
 
     def __init__(
@@ -1548,6 +2017,7 @@ class DownProjQATInjector(nn.Module):
         symmetric: bool,
         lora_scaling: float,
         awq_s: Optional[torch.Tensor] = None,
+        enable_lsq: bool = False,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -1558,6 +2028,7 @@ class DownProjQATInjector(nn.Module):
         self.q_bits       = q_bits
         self.symmetric    = symmetric
         self.lora_scaling = lora_scaling
+        self.enable_lsq   = bool(enable_lsq)
 
         _warn_if_lora_dropout([down_proj], "mlp(down)")
         self.register_buffer(
@@ -1573,16 +2044,35 @@ class DownProjQATInjector(nn.Module):
         else:
             self.awq_s = None
         self.out_splits = (self.W_base_salient.shape[0],)
+
+        # LSQ: learned scale[, zp] for down_proj's salient slice (registered on the proj module).
+        if self.enable_lsq:
+            W0 = self.W_base_salient.to(torch.float32)
+            if self.awq_s is not None:
+                W0 = W0 * self.awq_s.view(1, -1).to(W0.device)
+            if symmetric:
+                s0 = _lsq_init_sym(W0, group_size, q_bits)
+                down_proj.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+            else:
+                s0, z0 = _lsq_init_asym(W0, group_size, q_bits)
+                down_proj.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+                down_proj.lsq_w_zp = nn.Parameter(z0.to(W0.device), requires_grad=True)
+
         self._handles = [down_proj.register_forward_hook(self._hook)]
 
     def _hook(self, module, inp, out):
         X_S = inp[0][..., :self.group_k]
         A_S = _lora_A_S(self.down_proj, self.group_k)
         B   = _lora_B(self.down_proj)
+        lsq_scale = lsq_zp = None
+        if self.enable_lsq:
+            lsq_scale = self.down_proj.lsq_w_scale
+            if not self.symmetric:
+                lsq_zp = self.down_proj.lsq_w_zp
         (delta_out,) = fused_qat_residual_outputs(
             self.W_base_salient, [A_S], [B], self.out_splits, X_S,
             self.group_size, self.q_bits, self.symmetric, self.lora_scaling,
-            awq_s=self.awq_s,
+            awq_s=self.awq_s, lsq_scale=lsq_scale, lsq_zp=lsq_zp,
         )
         return out + delta_out
 
@@ -1606,6 +2096,8 @@ def install_fused_selective_qat(
     target_modules: Sequence[str],
     include_down_proj: bool = True,
     awq_scales: Optional[dict] = None,
+    layer_group_ks: Optional[Sequence[int]] = None,
+    enable_lsq: bool = False,
 ) -> List[nn.Module]:
     """
     Install block-level fused Selective-QAT injectors on every decoder layer.
@@ -1614,7 +2106,7 @@ def install_fused_selective_qat(
     - gate/up_proj → one FusedMLPQATInjector per layer.
     - down_proj    → one DownProjQATInjector per layer (single small GEMM, no fusion).
 
-    awq_scales: if given ({"attn"/"mlp"/"down": [num_layers, group_k]}), the salient slice of each
+    awq_scales: if given ({"attn"/"mlp"/"down": [num_layers, max_group_k]}), the salient slice of each
     projection group is quantized in the AWQ-amplified space (q/k/v share the layer's "attn" S,
     gate/up share "mlp", down_proj uses "down"). o_proj is never injected (per-head Hadamard only).
     The /S is baked into the dense weight at export — a better quant grid, bit-identical output.
@@ -1622,29 +2114,38 @@ def install_fused_selective_qat(
     Only projections that are LoRA-wrapped AND listed in `target_modules` are injected.
     Returns the list of injectors (keep a reference; call .remove() on each to uninstall).
     """
-    common = dict(
-        group_k=group_k, group_size=group_size, q_bits=q_bits,
-        symmetric=symmetric, lora_scaling=lora_scaling,
-    )
+    layers = list(_resolve_decoder_layers(model))
+    if layer_group_ks is None:
+        layer_group_ks = [int(group_k)] * len(layers)
+    else:
+        layer_group_ks = [int(x) for x in layer_group_ks]
+        assert len(layer_group_ks) == len(layers), (
+            f"len(layer_group_ks)={len(layer_group_ks)} != num_layers={len(layers)}"
+        )
 
-    def _s(src: str, l: int) -> Optional[torch.Tensor]:
+    def _s(src: str, l: int, gk: int) -> Optional[torch.Tensor]:
         if not awq_scales or src not in awq_scales:
             return None
-        return torch.as_tensor(awq_scales[src][l], dtype=torch.float32)
+        return torch.as_tensor(awq_scales[src][l][:gk], dtype=torch.float32)
 
     tset = set(target_modules)
     injectors: List[nn.Module] = []
 
-    for l, layer in enumerate(_resolve_decoder_layers(model)):
+    for l, layer in enumerate(layers):
         attn = layer.self_attn
         mlp  = layer.mlp
+        gk_l = int(layer_group_ks[l])
+        common = dict(
+            group_k=gk_l, group_size=group_size, q_bits=q_bits,
+            symmetric=symmetric, lora_scaling=lora_scaling, enable_lsq=enable_lsq,
+        )
 
         if {"q_proj", "k_proj", "v_proj"} <= tset and all(
             _has_lora(getattr(attn, n)) for n in ("q_proj", "k_proj", "v_proj")
         ):
             injectors.append(FusedAttnQATInjector(
                 attn, attn.q_proj, attn.k_proj, attn.v_proj,
-                awq_s=_s("attn", l), **common
+                awq_s=_s("attn", l, gk_l), **common
             ))
 
         if {"gate_proj", "up_proj"} <= tset and all(
@@ -1652,19 +2153,20 @@ def install_fused_selective_qat(
         ):
             injectors.append(FusedMLPQATInjector(
                 mlp, mlp.gate_proj, mlp.up_proj,
-                awq_s=_s("mlp", l), **common
+                awq_s=_s("mlp", l, gk_l), **common
             ))
 
         if include_down_proj and "down_proj" in tset and _has_lora(mlp.down_proj):
-            injectors.append(DownProjQATInjector(mlp.down_proj, awq_s=_s("down", l), **common))
+            injectors.append(DownProjQATInjector(mlp.down_proj, awq_s=_s("down", l, gk_l), **common))
 
     print(
         f"[qat_permute_sqat] Installed fused Selective-QAT injectors: "
         f"{sum(isinstance(i, FusedAttnQATInjector) for i in injectors)} attn, "
         f"{sum(isinstance(i, FusedMLPQATInjector) for i in injectors)} mlp, "
         f"{sum(isinstance(i, DownProjQATInjector) for i in injectors)} down  "
-        f"(group_k={group_k}, group_size={group_size}, symmetric={symmetric}, "
-        f"awq_scale={'on' if awq_scales else 'off'})"
+        f"(group_k_by_layer={min(layer_group_ks)}..{max(layer_group_ks)}, "
+        f"group_size={group_size}, symmetric={symmetric}, "
+        f"awq_scale={'on' if awq_scales else 'off'}, enable_lsq={enable_lsq})"
     )
     return injectors
 
@@ -1687,9 +2189,9 @@ def build_permuted_fp16_checkpoint(
     model_name: str,
     tokenizer,
     calibration_dataloader: DataLoader,
-    boundary_sizes: List[int],
+    boundary_sizes: Optional[List[int]],
     save_dir: str,
-    group_k: int = 128,
+    group_k: Optional[int] = None,
     group_size: int = 128,
     top_k_ratio: float = 0.01,
     outlier_log_sigma: float = 3.0,
@@ -1697,6 +2199,8 @@ def build_permuted_fp16_checkpoint(
     device: Optional[torch.device] = None,
     awq_alpha: float = 0.5,
     awq_max: float = 2.0,
+    group_k_candidates: Optional[Sequence[int]] = None,
+    max_segments: int = 4,
 ) -> dict:
     """
     Stage-2 pre-quantization step — run on ONE process only (rank 0).
@@ -1719,7 +2223,6 @@ def build_permuted_fp16_checkpoint(
     import gc
     from transformers import AutoModelForCausalLM
 
-    num_segments = len(boundary_sizes)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -1735,30 +2238,77 @@ def build_permuted_fp16_checkpoint(
     num_kv_heads   = model.config.num_key_value_heads
     num_attn_heads = model.config.num_attention_heads
     head_dim       = d_model // num_attn_heads
-    assert sum(boundary_sizes) == num_layers, (
-        f"sum(boundary_sizes)={sum(boundary_sizes)} != num_hidden_layers={num_layers}"
-    )
 
     # ---- 1) calibrate ----
     second_moments = _collect_second_moments(
         model, calibration_dataloader, num_layers, device, collect_internal=True,
     )
 
-    # ---- 2) salient selection ----
-    residual_salient = select_salient_channels(
-        second_moments, d_model, boundary_sizes,
-        top_k_ratio=top_k_ratio, group_k=group_k,
+    # ---- 2) automatic/manual segment + group_k resolution ----
+    candidates = _normalize_group_k_candidates(group_k_candidates, group_size)
+    auto_summary = None
+    if boundary_sizes is None:
+        boundary_sizes, segment_group_ks, auto_summary = auto_segment_by_outliers(
+            second_moments=second_moments,
+            hidden_size=d_model,
+            num_layers=num_layers,
+            group_size=group_size,
+            group_k_candidates=candidates,
+            max_segments=max_segments,
+            outlier_log_sigma=outlier_log_sigma,
+        )
+        print(
+            f"[SegPerm] Auto segments: boundary_sizes={boundary_sizes}, "
+            f"segment_group_ks={segment_group_ks}"
+        )
+    else:
+        boundary_sizes = [int(x) for x in boundary_sizes]
+        assert sum(boundary_sizes) == num_layers, (
+            f"sum(boundary_sizes)={sum(boundary_sizes)} != num_hidden_layers={num_layers}"
+        )
+        if group_k is None:
+            segment_group_ks = _segment_group_ks_for_boundaries(
+                second_moments=second_moments,
+                hidden_size=d_model,
+                boundary_sizes=boundary_sizes,
+                group_k_candidates=candidates,
+                outlier_log_sigma=outlier_log_sigma,
+            )
+            print(
+                f"[SegPerm] Manual segments + auto group_k: boundary_sizes={boundary_sizes}, "
+                f"segment_group_ks={segment_group_ks}"
+            )
+        else:
+            assert int(group_k) % group_size == 0, (
+                f"group_k={group_k} must be a multiple of group_size={group_size}"
+            )
+            segment_group_ks = [int(group_k)] * len(boundary_sizes)
+            print(
+                f"[SegPerm] Manual segments + fixed group_k: boundary_sizes={boundary_sizes}, "
+                f"group_k={int(group_k)}"
+            )
+
+    num_segments = len(boundary_sizes)
+    layer_group_ks = _expand_segment_group_ks(boundary_sizes, segment_group_ks)
+    max_group_k = int(max(segment_group_ks))
+
+    # ---- 2b) salient selection ----
+    residual_salient = select_salient_channels_variable(
+        second_moments, d_model, boundary_sizes, segment_group_ks,
         group_size=group_size, outlier_log_sigma=outlier_log_sigma,
     )
     segment_perms = {
         k: _build_segment_perm(residual_salient[k], d_model) for k in range(num_segments)
     }
-    internal_salient = select_internal_salient_channels(second_moments, num_layers, group_k=group_k)
+    internal_salient = select_internal_salient_channels(
+        second_moments, num_layers, group_k=max_group_k, layer_group_ks=layer_group_ks,
+    )
 
     # ---- 2b) AWQ-style per-channel salient scales S (always computed; usage gated by config) ----
     awq_scales = compute_awq_scales(
         second_moments, residual_salient, internal_salient,
-        boundary_sizes, num_layers, group_k, alpha=awq_alpha, max_s=awq_max,
+        boundary_sizes, num_layers, max_group_k, layer_group_ks=layer_group_ks,
+        alpha=awq_alpha, max_s=awq_max,
     )
 
     # ---- 3) apply the three transforms IN fp16 (dtype-preserving, equivalence-preserving) ----
@@ -1778,11 +2328,16 @@ def build_permuted_fp16_checkpoint(
         "boundary_layer_indices": bli,
         "segment_perms":          {k: list(v) for k, v in segment_perms.items()},
         "block_internal_perms":   {f"{k[0]}_{k[1]}": v for k, v in block_internal.items()},
-        "group_k":                group_k,
+        # Backward-compatible max group_k. New code reads layer_group_ks/segment_group_ks.
+        "group_k":                max_group_k,
+        "segment_group_ks":       list(segment_group_ks),
+        "layer_group_ks":         list(layer_group_ks),
+        "group_k_candidates":     list(candidates),
         "group_size":             group_size,
         "boundary_sizes":         list(boundary_sizes),
         "d_model":                d_model,
         "permuted_base_dir":      os.path.abspath(save_dir),
+        "auto_segments":          auto_summary,
         # AWQ-style per-channel salient scales (used only when awq_scale is enabled in cfg).
         "awq_scales":             {k: v.cpu() for k, v in awq_scales.items()},
         "awq_alpha":              awq_alpha,
@@ -1933,6 +2488,8 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         self.boundary_perms:       List[torch.LongTensor] = []
         self.segment_perms:        Dict[int, List[int]] = {}
         self.block_internal_perms: Dict[str, List[int]] = {}
+        self.enable_lsq:           bool = False
+        self._lsq_proj_names:      Dict[int, Tuple[str, nn.Module]] = {}
 
     def prepare_model(
         self,
@@ -1953,9 +2510,11 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         stage          = sp_cfg.get("stage", 2)
         group_k        = perm_meta["group_k"]
         group_size     = perm_meta["group_size"]
+        layer_group_ks = layer_group_ks_from_meta(perm_meta) or [int(group_k)] * int(sum(perm_meta["boundary_sizes"]))
         q_bits         = cfg["model"]["quant_bits"]
         symmetric      = cfg["qat"].get("symmetric", True)
         awq_enabled    = bool((sp_cfg.get("awq_scale", {}) or {}).get("enabled", False))
+        enable_lsq     = bool(cfg["qat"].get("lsq", {}).get("enabled", False))
         lora_scaling   = cfg["lora"]["alpha"] / cfg["lora"]["rank"]
         target_modules = cfg["lora"]["target_modules"]
         d_model        = perm_meta["d_model"]
@@ -1976,6 +2535,7 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         )
 
         # ---- 2) Stage 2 — install block-level fused Selective-QAT injectors. ----
+        self.enable_lsq = enable_lsq
         if stage >= 2:
             self.injectors = install_fused_selective_qat(
                 model,
@@ -1987,19 +2547,30 @@ class SegmentPermutedSelectiveQAT(QATHandler):
                 target_modules=target_modules,
                 include_down_proj=True,
                 awq_scales=awq_scales,
+                layer_group_ks=layer_group_ks,
+                enable_lsq=enable_lsq,
             )
 
         # ---- 3) Attach export metadata (perm_meta + q_bits + symmetric + awq flag). ----
         model._sqat_permute_meta = {
             **perm_meta, "q_bits": q_bits, "symmetric": symmetric,
-            "awq_scale": awq_enabled,
+            "awq_scale": awq_enabled, "lsq": enable_lsq,
         }
+        # Keep a reference so collect (after training) can read the learned scales off the live
+        # proj modules. The proj→name map lets us key lsq_scales by the export (stripped) name.
+        self._lsq_proj_names = {}
+        if enable_lsq:
+            for name, mod in model.named_modules():
+                if hasattr(mod, "lsq_w_scale"):
+                    self._lsq_proj_names[id(mod)] = (name, mod)
+
         print(f"[SegPerm] prepare_model done: stage={stage}, "
               f"num_runtime_permutes={len(self.boundary_perms)}, "
-              f"group_k={group_k}, group_size={group_size}, symmetric={symmetric}, "
-              f"awq_scale={awq_enabled}")
+              f"group_k_by_layer={min(layer_group_ks)}..{max(layer_group_ks)} "
+              f"(max={group_k}), group_size={group_size}, symmetric={symmetric}, "
+              f"awq_scale={awq_enabled}, enable_lsq={enable_lsq}")
         return model
 
     def on_train_begin(self, model: nn.Module): pass
     def on_step_end(self, model: nn.Module, step: int): pass
-    def on_train_end(self, model: nn.Module): pass
+    def on_train_end(self, model: nn.Module, output_dir=None): pass

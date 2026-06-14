@@ -1,7 +1,7 @@
 # ------------------------------------
-BITS=4
+BITS=3
 echo -e "\n>>> Evaluating all models on MMLU 0-shot"
-for dir in outputs/qlora-${BITS}bit-full-*-eval; do
+for dir in outputs/qlora-full-math-${BITS}bit-full-dequant-eval*; do
     if [ -d "$dir" ]; then
         echo "  Evaluating $dir"
         # CUDA_VISIBLE_DEVICES=1 python scripts/eval_mmlu.py \

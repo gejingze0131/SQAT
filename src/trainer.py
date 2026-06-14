@@ -34,7 +34,9 @@ class QATCallback(TrainerCallback):
         self.qat_handler.on_step_end(model, state.global_step)
 
     def on_train_end(self, args, state, control, model=None, **kwargs):
-        self.qat_handler.on_train_end(model)
+        # Pass the trainer output dir so handlers that self-register extra params (FullQAT LSQ
+        # scales) can persist them next to the checkpoint before the injectors are removed.
+        self.qat_handler.on_train_end(model, output_dir=getattr(args, "output_dir", None))
 
 
 # ============================================================================
@@ -124,8 +126,18 @@ def build_trainer(
         return_tensors="pt",
     )
 
+    trainer_cls = Trainer
+    enable_lsq = bool(cfg["qat"].get("lsq", {}).get("enabled", False))
+    if enable_lsq:
+        # LSQ scale[/zp] are self-registered nn.Parameters. They MUST get their own optimizer
+        # group (small lr, no weight decay) — the weight LR (2e-4) blows up a scale, and weight
+        # decay would shrink it toward 0. HF's default create_optimizer groups by decay/no-decay
+        # only, so it would (a) lump scales into the main lr and (b) maybe apply decay. Override.
+        scales_lr = float(cfg["qat"]["lsq"].get("scales_lr", 1e-5))
+        trainer_cls = _make_lsq_trainer_cls(scales_lr)
+
     # Build trainer
-    trainer = Trainer(
+    trainer = trainer_cls(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
@@ -135,3 +147,58 @@ def build_trainer(
     )
 
     return trainer
+
+
+def _make_lsq_trainer_cls(scales_lr: float):
+    """
+    Build a Trainer subclass whose create_optimizer puts LSQ scale/zp params (names containing
+    'lsq_w_scale'/'lsq_w_zp') into a DEDICATED param group: lr=scales_lr, weight_decay=0. All
+    other trainable params keep the standard (decay / no-decay) grouping at the base lr.
+    """
+    from transformers.trainer_pt_utils import get_parameter_names
+    try:
+        from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
+    except Exception:  # older transformers
+        ALL_LAYERNORM_LAYERS = (torch.nn.LayerNorm,)
+
+    class _LSQTrainer(Trainer):
+        def create_optimizer(self):
+            if self.optimizer is not None:
+                return self.optimizer
+
+            opt_model = self.model
+            decay_params = get_parameter_names(opt_model, list(ALL_LAYERNORM_LAYERS))
+            decay_params = [n for n in decay_params if "bias" not in n]
+
+            def is_lsq(n):
+                return "lsq_w_scale" in n or "lsq_w_zp" in n
+
+            named = {n: p for n, p in opt_model.named_parameters() if p.requires_grad}
+            lsq_names = [n for n in named if is_lsq(n)]
+
+            param_groups = [
+                {  # decayed, non-LSQ
+                    "params": [p for n, p in named.items() if n in decay_params and not is_lsq(n)],
+                    "weight_decay": self.args.weight_decay,
+                },
+                {  # no-decay, non-LSQ
+                    "params": [p for n, p in named.items() if n not in decay_params and not is_lsq(n)],
+                    "weight_decay": 0.0,
+                },
+                {  # LSQ scale/zp — dedicated lr, no decay
+                    "params": [named[n] for n in lsq_names],
+                    "weight_decay": 0.0,
+                    "lr": scales_lr,
+                },
+            ]
+
+            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+                self.args, opt_model)
+            self.optimizer = optimizer_cls(param_groups, **optimizer_kwargs)
+            n_lsq = len(param_groups[2]["params"])
+            print(f"[Trainer][LSQ] Dedicated LSQ optimizer group: {n_lsq} params "
+                  f"(lr={scales_lr:g}, weight_decay=0). "
+                  f"{'OK — scales WILL be optimized.' if n_lsq > 0 else 'WARNING: 0 LSQ params found!'}")
+            return self.optimizer
+
+    return _LSQTrainer

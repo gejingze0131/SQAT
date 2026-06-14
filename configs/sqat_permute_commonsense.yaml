@@ -35,6 +35,15 @@ qat:
                             # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
                             # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
 
+  # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
+  # fakequant scale is replaced by a learnable nn.Parameter (asym → learn scale+zp, sym → learn
+  # scale only), initialized current_minmax so the initial grid matches the old min-max grid.
+  # Applies to full QAT and the sqat_permute salient slice. enabled=false → bit-identical to the
+  # original min-max path. scales_lr is a dedicated (small) optimizer lr for the scale/zp group.
+  lsq:
+    enabled: false
+    scales_lr: 1.0e-5
+
   # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
   sqat:
     calibration_samples: 512

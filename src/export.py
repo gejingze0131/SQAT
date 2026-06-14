@@ -28,6 +28,7 @@ import os
 import shutil
 import tempfile
 from collections import OrderedDict, defaultdict
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 
 import torch
@@ -462,6 +463,13 @@ def collect_sqat_permute_metadata(model: nn.Module) -> Optional[Dict]:
     model_meta = getattr(model, "_sqat_permute_meta", None)
     if model_meta is None:
         return None
+    # LSQ: fold the learned per-proj scale[, zp] into the meta so they ride along the existing
+    # save/load (sqat_permute_meta.pt) path. Collected from live params here (after training).
+    if model_meta.get("lsq", False):
+        from .qat_permute_sqat import collect_lsq_scales_from_model
+        lsq_scales = collect_lsq_scales_from_model(model)
+        model_meta = {**model_meta, "lsq_scales": lsq_scales}
+        print(f"[Export] Collected LSQ scales for {len(lsq_scales)} sqat_permute projections")
     return {"layers": {}, "model": model_meta}
 
 
@@ -473,7 +481,102 @@ def save_sqat_permute_meta(meta: dict, output_dir: str) -> None:
     print(f"[Export] Saved sqat_permute metadata to {path}")
 
 
-# AWQ-style per-channel salient scaling (Improvement 2). The salient slice [0:group_k] of each
+def _unwrap_sqat_permute_model_meta(meta: Optional[dict]) -> dict:
+    if not meta:
+        return {}
+    return meta.get("model", meta) if isinstance(meta, dict) else {}
+
+
+@dataclass
+class _SqatPermuteExportState:
+    max_group_k: Optional[int] = None
+    awq_enabled: bool = False
+    awq_scales: Optional[dict] = None
+    lsq_enabled: bool = False
+    lsq_scales: Optional[Dict[str, dict]] = None
+    gptq_enabled: bool = False
+    gptq_cfg: dict = field(default_factory=dict)
+    perm_group_k: Optional[int] = None
+
+
+def _resolve_sqat_permute_export_state(
+    qat_mode: str,
+    cfg: dict,
+    meta: Optional[dict],
+    export_dequant: bool,
+    gptq_full: bool,
+) -> _SqatPermuteExportState:
+    """Collect and validate all SQAT-permute-only export knobs in one place."""
+    if qat_mode != "sqat_permute":
+        return _SqatPermuteExportState()
+
+    mm = _unwrap_sqat_permute_model_meta(meta)
+    state = _SqatPermuteExportState(
+        max_group_k=(int(mm["group_k"]) if mm.get("group_k") is not None else None),
+        gptq_cfg=(cfg["qat"].get("sqat_permute", {}) or {}).get("gptq", {}) or {},
+    )
+
+    if meta:
+        state.awq_enabled = bool(mm.get("awq_scale", False))
+        state.awq_scales = mm.get("awq_scales") if state.awq_enabled else None
+        if state.awq_enabled and not export_dequant:
+            raise ValueError(
+                "AWQ-scale export requires --export_dequant (dense /S bake-back); "
+                "INT4 AWQ-packed export of the amplified grid is not supported."
+            )
+        if state.awq_enabled and state.awq_scales is None:
+            raise ValueError(
+                "awq_scale enabled but no awq_scales in meta — rebuild the permuted base "
+                "(build_permuted_fp16_checkpoint stores them)."
+            )
+        if state.awq_enabled:
+            print(f"[Export]   AWQ-scale ON → amplified-space quant + /S bake-back "
+                  f"(max_group_k={state.max_group_k})")
+
+        state.lsq_enabled = bool(mm.get("lsq", False))
+        state.lsq_scales = mm.get("lsq_scales") if state.lsq_enabled else None
+        if state.lsq_enabled and not export_dequant:
+            raise ValueError(
+                "sqat_permute + LSQ export requires --export_dequant (the learned scale[,zp] grid "
+                "is stored as a dense quant→dequant weight)."
+            )
+        if state.lsq_enabled and not state.lsq_scales:
+            raise ValueError(
+                "sqat_permute lsq enabled but no lsq_scales in meta — the trained scales were not "
+                "collected. Re-collect via collect_sqat_permute_metadata after training."
+            )
+        if state.lsq_enabled:
+            print(f"[Export]   LSQ ON → salient slice on learned scale[,zp] grid "
+                  f"({len(state.lsq_scales)} projections)")
+
+    state.gptq_enabled = bool(state.gptq_cfg.get("enabled", False))
+    if state.gptq_enabled:
+        if not export_dequant:
+            raise ValueError("sqat_permute GPTQ export requires --export_dequant (dense save).")
+        if not meta:
+            raise ValueError(
+                "sqat_permute GPTQ needs sqat_permute_meta (group_k + boundary gathers)."
+            )
+        state.perm_group_k = state.max_group_k
+        print(f"[Export]   GPTQ non-salient ON (max_group_k={state.perm_group_k}, "
+              f"nsamples={state.gptq_cfg.get('nsamples', 128)}, "
+              f"percdamp={state.gptq_cfg.get('percdamp', 0.01)})")
+
+    if gptq_full:
+        if not export_dequant:
+            raise ValueError("gptq_full ablation requires --export_dequant (dense save).")
+        if not meta:
+            raise ValueError("gptq_full ablation needs sqat_permute_meta (boundary gathers).")
+        state.gptq_enabled = True
+        state.perm_group_k = 0
+        state.awq_enabled = False
+        state.awq_scales = None
+        print("[Export]   GPTQ-FULL ablation ON → GPTQ ALL columns (no salient slice, no AWQ)")
+
+    return state
+
+
+# AWQ-style per-channel salient scaling (Improvement 2). The salient slice [0:layer_group_k] of each
 # q/k/v/gate/up/down projection is quantized in the AMPLIFIED space (W[:, :gk] * S); the /S is
 # baked back into the dequantized dense weight so the deployed weight == quant(W*S)/S, matching
 # the training fakequant. o_proj has no salient slice (awq_s_for_module returns None for it).
@@ -482,7 +585,7 @@ def _unscale_salient_cols(
 ) -> torch.Tensor:
     """Bake 1/S back into the salient cols: W_deq[:, :group_k] /= S (deployed = quant(W*S)/S)."""
     from .qat_permute_sqat import awq_s_for_module
-    s = awq_s_for_module(awq_scales, name)
+    s = awq_s_for_module(awq_scales, name, group_k)
     if s is None:
         return W_deq
     out = W_deq.clone().to(torch.float32)
@@ -1021,7 +1124,15 @@ def _merge_lora_into_dense(
     qat_mode: str = "none",
     group_size: int = 128,
 ) -> int:
-    """Dequant NF4 base + LoRA delta -> copy into dense model. Returns layer count."""
+    """Dequant base + LoRA delta -> copy into dense model. Returns layer count.
+
+    QA-LoRA (qat_mode="qalora"):
+      The base is ALREADY the frozen GPTQ INT-b grid (loaded in fp16). The adapter is a group-pooled
+      low-rank path whose delta is constant within each input group, so deployed = W_base_intb +
+      expand_delta (the group delta folds into the affine zero-points). The base is NOT re-quantized
+      here. For the merged-only upper bound the caller loads the ORIGINAL fp16 base instead, giving
+      W_fp16 + expand_delta (no quant error).
+    """
     import bitsandbytes as bnb
 
     modules_map = _get_named_modules(merged_model)
@@ -1057,6 +1168,69 @@ def _merge_lora_into_dense(
     return count
 
 
+def _group_quantize_sqat_permute_lsq(
+    W: torch.Tensor,
+    group_k: int,
+    group_size: int,
+    q_bits: int,
+    symmetric: bool,
+    fixed,                      # LSQ scale[, zp] for the salient slice (amplified space if AWQ)
+    awq_s,                      # [group_k] AWQ scale or None
+    group_quantize,            # the qat_permute_sqat.group_quantize callable
+):
+    """
+    RTN-export of a sqat_permute weight when LSQ is on: the salient slice [0:layer_group_k] uses the
+    LEARNED scale[, zp] (LSQ grid, amplified space if AWQ); the non-salient block [layer_group_k:] keeps
+    the per-step min-max grid (unchanged from the original scheme). Returns (W_int, scale, zp) in the
+    canonical group_quantize layout so the existing group_dequantize path reconstructs the weight.
+    """
+    import torch as _t
+    out_f, in_f = W.shape
+    n_sal_g = group_k // group_size
+    # salient slice (amplified if AWQ) → LSQ grid
+    W_sal = W[:, :group_k].clone()
+    if awq_s is not None:
+        W_sal = W_sal * awq_s.view(1, -1).to(W_sal.device)
+    wi_s, sc_s, zp_s = group_quantize(W_sal, group_size, q_bits, symmetric, fixed_scale=fixed)
+    if group_k >= in_f:
+        return wi_s, sc_s, zp_s
+    # non-salient block → min-max grid
+    W_non = W[:, group_k:]
+    wi_n, sc_n, zp_n = group_quantize(W_non, group_size, q_bits, symmetric)
+    W_int = _t.cat([wi_s, wi_n], dim=1)
+    scale = _t.cat([sc_s, sc_n], dim=1)
+    zp    = _t.cat([zp_s, zp_n], dim=1)
+    return W_int, scale, zp
+
+
+@dataclass
+class _SqatPermuteLayerGrid:
+    group_k: int
+    awq_s: Optional[torch.Tensor] = None
+    fixed_scale: Optional[object] = None
+
+
+def _sqat_permute_layer_grid(
+    name: str,
+    perm_meta: Optional[dict],
+    default_group_k: Optional[int],
+    awq_scales,
+    lsq_scales: Optional[Dict[str, dict]],
+    symmetric: bool,
+) -> _SqatPermuteLayerGrid:
+    from .qat_permute_sqat import awq_s_for_module, group_k_for_module_name, lsq_scale_for_module
+
+    group_k = group_k_for_module_name(
+        name, perm_meta=perm_meta, default_group_k=default_group_k,
+    )
+    awq_s = awq_s_for_module(awq_scales, name, group_k) if awq_scales and group_k > 0 else None
+    fixed = (
+        lsq_scale_for_module(lsq_scales, name, symmetric)
+        if lsq_scales and group_k > 0 else None
+    )
+    return _SqatPermuteLayerGrid(group_k=group_k, awq_s=awq_s, fixed_scale=fixed)
+
+
 # ============================================================================
 # Per-layer quantization loop
 # ============================================================================
@@ -1071,6 +1245,8 @@ def _quantize_all_layers(
     symmetric: bool,
     awq_scales=None,
     perm_group_k: Optional[int] = None,
+    sqat_permute_meta: Optional[dict] = None,
+    lsq_scales: Optional[Dict[str, dict]] = None,
 ) -> Tuple[Dict[str, Tuple], Dict[str, torch.Tensor]]:
     """
     Run PTQ on all target linear layers.
@@ -1105,13 +1281,27 @@ def _quantize_all_layers(
             # training fakequant uses (qat_permute_sqat.group_quantize) so the salient-slice
             # grid is IDENTICAL train↔export — the fix for the train/export quantizer mismatch.
             # (AWQ-scale, if on, amplifies the salient slice here and is baked back after dequant.)
-            from .qat_permute_sqat import group_quantize, awq_s_for_module
-            # AWQ-style scaling: quantize the salient slice in the amplified space (W[:, :gk]*S);
-            # the /S is baked back into the dense weight after dequant (_unscale_salient_cols).
-            s = awq_s_for_module(awq_scales, name) if awq_scales else None
-            if s is not None and perm_group_k:
+            from .qat_permute_sqat import group_quantize
+
+            grid = _sqat_permute_layer_grid(
+                name=name,
+                perm_meta=sqat_permute_meta,
+                default_group_k=perm_group_k,
+                awq_scales=awq_scales,
+                lsq_scales=lsq_scales,
+                symmetric=symmetric,
+            )
+            if grid.fixed_scale is not None:
+                # group_quantize fixed_scale applies to the WHOLE weight; the sqat_permute non-salient
+                # cols must keep min-max. So quantize the salient slice and non-salient block apart,
+                # then stitch (this matches training: only [0:layer_group_k] is LSQ-fakequant'd).
+                W_int, scales, zeros = _group_quantize_sqat_permute_lsq(
+                    W, grid.group_k, group_size, q_bits, symmetric,
+                    grid.fixed_scale, grid.awq_s, group_quantize,
+                )
+            elif grid.awq_s is not None and grid.group_k:
                 Wq = W.clone()
-                Wq[:, :perm_group_k] = Wq[:, :perm_group_k] * s.view(1, -1).to(Wq.device)
+                Wq[:, :grid.group_k] = Wq[:, :grid.group_k] * grid.awq_s.view(1, -1).to(Wq.device)
                 W_int, scales, zeros = group_quantize(Wq, group_size, q_bits, symmetric)
             else:
                 W_int, scales, zeros = group_quantize(W, group_size, q_bits, symmetric)
@@ -1145,6 +1335,21 @@ def _quantize_all_layers(
                     group_size=group_size,
                     q_bits=q_bits,
                 )
+        elif qat_mode == "full" and lsq_scales is not None and name in lsq_scales:
+            # Full QAT + LSQ: quantize with the LEARNED scale[,zp] (single source of truth that
+            # training used) on the SAME Qn/Qp grid — never re-run min-max. dequant=(q[-z])*scale
+            # is rebuilt in the save loop from these same stored scales.
+            from .qat_base import lsq_quantize_export_sym, lsq_quantize_export_asym
+            entry = lsq_scales[name]
+            scale = entry["scale"].float().cpu()
+            if symmetric:
+                W_int = lsq_quantize_export_sym(W, scale, group_size, q_bits)
+                scales, zeros = scale, torch.zeros_like(scale)
+            else:
+                zp = entry["zp"].float().cpu()
+                W_int, z_int = lsq_quantize_export_asym(W, scale, zp, group_size, q_bits)
+                scales, zeros = scale, z_int
+
         else:
             if symmetric:
                 W_int, scales, zeros = real_quantize_symmetric(
@@ -1228,10 +1433,13 @@ def merge_and_export(
                 sqat_permute_meta = torch.load(_mp, map_location="cpu")
                 print(f"[Export] Loaded sqat_permute metadata from {_mp}")
         if sqat_permute_meta:
-            mm = sqat_permute_meta.get("model", sqat_permute_meta) or {}
+            mm = _unwrap_sqat_permute_model_meta(sqat_permute_meta)
+            sgks = mm.get("segment_group_ks")
             print(f"[Export]   sqat_permute metadata: "
                   f"num_boundaries={len(mm.get('boundary_perms', []))}, "
-                  f"group_k={mm.get('group_k')}, group_size={mm.get('group_size')}")
+                  f"group_k={mm.get('group_k')}, "
+                  f"segment_group_ks={sgks if sgks is not None else 'legacy'}, "
+                  f"group_size={mm.get('group_size')}")
             # The training fakequant used the group_size recorded in the permuted base's meta.
             # Trust that over the (possibly edited) config so train↔export grids stay consistent
             # — critical when resuming/exporting an older checkpoint whose config has since changed.
@@ -1241,70 +1449,53 @@ def merge_and_export(
                       f"{group_size} → {meta_gs} (from meta, matches training fakequant)")
                 group_size = meta_gs
 
-    # Improvement 2 — AWQ-style per-channel salient scaling. Resolve the per-(layer,source) scales
-    # + group_k from the (training-set) meta. When enabled, the salient slice is quantized in the
-    # amplified space (W*S) and the /S is baked back into the dense weight (dequant path only).
-    sp_awq, sp_group_k, sp_awq_scales = False, None, None
-    if qat_mode == "sqat_permute" and sqat_permute_meta:
-        _mm = sqat_permute_meta.get("model", sqat_permute_meta) or {}
-        sp_group_k    = _mm.get("group_k")
-        sp_awq        = bool(_mm.get("awq_scale", False))
-        sp_awq_scales = _mm.get("awq_scales") if sp_awq else None
-        if sp_awq and not export_dequant:
-            raise ValueError(
-                "AWQ-scale export requires --export_dequant (dense /S bake-back); "
-                "INT4 AWQ-packed export of the amplified grid is not supported."
-            )
-        if sp_awq and sp_awq_scales is None:
-            raise ValueError(
-                "awq_scale enabled but no awq_scales in meta — rebuild the permuted base "
-                "(build_permuted_fp16_checkpoint stores them)."
-            )
-        if sp_awq:
-            print(f"[Export]   AWQ-scale ON → amplified-space quant + /S bake-back "
-                  f"(group_k={sp_group_k})")
-
-    # Improvement 1 — GPTQ (OBS) for the NON-salient columns. The salient slice [0:group_k] keeps
-    # the canonical (training-consistent) grid; columns [group_k:] are GPTQ-quantized as an
-    # INDEPENDENT block (no salient-error leakage — see gptq_quantize_layer). Same group_size +
-    # asym/sym as QAT.
-    sp_gptq_cfg = (cfg["qat"].get("sqat_permute", {}) or {}).get("gptq", {}) or {}
-    sp_gptq = bool(sp_gptq_cfg.get("enabled", False)) and qat_mode == "sqat_permute"
-    sp_perm_group_k = None
-    if sp_gptq:
-        if not export_dequant:
-            raise ValueError("sqat_permute GPTQ export requires --export_dequant (dense save).")
-        if not sqat_permute_meta:
-            raise ValueError(
-                "sqat_permute GPTQ needs sqat_permute_meta (group_k + boundary gathers)."
-            )
-        sp_perm_group_k = int(
-            (sqat_permute_meta.get("model", sqat_permute_meta) or {}).get("group_k")
-        )
-        print(f"[Export]   GPTQ non-salient ON (group_k={sp_perm_group_k}, "
-              f"nsamples={sp_gptq_cfg.get('nsamples', 128)}, "
-              f"percdamp={sp_gptq_cfg.get('percdamp', 0.01)})")
-
-    # SQAT ablation — GPTQ the FULL merged weight (no salient slice, no AWQ). Isolates the
-    # contribution of the Selective-QAT salient protection: the trained (permuted) model is
-    # exported as if it were a vanilla GPTQ quantization. Keeps the permuted base + boundary
-    # gathers so the merged model still runs correctly; only the salient-slice handling is removed.
-    if gptq_full and qat_mode == "sqat_permute":
-        if not export_dequant:
-            raise ValueError("gptq_full ablation requires --export_dequant (dense save).")
-        if not sqat_permute_meta:
-            raise ValueError("gptq_full ablation needs sqat_permute_meta (boundary gathers).")
-        sp_gptq         = True
-        sp_perm_group_k = 0                      # group_k=0 → every column GPTQ'd (no fixed slice)
-        sp_awq          = False                  # ablate AWQ scaling as well
-        sp_awq_scales   = None
-        sp_gptq_cfg     = sp_gptq_cfg or {}
-        print("[Export]   GPTQ-FULL ablation ON → GPTQ ALL columns (no salient slice, no AWQ)")
+    sp_state = _resolve_sqat_permute_export_state(
+        qat_mode=qat_mode,
+        cfg=cfg,
+        meta=sqat_permute_meta,
+        export_dequant=export_dequant,
+        gptq_full=gptq_full and qat_mode == "sqat_permute",
+    )
 
     if qat_mode in {"sqat"} and sqat_metadata is None and model is not None:
         print("[Export] Collecting SQAT metadata...")
         sqat_metadata = collect_sqat_metadata(model)
         print(f"[Export]   Found {len(sqat_metadata)} SQAT layers")
+
+    # Full QAT + LSQ: load the learned scale[,zp] saved next to the adapter (lsq_scales.pt). Keys
+    # are the PEFT module names; reindex to dense-model names below (after _strip_peft_prefix).
+    full_lsq_scales = None
+    if qat_mode == "full" and bool(cfg["qat"].get("lsq", {}).get("enabled", False)):
+        if checkpoint_dir is not None:
+            _lp = os.path.join(checkpoint_dir, "lsq_scales.pt")
+            if os.path.exists(_lp):
+                full_lsq_scales = torch.load(_lp, map_location="cpu")
+                print(f"[Export] Loaded {len(full_lsq_scales)} LSQ scale entries from {_lp}")
+            else:
+                raise FileNotFoundError(
+                    f"[Export] full+LSQ enabled but {_lp} not found. The learned LSQ grid is "
+                    f"required for a train↔export-consistent export — re-run training (it saves "
+                    f"lsq_scales.pt to <output_dir>/final) or disable lsq in the config."
+                )
+        elif model is not None:
+            # In-training export: read live params off the FullQAT injectors' modules.
+            full_lsq_scales = {}
+            for nm, mod in model.named_modules():
+                if hasattr(mod, "lsq_w_scale"):
+                    e = {"scale": mod.lsq_w_scale.detach().float().cpu().clone()}
+                    if hasattr(mod, "lsq_w_zp"):
+                        e["zp"] = mod.lsq_w_zp.detach().float().cpu().clone()
+                    full_lsq_scales[nm] = e
+            print(f"[Export] Collected {len(full_lsq_scales)} live LSQ scale entries from model")
+
+        # The LSQ grid (Qn/Qp) differs from the AWQ-packed `[-q_max, q_max]` grid, and the export
+        # stores a learned scale[,zp] that the AWQ qweight/qzeros packer cannot represent. Require
+        # the dequant (dense) export path — the same constraint already imposed on asymmetric.
+        if full_lsq_scales and not export_dequant:
+            raise ValueError(
+                "full + LSQ export requires --export_dequant (dense quantize->dequant with the "
+                "learned scale[,zp]); INT4 AWQ-packed export of the LSQ grid is not supported."
+            )
 
     # --- Prepare adapter checkpoint ---
     tmp_dir = None
@@ -1323,24 +1514,37 @@ def merge_and_export(
         # [FIX] Remap keys if checkpoint was saved with SQAT wrappers active
         _remap_adapter_keys_if_needed(adapter_path)
 
-    # --- Load NF4 base + LoRA adapter ---
+    # --- Load base + LoRA adapter ---
     import bitsandbytes as bnb
     from transformers import BitsAndBytesConfig
 
-    print("[Export] Loading base model in NF4...")
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type=cfg["model"].get("quant_type", "nf4"),
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=cfg["model"].get("double_quant", True),
-    )
-    base_model_nf4 = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        quantization_config=bnb_config,
-        device_map="auto",
-        torch_dtype=torch.float16,
-        trust_remote_code=True,
-    )
+    if qat_mode == "qalora":
+        # QA-LoRA's base is a REAL fp16 GPTQ INT-b checkpoint (build_qalora_intb_base): load it in
+        # fp16, NOT NF4 (NF4 would re-quantize the INT-b grid). Its weights ARE the deployed INT-b
+        # values; the group adapter is added on top (= folded into the affine zero-points). The
+        # merged-only export instead points base_model_name at the ORIGINAL fp16 base (upper bound).
+        print("[Export] Loading QA-LoRA fp16 base (already on the GPTQ INT-b grid)...")
+        base_model_nf4 = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+    else:
+        print("[Export] Loading base model in NF4...")
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type=cfg["model"].get("quant_type", "nf4"),
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=cfg["model"].get("double_quant", True),
+        )
+        base_model_nf4 = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            quantization_config=bnb_config,
+            device_map="auto",
+            torch_dtype=torch.float16,
+            trust_remote_code=True,
+        )
 
     print("[Export] Loading LoRA adapter...")
     peft_model = _load_adapter_for_export(base_model_nf4, adapter_path, cfg)
@@ -1354,6 +1558,9 @@ def merge_and_export(
         trust_remote_code=True,
     )
 
+    # QA-LoRA: base is already the frozen GPTQ INT-b grid, so DO NOT re-quantize — just add the
+    # expanded group delta (W_base_intb + expand_delta = the deployed weight). Other modes merge
+    # the NF4-dequant base + full-rank delta as before.
     count = _merge_lora_into_dense(
         peft_model,
         merged_model,
@@ -1367,10 +1574,32 @@ def merge_and_export(
     del peft_model, base_model_nf4
     torch.cuda.empty_cache()
 
+    # --- QA-LoRA: the merge already produced the deployed dense weights -----------------------
+    # deployed = dequant_b(W_base) + expand_delta, i.e. the frozen INT-b base with the group adapter
+    # folded into the affine zero-points (paper Eq. 7). There is NO re-quantization of (base+delta)
+    # — doing so would move the base grid and destroy the merge-into-zero-point property. Skip the
+    # PTQ/verify path (which assumes a re-quantized merged weight) and save the dense weights as-is.
+    if qat_mode == "qalora":
+        save_dtype = (
+            torch.float16
+            if dequant_dtype.lower() in ("fp16", "float16", "half")
+            else torch.bfloat16
+        )
+        save_dequantized_model(merged_model, tokenizer, output_dir, cfg, dtype=save_dtype)
+        print(f"[Export] Saved QA-LoRA deployed model "
+              f"(frozen INT{q_bits} base + adapter-in-zero-point) to {output_dir}")
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        return output_dir
+
     # --- Reindex SQAT metadata to dense-model names ---
     sqat_meta = {}
     if sqat_metadata:
         sqat_meta = {_strip_peft_prefix(k): v for k, v in sqat_metadata.items()}
+
+    # --- Reindex full-QAT LSQ scales to dense-model names (strip the PEFT prefix) ---
+    if full_lsq_scales:
+        full_lsq_scales = {_strip_peft_prefix(k): v for k, v in full_lsq_scales.items()}
 
     # --- AWQ path: fold D into graph, then move to GPU for packing ---
     # --- Dequant path: keep on CPU, D is handled inside quantizer ---
@@ -1383,7 +1612,7 @@ def merge_and_export(
     #       (real_quantize_sqat now offloads to CPU internally)
 
     # --- PTQ ---
-    if sp_gptq:
+    if sp_state.gptq_enabled:
         print("[Export] Applying GPTQ to non-salient columns (salient slice kept on canonical grid)...")
         from .qat_permute_sqat import gptq_quantize_model_sequential
         from torch.utils.data import DataLoader
@@ -1402,7 +1631,7 @@ def merge_and_export(
         cal_ds = load_calibration_data(cfg, tokenizer)
         cal_loader = DataLoader(
             cal_ds,
-            batch_size=int(sp_gptq_cfg.get("batch_size", 2)),
+            batch_size=int(sp_state.gptq_cfg.get("batch_size", 2)),
             collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, return_tensors="pt"),
             shuffle=False,
         )
@@ -1414,12 +1643,13 @@ def merge_and_export(
             merged_model.to(gptq_device)
             quantized_layers = gptq_quantize_model_sequential(
                 merged_model, cal_loader, target_modules,
-                perm_group_k=sp_perm_group_k, group_size=group_size, q_bits=q_bits,
+                perm_group_k=sp_state.perm_group_k, group_size=group_size, q_bits=q_bits,
                 symmetric=symmetric, device=gptq_device, perm_meta=sqat_permute_meta,
-                percdamp=float(sp_gptq_cfg.get("percdamp", 0.01)),
-                blocksize=int(sp_gptq_cfg.get("blocksize", 128)),
-                nsamples=int(sp_gptq_cfg.get("nsamples", 128)),
-                awq_scales=sp_awq_scales,   # amplified salient grid when AWQ-scale is on
+                percdamp=float(sp_state.gptq_cfg.get("percdamp", 0.01)),
+                blocksize=int(sp_state.gptq_cfg.get("blocksize", 128)),
+                nsamples=int(sp_state.gptq_cfg.get("nsamples", 128)),
+                awq_scales=sp_state.awq_scales,   # amplified salient grid when AWQ-scale is on
+                lsq_scales=sp_state.lsq_scales,   # learned salient-slice scale[,zp] when LSQ is on
             )
         except torch.cuda.OutOfMemoryError as e:
             # The training checkpoint is already saved before export, so nothing is lost — the
@@ -1437,10 +1667,15 @@ def merge_and_export(
             torch.cuda.empty_cache()
     else:
         print("[Export] Applying PTQ...")
+        # Route the right LSQ scales: full mode reads lsq_scales.pt (full_lsq_scales); sqat_permute
+        # reads the per-proj salient scales from the meta (sp_state.lsq_scales).
+        _lsq = sp_state.lsq_scales if qat_mode == "sqat_permute" else full_lsq_scales
         quantized_layers, quant_targets = _quantize_all_layers(
             merged_model, target_modules, qat_mode, sqat_meta,
             group_size, q_bits, export_dequant, symmetric,
-            awq_scales=sp_awq_scales, perm_group_k=sp_group_k,
+            awq_scales=sp_state.awq_scales, perm_group_k=sp_state.max_group_k,
+            sqat_permute_meta=sqat_permute_meta,
+            lsq_scales=_lsq,
         )
     print(f"[Export] Quantized {len(quantized_layers)} layers")
 
@@ -1452,7 +1687,7 @@ def merge_and_export(
         symmetric,
         qat_mode=qat_mode,
         sqat_meta=sqat_meta,
-        gptq=sp_gptq,
+        gptq=sp_state.gptq_enabled,
     )
     if qat_mode == "sqat" and sqat_meta:
         _verify_sqat_salient_train_export_grid(
@@ -1470,38 +1705,50 @@ def merge_and_export(
     if qat_mode == "sqat_permute":
         from .qat_permute_sqat import (
             verify_permute_quant_consistency, group_fakequant, group_dequantize,
-            awq_s_for_module,
         )
-        gk = sp_group_k or group_size
-        n_sal_g = gk // group_size
-        print(f"[Export] Verifying sqat_permute salient train↔export grid (group_k={gk})...")
+        print(f"[Export] Verifying sqat_permute salient train↔export grid...")
         checked = 0
         worst = 0.0
         worst_store = 0.0
         for name, W in quant_targets.items():
             if checked >= 6:
                 break
-            awq_s = awq_s_for_module(sp_awq_scales, name) if sp_awq else None
+            grid = _sqat_permute_layer_grid(
+                name=name,
+                perm_meta=sqat_permute_meta,
+                default_group_k=sp_state.max_group_k,
+                awq_scales=sp_state.awq_scales if sp_state.awq_enabled else None,
+                lsq_scales=sp_state.lsq_scales if sp_state.lsq_enabled else None,
+                symmetric=symmetric,
+            )
+            gk = grid.group_k
+            if gk <= 0:
+                continue
+            n_sal_g = gk // group_size
             err = verify_permute_quant_consistency(
-                W, gk, group_size, q_bits, symmetric, awq_s=awq_s,
+                W, gk, group_size, q_bits, symmetric,
+                awq_s=grid.awq_s,
+                fixed_scale=grid.fixed_scale,
             )
             worst = max(worst, err)
             status = "OK" if err < 1e-4 else "MISMATCH"
-            line = f"  [Permute-grid] {name}: max|Δ|={err:.3e} [{status}]"
+            line = f"  [Permute-grid] {name}: group_k={gk}, max|Δ|={err:.3e} [{status}]"
             # GPTQ guard: the EXPORTED salient ints must still equal the canonical training grid
             # (only the [group_k:] non-salient cols are GPTQ'd). The grid is checked in the same
             # (possibly AWQ-amplified) space the slice was quantized in. o_proj has no slice → skip.
             # gptq_full ablation GPTQ's the whole weight (no fixed slice), so skip this check.
-            if (sp_gptq and not gptq_full and name in quantized_layers
+            if (sp_state.gptq_enabled and not gptq_full and name in quantized_layers
                     and name.split(".")[-1] != "o_proj"):
                 wi, sc, zp = quantized_layers[name]
                 sal_dq = group_dequantize(
                     wi[:, :gk], sc[:, :n_sal_g], zp[:, :n_sal_g], group_size, gk, symmetric,
                 )
                 W_sal = W[:, :gk].float()
-                if awq_s is not None:
-                    W_sal = W_sal * awq_s.view(1, -1)
-                canon = group_fakequant(W_sal, group_size, q_bits, symmetric)
+                if grid.awq_s is not None:
+                    W_sal = W_sal * grid.awq_s.view(1, -1)
+                canon = group_fakequant(
+                    W_sal, group_size, q_bits, symmetric, fixed_scale=grid.fixed_scale,
+                )
                 serr = (sal_dq - canon).abs().max().item()
                 worst_store = max(worst_store, serr)
                 line += f"  salient-stored max|Δ|={serr:.3e}"
@@ -1510,7 +1757,7 @@ def merge_and_export(
         if worst >= 1e-4:
             print(f"[Export] WARNING: sqat_permute train/export grid mismatch (worst={worst:.3e}) "
                   f"— QAT benefit will NOT transfer. Check the quantizer formulas.")
-        elif sp_gptq and worst_store >= 1e-4:
+        elif sp_state.gptq_enabled and worst_store >= 1e-4:
             print(f"[Export] WARNING: GPTQ disturbed the salient grid (worst={worst_store:.3e}) "
                   f"— the QAT slice must stay on the canonical grid.")
         else:
@@ -1564,8 +1811,19 @@ def merge_and_export(
 
             # AWQ-scale: bake 1/S back into the salient cols so the dense weight is the deployed
             # value quant(W*S)/S (carrying the amplified-space quant error) — no runtime scaling.
-            if sp_awq:
-                W_deq = _unscale_salient_cols(W_deq, name, sp_group_k, sp_awq_scales)
+            if sp_state.awq_enabled:
+                grid = _sqat_permute_layer_grid(
+                    name=name,
+                    perm_meta=sqat_permute_meta,
+                    default_group_k=sp_state.max_group_k,
+                    awq_scales=sp_state.awq_scales,
+                    lsq_scales=None,
+                    symmetric=symmetric,
+                )
+                if grid.group_k > 0:
+                    W_deq = _unscale_salient_cols(
+                        W_deq, name, grid.group_k, sp_state.awq_scales,
+                    )
 
             mod.weight.data.copy_(W_deq.to(mod.weight.dtype))
 
@@ -1659,24 +1917,36 @@ def export_merged_only(
     else:
         _remap_adapter_keys_if_needed(adapter_path)
 
-    # --- Load NF4 base + LoRA adapter ---
+    # --- Load base + LoRA adapter ---
     import bitsandbytes as bnb
     from transformers import BitsAndBytesConfig
 
-    print("[Export] Loading base model in NF4...")
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type=cfg["model"].get("quant_type", "nf4"),
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=cfg["model"].get("double_quant", True),
-    )
-    base_model_nf4 = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        quantization_config=bnb_config,
-        device_map="auto",
-        torch_dtype=torch.float16,
-        trust_remote_code=True,
-    )
+    if qat_mode == "qalora":
+        # QA-LoRA never uses NF4 (the patch_qalora_model guard rejects an NF4 base). For the merged
+        # upper bound load the ORIGINAL fp16 base (set by train.py export-only) — fp16 + expand_delta
+        # is the true no-quant reference.
+        print("[Export] Loading QA-LoRA fp16 base (merged upper bound, no quant)...")
+        base_model_nf4 = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+    else:
+        print("[Export] Loading base model in NF4...")
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type=cfg["model"].get("quant_type", "nf4"),
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=cfg["model"].get("double_quant", True),
+        )
+        base_model_nf4 = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            quantization_config=bnb_config,
+            device_map="auto",
+            torch_dtype=torch.float16,
+            trust_remote_code=True,
+        )
 
     print("[Export] Loading LoRA adapter...")
     peft_model = _load_adapter_for_export(base_model_nf4, adapter_path, cfg)
