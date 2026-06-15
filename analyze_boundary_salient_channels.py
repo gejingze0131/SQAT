@@ -113,6 +113,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional .pt file with second moments to skip model calibration.",
     )
+    parser.add_argument(
+        "--trust_remote_code",
+        action="store_true",
+        help="Pass trust_remote_code=True to the tokenizer/model loaders (some Qwen variants).",
+    )
     return parser.parse_args()
 
 
@@ -1020,12 +1025,17 @@ def load_or_collect_second_moments(args: argparse.Namespace) -> Tuple[Dict[Sourc
         return second_moments, hidden_size, num_layers
 
     print(f"Loading model: {args.model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model_name,
+        use_fast=True,
+        trust_remote_code=args.trust_remote_code,
+    )
     dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name,
         torch_dtype=dtype,
         device_map="auto" if torch.cuda.is_available() else None,
+        trust_remote_code=args.trust_remote_code,
     )
     model.eval()
 
