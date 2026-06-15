@@ -5,8 +5,8 @@ Analyze residual-stream salient channels for SQAT segment permutation.
 This script intentionally does not use a manually chosen per-layer top-k ratio.
 It derives salient/outlier channels from each source's measured E[x^2]
 distribution, then chooses contiguous segments automatically with a dynamic
-program. Each segment receives a group_k snapped to one of {64, 128, 256}
-by default.
+program. Each segment receives a group_k rounded up to the next full
+quantization group according to --group_size.
 
 Outputs:
     salient_analysis_out/
@@ -15,6 +15,7 @@ Outputs:
         fig3_source_capture_heatmap.png
         fig4_segment_groupk.png
         fig5_segment_cost_curve.png
+        fig6_down_proj_groupk.png
         summary.json
 """
 
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
@@ -40,7 +42,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 SourceKey = Tuple[int, str]
 SOURCE_NAMES = ("attn", "mlp")
-GROUP_K_DEFAULTS = (64, 128, 256)
+DOWN_SOURCE_NAME = "down_proj"
 TARGET_CAPTURE = 1.0
 MIN_SEGMENT_LEN = 1
 
@@ -77,14 +79,22 @@ def parse_args() -> argparse.Namespace:
         "--outlier_log_sigma",
         type=float,
         default=3.0,
-        help="Per-source log(E[x^2]) z-score threshold.",
+        help="Residual attn/mlp per-source log(E[x^2]) z-score threshold.",
     )
     parser.add_argument(
-        "--group_k_candidates",
+        "--down_outlier_log_sigma",
+        type=float,
+        default=None,
+        help=(
+            "down_proj per-layer log(E[x^2]) z-score threshold. "
+            "Defaults to --outlier_log_sigma."
+        ),
+    )
+    parser.add_argument(
+        "--group_size",
         type=int,
-        nargs="+",
-        default=list(GROUP_K_DEFAULTS),
-        help="Allowed per-segment group_k values. The required count is ceiled to these buckets.",
+        default=128,
+        help="Quantization group size. group_k is rounded up to a positive multiple of this value.",
     )
     parser.add_argument(
         "--max_segments",
@@ -117,11 +127,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def validate_args(args: argparse.Namespace) -> None:
-    candidates = sorted(set(args.group_k_candidates))
-    assert candidates, "--group_k_candidates must not be empty"
-    assert all(k > 0 for k in candidates), "--group_k_candidates must be positive"
+    assert args.group_size > 0, "--group_size must be positive"
     assert args.max_segments > 0, "--max_segments must be positive"
-    args.group_k_candidates = candidates
+    if args.down_outlier_log_sigma is None:
+        args.down_outlier_log_sigma = args.outlier_log_sigma
 
 
 # -----------------------------------------------------------------------------
@@ -228,39 +237,55 @@ def estimate_second_moments(
     num_layers: int,
 ) -> Dict[SourceKey, torch.Tensor]:
     """
-    Estimate per-channel E[x^2] for residual-stream sources:
-      (l, 'attn') = q_proj input after input_layernorm
-      (l, 'mlp')  = gate_proj input after post_attention_layernorm
+    Estimate per-channel E[x^2]:
+      (l, 'attn')      = q_proj input after input_layernorm
+      (l, 'mlp')       = gate_proj input after post_attention_layernorm
+      (l, 'down_proj') = down_proj input after act(gate) * up
     """
     sum_sq: Dict[SourceKey, torch.Tensor] = {}
     tok_count: Dict[SourceKey, int] = {}
+    source_dims: Dict[SourceKey, int] = {}
+    layers = _resolve_decoder_layers(model)
+
     for layer_idx in range(num_layers):
         for src in SOURCE_NAMES:
-            sum_sq[(layer_idx, src)] = torch.zeros(hidden_size, dtype=torch.float32)
-            tok_count[(layer_idx, src)] = 0
+            source_dims[(layer_idx, src)] = hidden_size
+        down_proj = getattr(getattr(layers[layer_idx], "mlp", None), DOWN_SOURCE_NAME, None)
+        if down_proj is not None and hasattr(down_proj, "in_features"):
+            source_dims[(layer_idx, DOWN_SOURCE_NAME)] = int(down_proj.in_features)
+
+    for key, dim in source_dims.items():
+        sum_sq[key] = torch.zeros(dim, dtype=torch.float32)
+        tok_count[key] = 0
 
     handles = []
 
-    def make_hook(key: SourceKey):
+    def make_hook(key: SourceKey, dim: int):
         def hook(_module, inp, _out):
-            x = inp[0].detach().reshape(-1, hidden_size).float().cpu()
+            x = inp[0].detach().reshape(-1, dim).float().cpu()
             sum_sq[key].add_(x.square().sum(dim=0))
             tok_count[key] += x.shape[0]
 
         return hook
 
-    layers = _resolve_decoder_layers(model)
     for layer_idx in range(num_layers):
         handles.append(
             layers[layer_idx].self_attn.q_proj.register_forward_hook(
-                make_hook((layer_idx, "attn"))
+                make_hook((layer_idx, "attn"), hidden_size)
             )
         )
         handles.append(
             layers[layer_idx].mlp.gate_proj.register_forward_hook(
-                make_hook((layer_idx, "mlp"))
+                make_hook((layer_idx, "mlp"), hidden_size)
             )
         )
+        down_key = (layer_idx, DOWN_SOURCE_NAME)
+        if down_key in source_dims:
+            handles.append(
+                layers[layer_idx].mlp.down_proj.register_forward_hook(
+                    make_hook(down_key, source_dims[down_key])
+                )
+            )
 
     model.eval()
     try:
@@ -339,21 +364,24 @@ def analyze_outlier_distribution(
     layer_sets: List[Set[int]] = []
     layer_rows: List[Dict] = []
 
-    for key, values in second_moments.items():
-        mx = values.max().item()
-        normalized[key] = values / mx if mx > 0 else values.clone()
-        out_idx, threshold, log_mean, log_std = _detect_source_outliers(values, sigma)
-        source_outliers[key] = out_idx
-        source_stats[key] = {
-            "layer": key[0],
-            "src": key[1],
-            "count": int(out_idx.numel()),
-            "log_threshold": float(threshold),
-            "log_mean": float(log_mean),
-            "log_std": float(log_std),
-            "max_ex2": float(values.max().item()),
-            "mean_ex2": float(values.mean().item()),
-        }
+    for layer_idx in range(num_layers):
+        for src in SOURCE_NAMES:
+            key = (layer_idx, src)
+            values = second_moments[key]
+            mx = values.max().item()
+            normalized[key] = values / mx if mx > 0 else values.clone()
+            out_idx, threshold, log_mean, log_std = _detect_source_outliers(values, sigma)
+            source_outliers[key] = out_idx
+            source_stats[key] = {
+                "layer": key[0],
+                "src": key[1],
+                "count": int(out_idx.numel()),
+                "log_threshold": float(threshold),
+                "log_mean": float(log_mean),
+                "log_std": float(log_std),
+                "max_ex2": float(values.max().item()),
+                "mean_ex2": float(values.mean().item()),
+            }
 
     for layer_idx in range(num_layers):
         attn = set(source_outliers[(layer_idx, "attn")].tolist())
@@ -389,11 +417,19 @@ def _segment_sources(start: int, end: int) -> List[SourceKey]:
     return [(layer_idx, src) for layer_idx in range(start, end) for src in SOURCE_NAMES]
 
 
-def _snap_group_k(required_count: int, candidates: Sequence[int]) -> int:
-    for group_k in candidates:
-        if required_count <= group_k:
-            return group_k
-    return candidates[-1]
+def _round_group_k_to_group_size(required_count: int, group_size: int, dim: int) -> int:
+    group_size = int(group_size)
+    dim = int(dim)
+    required_count = int(required_count)
+    max_group_k = (dim // group_size) * group_size
+    if max_group_k <= 0:
+        raise ValueError(f"dim={dim} is smaller than group_size={group_size}")
+    if required_count > max_group_k:
+        raise RuntimeError(
+            f"{required_count} outliers cannot fit in dim={dim} with group_size={group_size}; "
+            f"largest valid group_k is {max_group_k}."
+        )
+    return max(1, math.ceil(required_count / group_size)) * group_size
 
 
 def _aggregate_score(
@@ -451,7 +487,7 @@ def evaluate_segment_candidate(
     source_outliers: Dict[SourceKey, torch.Tensor],
     layer_jaccard: np.ndarray,
     hidden_size: int,
-    group_k_candidates: Sequence[int],
+    group_size: int,
 ) -> SegmentCandidate:
     sources = _segment_sources(start, end)
 
@@ -459,7 +495,7 @@ def evaluate_segment_candidate(
     for key in sources:
         outlier_mask[source_outliers[key]] = True
     outlier_union_count = int(outlier_mask.sum().item())
-    group_k = _snap_group_k(outlier_union_count, group_k_candidates)
+    group_k = _round_group_k_to_group_size(outlier_union_count, group_size, hidden_size)
 
     agg_score = _aggregate_score(sources, normalized, hidden_size)
     bucket, bucket_ranked = _select_bucket(agg_score, outlier_mask, group_k)
@@ -525,7 +561,7 @@ def build_segment_cache(
                 source_outliers=outlier_info["source_outliers"],
                 layer_jaccard=outlier_info["layer_jaccard"],
                 hidden_size=hidden_size,
-                group_k_candidates=args.group_k_candidates,
+                group_size=args.group_size,
             )
     return cache
 
@@ -577,8 +613,7 @@ def choose_segments_dp(
     if best_seg_count < 0:
         raise RuntimeError(
             "No segmentation with num_segments <= max_segments captures all true outliers. "
-            "Increase --max_segments, increase the largest --group_k_candidates value, "
-            "or relax the outlier threshold."
+            "Increase --max_segments or relax the outlier threshold."
         )
 
     segments: List[SegmentCandidate] = []
@@ -615,6 +650,39 @@ def compute_source_capture_rows(
                         "ratio": captured / total if total > 0 else None,
                     }
                 )
+    return rows
+
+
+def compute_down_proj_rows(
+    second_moments: Dict[SourceKey, torch.Tensor],
+    num_layers: int,
+    group_size: int,
+    sigma: float,
+) -> List[Dict]:
+    rows: List[Dict] = []
+    for layer_idx in range(num_layers):
+        key = (layer_idx, DOWN_SOURCE_NAME)
+        if key not in second_moments:
+            continue
+        values = second_moments[key]
+        out_idx, threshold, log_mean, log_std = _detect_source_outliers(values, sigma)
+        outlier_count = int(out_idx.numel())
+        group_k = _round_group_k_to_group_size(outlier_count, group_size, values.numel())
+        rows.append(
+            {
+                "layer": layer_idx,
+                "dim": int(values.numel()),
+                "outliers": outlier_count,
+                "group_k": int(group_k),
+                "headroom": int(group_k - outlier_count),
+                "utilization": float(outlier_count / group_k) if group_k > 0 else 0.0,
+                "log_threshold": float(threshold),
+                "log_mean": float(log_mean),
+                "log_std": float(log_std),
+                "max_ex2": float(values.max().item()),
+                "mean_ex2": float(values.mean().item()),
+            }
+        )
     return rows
 
 
@@ -815,7 +883,7 @@ def plot_segment_groupk(segments: Sequence[SegmentCandidate], output_dir: Path) 
 
     fig, ax1 = plt.subplots(figsize=(max(7, len(segments) * 1.5), 4.5))
     bars = ax1.bar(xs - 0.18, union_counts, width=0.36, color="#4c78a8", label="unique outliers")
-    ax1.bar(xs + 0.18, group_ks, width=0.36, color="#f58518", label="snapped group_k")
+    ax1.bar(xs + 0.18, group_ks, width=0.36, color="#f58518", label="rounded group_k")
     for i, bar in enumerate(bars):
         ax1.text(
             bar.get_x() + bar.get_width() / 2,
@@ -843,7 +911,7 @@ def plot_segment_groupk(segments: Sequence[SegmentCandidate], output_dir: Path) 
     ax1.set_xticks(xs)
     ax1.set_xticklabels(labels)
     ax1.set_ylabel("Channel count")
-    ax1.set_title("Segment bucket size snapped to allowed group_k candidates")
+    ax1.set_title("Segment bucket size rounded up to full quant groups")
     ax1.grid(True, axis="y", alpha=0.25)
 
     h1, l1 = ax1.get_legend_handles_labels()
@@ -897,6 +965,99 @@ def plot_cost_curve(cost_curve: List[Dict], output_dir: Path) -> None:
     print(f"  Saved {path}")
 
 
+def plot_down_proj_groupk(
+    down_rows: List[Dict],
+    segments: Sequence[SegmentCandidate],
+    sigma: float,
+    group_size: int,
+    output_dir: Path,
+) -> None:
+    if not down_rows:
+        print("  Skipping fig6_down_proj_groupk.png: no down_proj second moments found.")
+        return
+
+    layers = np.array([row["layer"] for row in down_rows], dtype=np.int64)
+    outliers = np.array([row["outliers"] for row in down_rows], dtype=np.float32)
+    group_ks = np.array([row["group_k"] for row in down_rows], dtype=np.float32)
+    utilization = np.array([row["utilization"] for row in down_rows], dtype=np.float32)
+
+    fig, ax1 = plt.subplots(figsize=(12, 4.8))
+    width = 0.36
+    ax1.bar(
+        layers - width / 2,
+        outliers,
+        width=width,
+        color="#4c78a8",
+        label="true down outliers",
+    )
+    ax1.bar(
+        layers + width / 2,
+        group_ks,
+        width=width,
+        color="#f58518",
+        label="rounded down_group_k",
+    )
+    _draw_segment_spans(ax1, segments, axis="x")
+
+    y_top = max(1.0, float(group_ks.max(initial=0.0)), float(outliers.max(initial=0.0)))
+    y_pad = y_top * 0.025
+    for layer, count in zip(layers, outliers):
+        if count <= 0:
+            continue
+        ax1.text(
+            layer - width / 2,
+            count + y_pad,
+            str(int(count)),
+            ha="center",
+            va="bottom",
+            fontsize=6.5,
+            color="#333333",
+        )
+    for layer, gk in zip(layers, group_ks):
+        ax1.text(
+            layer + width / 2,
+            gk + y_pad,
+            str(int(gk)),
+            ha="center",
+            va="bottom",
+            fontsize=6.5,
+            color="#333333",
+        )
+
+    ax2 = ax1.twinx()
+    ax2.plot(
+        layers,
+        utilization,
+        color="#111111",
+        marker="o",
+        ms=3,
+        lw=1.7,
+        label="outliers / down_group_k",
+    )
+    ax2.set_ylim(0, 1.05)
+    ax2.set_ylabel("Capacity utilization")
+
+    ax1.set_xticks(layers)
+    ax1.set_xlabel("Layer")
+    ax1.set_ylabel("Channel count")
+    ax1.set_ylim(0, y_top * 1.18 + 1)
+    ax1.set_title(
+        f"down_proj per-layer outliers and group_k "
+        f"(sigma={sigma:g}, group_size={group_size})"
+    )
+    ax1.grid(True, axis="y", alpha=0.25)
+
+    h1, l1 = ax1.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax1.legend(h1 + h2, l1 + l2, loc="upper right", fontsize=8)
+
+    fig.tight_layout()
+    path = output_dir / "fig6_down_proj_groupk.png"
+    fig.savefig(path, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved {path}")
+
+
 # -----------------------------------------------------------------------------
 # Summary
 # -----------------------------------------------------------------------------
@@ -933,10 +1094,12 @@ def print_and_save_summary(
     segments: Sequence[SegmentCandidate],
     outlier_info: Dict,
     capture_rows: List[Dict],
+    down_rows: List[Dict],
     cost_curve: List[Dict],
 ) -> None:
     segment_sizes = [seg.size for seg in segments]
     segment_group_ks = [seg.group_k for seg in segments]
+    down_layer_group_ks = [row["group_k"] for row in down_rows]
 
     print("\n" + "=" * 78)
     print("SUMMARY")
@@ -950,8 +1113,17 @@ def print_and_save_summary(
         f"segment rule: minimize sum(segment_layers * group_k) with "
         f"num_segments <= {args.max_segments} and 100% true-outlier capture"
     )
+    print(
+        f"group_size={args.group_size}; "
+        "group_k=max(1, ceil(outliers/group_size))*group_size"
+    )
     print(f"recommended segment_sizes={segment_sizes}")
     print(f"recommended segment_group_ks={segment_group_ks}")
+    if down_rows:
+        print(
+            f"down_proj rule: mean + {args.down_outlier_log_sigma:g} * std; "
+            f"recommended down_layer_group_ks={down_layer_group_ks}"
+        )
     print()
 
     for seg_idx, seg in enumerate(segments):
@@ -974,8 +1146,9 @@ def print_and_save_summary(
             "hidden_size": hidden_size,
             "num_layers": num_layers,
             "outlier_log_sigma": args.outlier_log_sigma,
+            "down_outlier_log_sigma": args.down_outlier_log_sigma,
             "outlier_rule": "log(E[x^2]) > mean + sigma * std per (layer, source)",
-            "group_k_candidates": args.group_k_candidates,
+            "group_size": args.group_size,
             "max_segments": args.max_segments,
             "target_capture": TARGET_CAPTURE,
             "segment_rule": (
@@ -986,8 +1159,10 @@ def print_and_save_summary(
         "recommended": {
             "segment_sizes": segment_sizes,
             "segment_group_ks": segment_group_ks,
+            "down_layer_group_ks": down_layer_group_ks,
         },
         "segments": [_segment_to_json(i, seg) for i, seg in enumerate(segments)],
+        "down_proj": down_rows,
         "layers": outlier_info["layer_rows"],
         "source_stats": {
             f"{key[0]}:{key[1]}": value
@@ -1069,7 +1244,7 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Group-k candidates: {args.group_k_candidates}")
+    print(f"Group size: {args.group_size}")
     second_moments, hidden_size, num_layers = load_or_collect_second_moments(args)
     print(f"Collected {len(second_moments)} source vectors.")
 
@@ -1099,6 +1274,12 @@ def main() -> None:
         segments=segments,
         source_outliers=outlier_info["source_outliers"],
     )
+    down_rows = compute_down_proj_rows(
+        second_moments=second_moments,
+        num_layers=num_layers,
+        group_size=args.group_size,
+        sigma=args.down_outlier_log_sigma,
+    )
 
     print("Generating figures ...")
     plot_layer_outlier_counts(outlier_info["layer_rows"], segments, output_dir)
@@ -1106,6 +1287,13 @@ def main() -> None:
     plot_source_capture_heatmap(capture_rows, num_layers, segments, output_dir)
     plot_segment_groupk(segments, output_dir)
     plot_cost_curve(cost_curve, output_dir)
+    plot_down_proj_groupk(
+        down_rows=down_rows,
+        segments=segments,
+        sigma=args.down_outlier_log_sigma,
+        group_size=args.group_size,
+        output_dir=output_dir,
+    )
 
     print_and_save_summary(
         args=args,
@@ -1115,6 +1303,7 @@ def main() -> None:
         segments=segments,
         outlier_info=outlier_info,
         capture_rows=capture_rows,
+        down_rows=down_rows,
         cost_curve=cost_curve,
     )
     print(f"\nAll outputs are under: {output_dir}")

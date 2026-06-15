@@ -8,7 +8,8 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" "$PYTHON" analyze_boundary_sal
     --dataset metamath \
     --n_samples 512 \
     --seq_len 2048 \
-    --outlier_log_sigma 3.0 \
-    --group_k_candidates 64 128 256 \
+    --outlier_log_sigma 2.5 \
+    --down_outlier_log_sigma 2.5 \
+    --group_size 64 \
     --max_segments 4 \
     --output_dir salient_analysis_out

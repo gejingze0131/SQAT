@@ -64,8 +64,10 @@ qat:
     # (outlier-first fill: log-space z-score outliers take priority).
     top_k_ratio: 0.01
 
-    # Log-space z-score threshold for outlier detection.
+    # Log-space z-score threshold for residual-stream outlier detection.
     outlier_log_sigma: 3.0
+    # Separate log-space z-score threshold for per-layer down_proj group_k selection.
+    down_outlier_log_sigma: 3.0
 
     # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
     stage: 2
