@@ -62,6 +62,9 @@ qat:
     # q/k/v/gate/up use residual layer_group_ks; down_proj uses its own per-layer
     # down_layer_group_ks from each layer's down_proj E[x²] distribution.
     max_segments: 4
+    # Optional global override. If set, every residual segment and every down_proj
+    # layer uses exactly this group_k instead of calibration-derived group_k values.
+    # group_k: 128
 
     # Log-space z-score threshold for residual q/k/v/gate/up segment outlier detection.
     outlier_log_sigma: 2.5

@@ -55,9 +55,8 @@ qat:
     # num_runtime_permutes = len(boundary_sizes) - 1  (one index_select gather per boundary)
     boundary_sizes: [2, 30]
 
-    # Salient channels per segment in d_model space.
-    # Must be a multiple of group_size (= 128) so salient cols occupy exactly
-    # group_k/group_size complete quantization groups at physical positions [0:group_k].
+    # Global manual override. When present, every residual segment and every down_proj
+    # layer uses exactly this group_k. Must be a positive multiple of qat.group_size.
     group_k: 128
 
     # Per-source top-k fraction for residual-stream salient selection

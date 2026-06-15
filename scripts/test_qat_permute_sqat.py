@@ -30,6 +30,8 @@ from src.qat_permute_sqat import (
     groupwise_asymmetric_fakequant,
     fused_qat_residual_outputs,
     group_k_for_module_name,
+    auto_segment_with_fixed_group_k,
+    compute_fakequant_param_stats,
     FusedAttnQATInjector,
     FusedMLPQATInjector,
     DownProjQATInjector,
@@ -381,6 +383,76 @@ def test_per_module_group_k_meta():
     _ok("down_proj uses down_layer_group_ks; legacy meta still falls back to residual k")
 
 
+def test_fixed_group_k_auto_segments():
+    print("test_fixed_group_k_auto_segments")
+    num_layers, hidden = 4, 16
+    second_moments = {}
+    for layer in range(num_layers):
+        attn = torch.ones(hidden)
+        mlp = torch.ones(hidden)
+        attn[layer:layer + 2] = 100.0 + layer
+        mlp[layer + 4:layer + 6] = 90.0 + layer
+        second_moments[(layer, "attn")] = attn
+        second_moments[(layer, "mlp")] = mlp
+
+    boundary_sizes, segment_group_ks, summary = auto_segment_with_fixed_group_k(
+        second_moments=second_moments,
+        hidden_size=hidden,
+        num_layers=num_layers,
+        group_k=8,
+        max_segments=2,
+        outlier_log_sigma=1.0,
+    )
+    assert sum(boundary_sizes) == num_layers
+    assert segment_group_ks == [8] * len(boundary_sizes)
+    assert summary["fixed_group_k"] == 8
+    assert all(seg["group_k"] == 8 for seg in summary["segments"])
+    _ok("fixed group_k applies to every auto-selected residual segment")
+
+
+def test_fakequant_param_stats():
+    print("test_fakequant_param_stats")
+
+    class FakeSelfAttn(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q_proj = nn.Linear(8, 8, bias=False)
+            self.k_proj = nn.Linear(8, 8, bias=False)
+            self.v_proj = nn.Linear(8, 8, bias=False)
+            self.o_proj = nn.Linear(8, 8, bias=False)
+
+    class FakeMLP(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.gate_proj = nn.Linear(8, 16, bias=False)
+            self.up_proj = nn.Linear(8, 16, bias=False)
+            self.down_proj = nn.Linear(16, 8, bias=False)
+
+    class FakeLayer(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.self_attn = FakeSelfAttn()
+            self.mlp = FakeMLP()
+
+    class FakeModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = nn.ModuleList([FakeLayer(), FakeLayer()])
+
+    stats = compute_fakequant_param_stats(
+        FakeModel(),
+        layer_group_ks=[2, 4],
+        down_layer_group_ks=[6, 8],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    )
+    assert stats["fakequant_params"] == 448
+    assert stats["qat_target_weight_params"] == 1152
+    assert stats["lora_target_weight_params"] == 1280
+    assert abs(stats["ratio_of_qat_target_weights"] - 448 / 1152) < 1e-12
+    assert stats["by_projection"]["down_proj"]["fakequant_params"] == 112
+    _ok("fakequant parameter coverage counts salient columns only")
+
+
 def main():
     test_fakequant()
     test_fused_residual()
@@ -389,6 +461,8 @@ def main():
     test_grad_flow_to_lora()
     test_awq_scale()
     test_per_module_group_k_meta()
+    test_fixed_group_k_auto_segments()
+    test_fakequant_param_stats()
     print("\nALL TESTS PASSED")
 
 

@@ -43,6 +43,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 SourceKey = Tuple[int, str]
 SOURCE_NAMES = ("attn", "mlp")
 DOWN_SOURCE_NAME = "down_proj"
+DEFAULT_TARGET_TERMINALS = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
+QAT_FAKEQUANT_TERMINALS = ("q_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj")
 TARGET_CAPTURE = 1.0
 MIN_SEGMENT_LEN = 1
 
@@ -691,6 +693,176 @@ def compute_down_proj_rows(
     return rows
 
 
+def _module_weight_shape(module: torch.nn.Module) -> Tuple[int, int] | None:
+    weight = getattr(module, "weight", None)
+    if weight is None or weight.ndim != 2:
+        return None
+    return int(weight.shape[0]), int(weight.shape[1])
+
+
+def _format_count(value: int) -> str:
+    return f"{int(value):,}"
+
+
+def _ratio(numer: int, denom: int | None) -> float | None:
+    if not denom:
+        return None
+    return float(numer / denom)
+
+
+def collect_parameter_stats(model, num_layers: int) -> Dict:
+    layers = _resolve_decoder_layers(model)
+    projection_shapes: List[Dict] = []
+    paths = (
+        ("self_attn", "q_proj"),
+        ("self_attn", "k_proj"),
+        ("self_attn", "v_proj"),
+        ("self_attn", "o_proj"),
+        ("mlp", "gate_proj"),
+        ("mlp", "up_proj"),
+        ("mlp", "down_proj"),
+    )
+    for layer_idx in range(num_layers):
+        layer = layers[layer_idx]
+        for parent_name, terminal in paths:
+            parent = getattr(layer, parent_name, None)
+            module = getattr(parent, terminal, None) if parent is not None else None
+            shape = _module_weight_shape(module) if module is not None else None
+            if shape is None:
+                continue
+            out_features, in_features = shape
+            projection_shapes.append(
+                {
+                    "layer": layer_idx,
+                    "terminal": terminal,
+                    "out_features": out_features,
+                    "in_features": in_features,
+                    "weight_params": int(out_features * in_features),
+                }
+            )
+    return {
+        "projection_shapes": projection_shapes,
+        "model_total_params": int(sum(p.numel() for p in model.parameters())),
+        "inferred": False,
+    }
+
+
+def infer_parameter_stats(
+    second_moments: Dict[SourceKey, torch.Tensor],
+    hidden_size: int,
+    num_layers: int,
+) -> Dict:
+    down_dim = int(second_moments.get((0, DOWN_SOURCE_NAME), torch.empty(hidden_size * 4)).numel())
+    projection_shapes: List[Dict] = []
+    inferred_shapes = {
+        "q_proj": (hidden_size, hidden_size),
+        "k_proj": (hidden_size, hidden_size),
+        "v_proj": (hidden_size, hidden_size),
+        "o_proj": (hidden_size, hidden_size),
+        "gate_proj": (down_dim, hidden_size),
+        "up_proj": (down_dim, hidden_size),
+        "down_proj": (hidden_size, down_dim),
+    }
+    for layer_idx in range(num_layers):
+        for terminal, (out_features, in_features) in inferred_shapes.items():
+            projection_shapes.append(
+                {
+                    "layer": layer_idx,
+                    "terminal": terminal,
+                    "out_features": int(out_features),
+                    "in_features": int(in_features),
+                    "weight_params": int(out_features * in_features),
+                }
+            )
+    return {
+        "projection_shapes": projection_shapes,
+        "model_total_params": None,
+        "inferred": True,
+    }
+
+
+def compute_fakequant_parameter_stats(
+    segments: Sequence[SegmentCandidate],
+    down_rows: List[Dict],
+    parameter_stats: Dict,
+    num_layers: int,
+) -> Dict:
+    layer_group_ks = [0] * num_layers
+    for seg in segments:
+        for layer_idx in range(seg.start, seg.end):
+            layer_group_ks[layer_idx] = int(seg.group_k)
+    down_group_ks = {int(row["layer"]): int(row["group_k"]) for row in down_rows}
+
+    fakequant_params = 0
+    qat_target_weight_params = 0
+    lora_target_weight_params = 0
+    by_projection: Dict[str, Dict[str, int]] = {}
+
+    for row in parameter_stats.get("projection_shapes", []):
+        terminal = row["terminal"]
+        layer_idx = int(row["layer"])
+        weight_params = int(row["weight_params"])
+        in_features = int(row["in_features"])
+        out_features = int(row["out_features"])
+
+        if terminal in DEFAULT_TARGET_TERMINALS:
+            lora_target_weight_params += weight_params
+        if terminal not in QAT_FAKEQUANT_TERMINALS:
+            continue
+
+        group_k = (
+            down_group_ks.get(layer_idx, 0)
+            if terminal == DOWN_SOURCE_NAME else layer_group_ks[layer_idx]
+        )
+        active_cols = min(int(group_k), in_features)
+        active_params = out_features * active_cols
+        fakequant_params += active_params
+        qat_target_weight_params += weight_params
+
+        proj = by_projection.setdefault(
+            terminal,
+            {"fakequant_params": 0, "weight_params": 0, "active_cols_sum": 0},
+        )
+        proj["fakequant_params"] += active_params
+        proj["weight_params"] += weight_params
+        proj["active_cols_sum"] += active_cols
+
+    model_total_params = parameter_stats.get("model_total_params")
+    return {
+        "fakequant_params": int(fakequant_params),
+        "qat_target_weight_params": int(qat_target_weight_params),
+        "lora_target_weight_params": int(lora_target_weight_params),
+        "model_total_params": model_total_params,
+        "ratio_of_qat_target_weights": _ratio(fakequant_params, qat_target_weight_params),
+        "ratio_of_lora_target_weights": _ratio(fakequant_params, lora_target_weight_params),
+        "ratio_of_model_params": _ratio(fakequant_params, model_total_params),
+        "by_projection": by_projection,
+        "inferred_projection_shapes": bool(parameter_stats.get("inferred", False)),
+        "note": (
+            "fakequant_params=sum(out_features*group_k) over q/k/v/gate/up/down; "
+            "o_proj is denominator-only because SQAT permute does not fakequant o_proj."
+        ),
+    }
+
+
+def format_fakequant_parameter_stats(stats: Dict) -> str:
+    model_ratio = stats["ratio_of_model_params"]
+    model_part = (
+        "n/a"
+        if model_ratio is None
+        else f"{model_ratio * 100:.2f}% ({_format_count(stats['model_total_params'])} params)"
+    )
+    suffix = " [projection shapes inferred]" if stats.get("inferred_projection_shapes") else ""
+    return (
+        f"fakequant_params={_format_count(stats['fakequant_params'])}; "
+        f"of_qat_target_weights={stats['ratio_of_qat_target_weights'] * 100:.2f}% "
+        f"({_format_count(stats['qat_target_weight_params'])} params); "
+        f"of_lora_target_weights={stats['ratio_of_lora_target_weights'] * 100:.2f}% "
+        f"({_format_count(stats['lora_target_weight_params'])} params); "
+        f"of_model_params={model_part}{suffix}"
+    )
+
+
 # -----------------------------------------------------------------------------
 # Plotting
 # -----------------------------------------------------------------------------
@@ -1100,6 +1272,7 @@ def print_and_save_summary(
     outlier_info: Dict,
     capture_rows: List[Dict],
     down_rows: List[Dict],
+    fakequant_parameter_stats: Dict,
     cost_curve: List[Dict],
 ) -> None:
     segment_sizes = [seg.size for seg in segments]
@@ -1129,6 +1302,10 @@ def print_and_save_summary(
             f"down_proj rule: mean + {args.down_outlier_log_sigma:g} * std; "
             f"recommended down_layer_group_ks={down_layer_group_ks}"
         )
+    print(
+        "fakequant parameter coverage: "
+        f"{format_fakequant_parameter_stats(fakequant_parameter_stats)}"
+    )
     print()
 
     for seg_idx, seg in enumerate(segments):
@@ -1166,6 +1343,7 @@ def print_and_save_summary(
             "segment_group_ks": segment_group_ks,
             "down_layer_group_ks": down_layer_group_ks,
         },
+        "fakequant_parameters": fakequant_parameter_stats,
         "segments": [_segment_to_json(i, seg) for i, seg in enumerate(segments)],
         "down_proj": down_rows,
         "layers": outlier_info["layer_rows"],
@@ -1190,14 +1368,17 @@ def print_and_save_summary(
 # -----------------------------------------------------------------------------
 
 
-def load_or_collect_second_moments(args: argparse.Namespace) -> Tuple[Dict[SourceKey, torch.Tensor], int, int]:
+def load_or_collect_second_moments(args: argparse.Namespace) -> Tuple[Dict[SourceKey, torch.Tensor], int, int, Dict]:
     if args.load_second_moments:
         print(f"Loading cached second moments: {args.load_second_moments}")
         payload = torch.load(args.load_second_moments, map_location="cpu")
         second_moments = payload["second_moments"]
         hidden_size = int(payload["hidden_size"])
         num_layers = int(payload["num_layers"])
-        return second_moments, hidden_size, num_layers
+        parameter_stats = payload.get("parameter_stats")
+        if parameter_stats is None:
+            parameter_stats = infer_parameter_stats(second_moments, hidden_size, num_layers)
+        return second_moments, hidden_size, num_layers, parameter_stats
 
     print(f"Loading model: {args.model_name}")
     tokenizer = AutoTokenizer.from_pretrained(
@@ -1216,6 +1397,7 @@ def load_or_collect_second_moments(args: argparse.Namespace) -> Tuple[Dict[Sourc
 
     hidden_size = int(model.config.hidden_size)
     num_layers = int(model.config.num_hidden_layers)
+    parameter_stats = collect_parameter_stats(model, num_layers)
     print(f"  hidden_size={hidden_size}  num_layers={num_layers}")
 
     calibration_data = load_calibration_data(
@@ -1240,11 +1422,12 @@ def load_or_collect_second_moments(args: argparse.Namespace) -> Tuple[Dict[Sourc
             "dataset": args.dataset,
             "n_samples": args.n_samples,
             "seq_len": args.seq_len,
+            "parameter_stats": parameter_stats,
         }
         torch.save(payload, args.save_second_moments)
         print(f"Saved second moments: {args.save_second_moments}")
 
-    return second_moments, hidden_size, num_layers
+    return second_moments, hidden_size, num_layers, parameter_stats
 
 
 def main() -> None:
@@ -1255,7 +1438,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Group size: {args.group_size}")
-    second_moments, hidden_size, num_layers = load_or_collect_second_moments(args)
+    second_moments, hidden_size, num_layers, parameter_stats = load_or_collect_second_moments(args)
     print(f"Collected {len(second_moments)} source vectors.")
 
     print("Detecting true per-source outlier channels from E[x^2] distributions ...")
@@ -1290,6 +1473,12 @@ def main() -> None:
         group_size=args.group_size,
         sigma=args.down_outlier_log_sigma,
     )
+    fakequant_parameter_stats = compute_fakequant_parameter_stats(
+        segments=segments,
+        down_rows=down_rows,
+        parameter_stats=parameter_stats,
+        num_layers=num_layers,
+    )
 
     print("Generating figures ...")
     plot_layer_outlier_counts(outlier_info["layer_rows"], segments, output_dir)
@@ -1314,6 +1503,7 @@ def main() -> None:
         outlier_info=outlier_info,
         capture_rows=capture_rows,
         down_rows=down_rows,
+        fakequant_parameter_stats=fakequant_parameter_stats,
         cost_curve=cost_curve,
     )
     print(f"\nAll outputs are under: {output_dir}")

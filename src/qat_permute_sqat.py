@@ -182,6 +182,8 @@ def _collect_second_moments(
 # ============================================================================
 
 TARGET_OUTLIER_CAPTURE = 1.0
+QAT_FAKEQUANT_TERMINALS = ("q_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj")
+PERMUTE_TARGET_TERMINALS = QAT_FAKEQUANT_TERMINALS + ("o_proj",)
 
 
 def _round_group_k_to_group_size(
@@ -417,6 +419,122 @@ def _down_layer_group_ks(
     return out
 
 
+def _module_weight_shape(module: nn.Module) -> Optional[Tuple[int, int]]:
+    weight = getattr(module, "weight", None)
+    if weight is None and hasattr(module, "base_layer"):
+        weight = getattr(module.base_layer, "weight", None)
+    if weight is None or weight.ndim != 2:
+        return None
+    return int(weight.shape[0]), int(weight.shape[1])
+
+
+def _pct(numer: int, denom: int) -> float:
+    return float(numer / denom) if denom else 0.0
+
+
+def _format_count(value: int) -> str:
+    return f"{int(value):,}"
+
+
+def compute_fakequant_param_stats(
+    model: nn.Module,
+    layer_group_ks: Sequence[int],
+    down_layer_group_ks: Sequence[int],
+    target_modules: Optional[Sequence[str]] = None,
+    include_down_proj: bool = True,
+) -> Dict:
+    """
+    Count weight parameters that will pass through Selective-QAT fakequant.
+
+    fakequant_params counts only the salient input columns [0:group_k] for modules
+    that actually use Selective-QAT fakequant. o_proj is kept as a denominator-only
+    target when present in target_modules because it is Hadamard-rotated but has no
+    contiguous salient slice.
+    """
+    layers = _resolve_decoder_layers(model)
+    target_set = set(target_modules or PERMUTE_TARGET_TERMINALS)
+    layer_group_ks = [int(x) for x in layer_group_ks]
+    down_layer_group_ks = [int(x) for x in down_layer_group_ks]
+    total_model_params = int(sum(p.numel() for p in model.parameters()))
+
+    fakequant_params = 0
+    qat_target_weight_params = 0
+    lora_target_weight_params = 0
+    by_projection: Dict[str, Dict[str, int]] = {}
+
+    paths = (
+        ("self_attn", "q_proj", "residual"),
+        ("self_attn", "k_proj", "residual"),
+        ("self_attn", "v_proj", "residual"),
+        ("self_attn", "o_proj", "none"),
+        ("mlp", "gate_proj", "residual"),
+        ("mlp", "up_proj", "residual"),
+        ("mlp", "down_proj", "down"),
+    )
+    for layer_idx, layer in enumerate(layers):
+        for parent_name, terminal, group_source in paths:
+            parent = getattr(layer, parent_name, None)
+            module = getattr(parent, terminal, None) if parent is not None else None
+            shape = _module_weight_shape(module) if module is not None else None
+            if shape is None:
+                continue
+
+            out_features, in_features = shape
+            weight_params = out_features * in_features
+            if terminal in target_set:
+                lora_target_weight_params += weight_params
+
+            if terminal not in QAT_FAKEQUANT_TERMINALS or terminal not in target_set:
+                continue
+            if terminal == "down_proj" and not include_down_proj:
+                continue
+
+            group_k = (
+                down_layer_group_ks[layer_idx]
+                if group_source == "down" else layer_group_ks[layer_idx]
+            )
+            active_cols = min(int(group_k), in_features)
+            active_params = out_features * active_cols
+            fakequant_params += active_params
+            qat_target_weight_params += weight_params
+
+            proj = by_projection.setdefault(
+                terminal,
+                {"fakequant_params": 0, "weight_params": 0, "active_cols_sum": 0},
+            )
+            proj["fakequant_params"] += active_params
+            proj["weight_params"] += weight_params
+            proj["active_cols_sum"] += active_cols
+
+    stats = {
+        "fakequant_params": int(fakequant_params),
+        "qat_target_weight_params": int(qat_target_weight_params),
+        "lora_target_weight_params": int(lora_target_weight_params),
+        "model_total_params": int(total_model_params),
+        "ratio_of_qat_target_weights": _pct(fakequant_params, qat_target_weight_params),
+        "ratio_of_lora_target_weights": _pct(fakequant_params, lora_target_weight_params),
+        "ratio_of_model_params": _pct(fakequant_params, total_model_params),
+        "by_projection": by_projection,
+        "note": (
+            "fakequant_params=sum(out_features*group_k) over q/k/v/gate/up/down; "
+            "o_proj is denominator-only when it appears in target_modules."
+        ),
+    }
+    return stats
+
+
+def format_fakequant_param_stats(stats: Dict) -> str:
+    return (
+        f"fakequant_params={_format_count(stats['fakequant_params'])}; "
+        f"of_qat_target_weights={stats['ratio_of_qat_target_weights'] * 100:.2f}% "
+        f"({_format_count(stats['qat_target_weight_params'])} params); "
+        f"of_lora_target_weights={stats['ratio_of_lora_target_weights'] * 100:.2f}% "
+        f"({_format_count(stats['lora_target_weight_params'])} params); "
+        f"of_model_params={stats['ratio_of_model_params'] * 100:.2f}% "
+        f"({_format_count(stats['model_total_params'])} params)"
+    )
+
+
 def auto_segment_by_outliers(
     second_moments: Dict[Tuple[int, str], torch.Tensor],
     hidden_size: int,
@@ -512,6 +630,99 @@ def auto_segment_by_outliers(
         ],
     }
     return boundary_sizes, segment_group_ks, summary
+
+
+def auto_segment_with_fixed_group_k(
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+    hidden_size: int,
+    num_layers: int,
+    group_k: int,
+    max_segments: int = 4,
+    outlier_log_sigma: float = 3.0,
+) -> Tuple[List[int], List[int], Dict]:
+    """
+    Choose the fewest contiguous residual segments that capture all true residual
+    outliers when every segment is forced to use the same fixed group_k.
+    """
+    group_k = int(group_k)
+    max_segments = min(int(max_segments), int(num_layers))
+    outlier_sets = _residual_outlier_sets(second_moments, outlier_log_sigma)
+
+    seg_union_count: Dict[Tuple[int, int], int] = {}
+    feasible: Dict[Tuple[int, int], bool] = {}
+    for start in range(num_layers):
+        for end in range(start + 1, num_layers + 1):
+            sources = _segment_sources(start, end)
+            mask = _segment_outlier_mask(sources, outlier_sets, hidden_size)
+            union_count = int(mask.sum().item())
+            key = (start, end)
+            seg_union_count[key] = union_count
+            feasible[key] = union_count <= group_k
+
+    reachable = torch.zeros((max_segments + 1, num_layers + 1), dtype=torch.bool)
+    prev = torch.full((max_segments + 1, num_layers + 1), -1, dtype=torch.long)
+    reachable[0, 0] = True
+    for nseg in range(1, max_segments + 1):
+        for end in range(1, num_layers + 1):
+            for start in range(0, end):
+                key = (start, end)
+                if reachable[nseg - 1, start] and feasible[key]:
+                    reachable[nseg, end] = True
+                    prev[nseg, end] = start
+                    break
+
+    curve = []
+    best_nseg = -1
+    fixed_work = float(num_layers * group_k)
+    for nseg in range(1, max_segments + 1):
+        ok = bool(reachable[nseg, num_layers].item())
+        curve.append({
+            "num_segments": nseg,
+            "feasible": ok,
+            "selection_cost": fixed_work if ok else None,
+        })
+        if ok and best_nseg < 0:
+            best_nseg = nseg
+
+    if best_nseg < 0:
+        raise RuntimeError(
+            "No automatic SQAT segment partition can capture all true residual outliers with "
+            f"fixed group_k={group_k} and max_segments={max_segments}. Increase group_k, "
+            "increase max_segments, or relax the residual outlier threshold."
+        )
+
+    ranges: List[Tuple[int, int]] = []
+    end = num_layers
+    for nseg in range(best_nseg, 0, -1):
+        start = int(prev[nseg, end].item())
+        if start < 0:
+            raise RuntimeError("Fixed-group_k segment DP reconstruction failed.")
+        ranges.append((start, end))
+        end = start
+    ranges.reverse()
+
+    boundary_sizes = [end - start for start, end in ranges]
+    segment_group_ks = [group_k] * len(ranges)
+    summary = {
+        "rule": "fewest segments subject to fixed group_k and 100% residual outlier capture",
+        "target_capture": TARGET_OUTLIER_CAPTURE,
+        "outlier_log_sigma": float(outlier_log_sigma),
+        "fixed_group_k": group_k,
+        "max_segments": int(max_segments),
+        "cost_curve": curve,
+        "segments": [
+            {
+                "layers": [start, end - 1],
+                "size": end - start,
+                "group_k": group_k,
+                "outlier_union_count": seg_union_count[(start, end)],
+                "headroom": group_k - seg_union_count[(start, end)],
+            }
+            for start, end in ranges
+        ],
+    }
+    return boundary_sizes, segment_group_ks, summary
+
 
 def select_salient_channels(
     second_moments: Dict[Tuple[int, str], torch.Tensor],
@@ -2244,6 +2455,7 @@ def build_permuted_fp16_checkpoint(
     calibration_dataloader: DataLoader,
     boundary_sizes: Optional[List[int]],
     save_dir: str,
+    target_modules: Optional[Sequence[str]] = None,
     group_k: Optional[int] = None,
     group_size: int = 128,
     top_k_ratio: float = 0.01,
@@ -2294,6 +2506,21 @@ def build_permuted_fp16_checkpoint(
     num_kv_heads   = model.config.num_key_value_heads
     num_attn_heads = model.config.num_attention_heads
     head_dim       = d_model // num_attn_heads
+    fixed_group_k: Optional[int] = None
+    if group_k is not None:
+        fixed_group_k = int(group_k)
+        if fixed_group_k <= 0:
+            raise ValueError(f"group_k must be positive, got {fixed_group_k}")
+        if fixed_group_k % group_size != 0:
+            raise ValueError(
+                f"group_k={fixed_group_k} must be a multiple of group_size={group_size}"
+            )
+        max_residual_group_k = (d_model // group_size) * group_size
+        if fixed_group_k > max_residual_group_k:
+            raise ValueError(
+                f"group_k={fixed_group_k} does not fit hidden_size={d_model} "
+                f"with group_size={group_size}; max valid group_k is {max_residual_group_k}."
+            )
 
     # ---- 1) calibrate ----
     second_moments = _collect_second_moments(
@@ -2303,24 +2530,38 @@ def build_permuted_fp16_checkpoint(
     # ---- 2) automatic/manual segment + group_k resolution ----
     auto_summary = None
     if boundary_sizes is None:
-        boundary_sizes, segment_group_ks, auto_summary = auto_segment_by_outliers(
-            second_moments=second_moments,
-            hidden_size=d_model,
-            num_layers=num_layers,
-            group_size=group_size,
-            max_segments=max_segments,
-            outlier_log_sigma=outlier_log_sigma,
-        )
-        print(
-            f"[SegPerm] Auto segments: boundary_sizes={boundary_sizes}, "
-            f"segment_group_ks={segment_group_ks}"
-        )
+        if fixed_group_k is None:
+            boundary_sizes, segment_group_ks, auto_summary = auto_segment_by_outliers(
+                second_moments=second_moments,
+                hidden_size=d_model,
+                num_layers=num_layers,
+                group_size=group_size,
+                max_segments=max_segments,
+                outlier_log_sigma=outlier_log_sigma,
+            )
+            print(
+                f"[SegPerm] Auto segments: boundary_sizes={boundary_sizes}, "
+                f"segment_group_ks={segment_group_ks}"
+            )
+        else:
+            boundary_sizes, segment_group_ks, auto_summary = auto_segment_with_fixed_group_k(
+                second_moments=second_moments,
+                hidden_size=d_model,
+                num_layers=num_layers,
+                group_k=fixed_group_k,
+                max_segments=max_segments,
+                outlier_log_sigma=outlier_log_sigma,
+            )
+            print(
+                f"[SegPerm] Auto segments + fixed global group_k: "
+                f"boundary_sizes={boundary_sizes}, group_k={fixed_group_k}"
+            )
     else:
         boundary_sizes = [int(x) for x in boundary_sizes]
         assert sum(boundary_sizes) == num_layers, (
             f"sum(boundary_sizes)={sum(boundary_sizes)} != num_hidden_layers={num_layers}"
         )
-        if group_k is None:
+        if fixed_group_k is None:
             segment_group_ks = _segment_group_ks_for_boundaries(
                 second_moments=second_moments,
                 hidden_size=d_model,
@@ -2333,28 +2574,76 @@ def build_permuted_fp16_checkpoint(
                 f"segment_group_ks={segment_group_ks}"
             )
         else:
-            assert int(group_k) % group_size == 0, (
-                f"group_k={group_k} must be a multiple of group_size={group_size}"
-            )
-            segment_group_ks = [int(group_k)] * len(boundary_sizes)
+            outlier_sets = _residual_outlier_sets(second_moments, outlier_log_sigma)
+            offsets = _boundary_offsets(boundary_sizes)
+            for seg_idx in range(len(boundary_sizes)):
+                sources = _segment_sources(offsets[seg_idx], offsets[seg_idx + 1])
+                mask = _segment_outlier_mask(sources, outlier_sets, d_model)
+                union_count = int(mask.sum().item())
+                if union_count > fixed_group_k:
+                    raise RuntimeError(
+                        f"Manual segment {seg_idx} L{offsets[seg_idx]}-{offsets[seg_idx + 1] - 1} "
+                        f"has {union_count} true residual outliers, larger than fixed "
+                        f"group_k={fixed_group_k}. Increase group_k, split the segment, or relax "
+                        "the residual outlier threshold."
+                    )
+            segment_group_ks = [fixed_group_k] * len(boundary_sizes)
             print(
-                f"[SegPerm] Manual segments + fixed group_k: boundary_sizes={boundary_sizes}, "
-                f"group_k={int(group_k)}"
+                f"[SegPerm] Manual segments + fixed global group_k: "
+                f"boundary_sizes={boundary_sizes}, group_k={fixed_group_k}"
             )
 
     num_segments = len(boundary_sizes)
     layer_group_ks = _expand_segment_group_ks(boundary_sizes, segment_group_ks)
-    down_layer_group_ks = _down_layer_group_ks(
-        second_moments=second_moments,
-        num_layers=num_layers,
-        group_size=group_size,
-        outlier_log_sigma=down_outlier_log_sigma,
-    )
+    if fixed_group_k is None:
+        down_layer_group_ks = _down_layer_group_ks(
+            second_moments=second_moments,
+            num_layers=num_layers,
+            group_size=group_size,
+            outlier_log_sigma=down_outlier_log_sigma,
+        )
+    else:
+        for layer_idx in range(num_layers):
+            sm = second_moments.get((layer_idx, "down_proj"))
+            if sm is None:
+                continue
+            max_down_group_k = (int(sm.numel()) // group_size) * group_size
+            if fixed_group_k > max_down_group_k:
+                raise ValueError(
+                    f"group_k={fixed_group_k} does not fit layer {layer_idx} down_proj "
+                    f"input dim={int(sm.numel())} with group_size={group_size}; "
+                    f"max valid group_k is {max_down_group_k}."
+                )
+            n_outliers = int(_source_outliers(sm, down_outlier_log_sigma).numel())
+            if n_outliers > fixed_group_k:
+                raise RuntimeError(
+                    f"Layer {layer_idx} down_proj has {n_outliers} true outliers "
+                    f"(sigma={down_outlier_log_sigma:g}), larger than fixed group_k={fixed_group_k}. "
+                    "Increase group_k or relax the down outlier threshold."
+                )
+        down_layer_group_ks = [fixed_group_k] * num_layers
     max_group_k = int(max(max(segment_group_ks), max(down_layer_group_ks)))
+    if fixed_group_k is None:
+        print(
+            f"[SegPerm] Down-proj per-layer group_k (sigma={down_outlier_log_sigma:g}): "
+            f"min={min(down_layer_group_ks)}, max={max(down_layer_group_ks)}, "
+            f"values={down_layer_group_ks}"
+        )
+    else:
+        print(
+            f"[SegPerm] Down-proj fixed global group_k: "
+            f"group_k={fixed_group_k}, values={down_layer_group_ks}"
+        )
+    fakequant_param_stats = compute_fakequant_param_stats(
+        model=model,
+        layer_group_ks=layer_group_ks,
+        down_layer_group_ks=down_layer_group_ks,
+        target_modules=target_modules,
+        include_down_proj=True,
+    )
     print(
-        f"[SegPerm] Down-proj per-layer group_k (sigma={down_outlier_log_sigma:g}): "
-        f"min={min(down_layer_group_ks)}, max={max(down_layer_group_ks)}, "
-        f"values={down_layer_group_ks}"
+        "[SegPerm] Selective-QAT fakequant parameter coverage: "
+        f"{format_fakequant_param_stats(fakequant_param_stats)}"
     )
 
     # ---- 2b) salient selection ----
@@ -2402,6 +2691,8 @@ def build_permuted_fp16_checkpoint(
         "segment_group_ks":       list(segment_group_ks),
         "layer_group_ks":         list(layer_group_ks),
         "down_layer_group_ks":    list(down_layer_group_ks),
+        "fixed_group_k":          fixed_group_k,
+        "fakequant_param_stats":  fakequant_param_stats,
         "group_size":             group_size,
         "outlier_log_sigma":      float(outlier_log_sigma),
         "down_outlier_log_sigma": down_outlier_log_sigma,
@@ -2643,6 +2934,11 @@ class SegmentPermutedSelectiveQAT(QATHandler):
               f"down_group_k_by_layer={min(down_layer_group_ks)}..{max(down_layer_group_ks)} "
               f"(max={group_k}), group_size={group_size}, symmetric={symmetric}, "
               f"awq_scale={awq_enabled}, enable_lsq={enable_lsq}")
+        if perm_meta.get("fakequant_param_stats"):
+            print(
+                "[SegPerm] Selective-QAT fakequant parameter coverage: "
+                f"{format_fakequant_param_stats(perm_meta['fakequant_param_stats'])}"
+            )
         return model
 
     def on_train_begin(self, model: nn.Module): pass

@@ -353,6 +353,7 @@ def main():
                 calibration_dataloader=cal_dataloader,
                 boundary_sizes=sp_cfg.get("boundary_sizes"),
                 save_dir=permuted_dir,
+                target_modules=cfg["lora"].get("target_modules"),
                 group_k=sp_cfg.get("group_k"),
                 group_size=cfg["qat"].get("group_size", 128),
                 top_k_ratio=sp_cfg.get("top_k_ratio", 0.01),
