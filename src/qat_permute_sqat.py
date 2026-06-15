@@ -181,24 +181,30 @@ def _collect_second_moments(
 # Part 2 — Salient channel selection
 # ============================================================================
 
-DEFAULT_GROUP_K_CANDIDATES: Tuple[int, ...] = (64, 128, 256)
 TARGET_OUTLIER_CAPTURE = 1.0
 
 
-def _normalize_group_k_candidates(
-    group_k_candidates: Optional[Sequence[int]],
+def _round_group_k_to_group_size(
+    required_count: int,
     group_size: int,
-) -> List[int]:
-    candidates = list(group_k_candidates or DEFAULT_GROUP_K_CANDIDATES)
-    candidates = sorted({int(k) for k in candidates})
-    if not candidates:
-        raise ValueError("group_k_candidates must not be empty")
-    bad = [k for k in candidates if k <= 0 or k % group_size != 0]
-    if bad:
-        raise ValueError(
-            f"group_k_candidates={candidates} must be positive multiples of group_size={group_size}"
+    dim: int,
+) -> int:
+    """Smallest positive full quant group count that can hold required_count channels."""
+    group_size = int(group_size)
+    dim = int(dim)
+    required_count = int(required_count)
+    if group_size <= 0:
+        raise ValueError(f"group_size must be positive, got {group_size}")
+    max_group_k = (dim // group_size) * group_size
+    if max_group_k <= 0:
+        raise ValueError(f"dim={dim} is smaller than group_size={group_size}")
+    if required_count > max_group_k:
+        raise RuntimeError(
+            f"{required_count} outliers cannot fit in dim={dim} with group_size={group_size}; "
+            f"largest valid group_k is {max_group_k}."
         )
-    return candidates
+    groups = max(1, math.ceil(required_count / group_size))
+    return int(groups * group_size)
 
 
 def _boundary_offsets(boundary_sizes: Sequence[int]) -> List[int]:
@@ -241,6 +247,15 @@ def layer_group_ks_from_meta(meta: Optional[dict]) -> Optional[List[int]]:
     return None
 
 
+def down_layer_group_ks_from_meta(meta: Optional[dict]) -> Optional[List[int]]:
+    meta = _unwrap_perm_model_meta(meta)
+    if not meta:
+        return None
+    if "down_layer_group_ks" in meta:
+        return [int(x) for x in meta["down_layer_group_ks"]]
+    return layer_group_ks_from_meta(meta)
+
+
 def _layer_idx_from_module_name(name: str) -> Optional[int]:
     parts = name.split(".")
     for i, part in enumerate(parts[:-1]):
@@ -260,7 +275,10 @@ def group_k_for_module_name(
         return 0
     if default_group_k == 0:
         return 0
-    layer_group_ks = layer_group_ks_from_meta(perm_meta)
+    layer_group_ks = (
+        down_layer_group_ks_from_meta(perm_meta)
+        if terminal == "down_proj" else layer_group_ks_from_meta(perm_meta)
+    )
     layer_idx = _layer_idx_from_module_name(name)
     if layer_group_ks is not None and layer_idx is not None and layer_idx < len(layer_group_ks):
         return int(layer_group_ks[layer_idx])
@@ -299,13 +317,6 @@ def _residual_outlier_sets(
         for key, val in second_moments.items()
         if key[1] in ("attn", "mlp")
     }
-
-
-def _snap_group_k(required_count: int, candidates: Sequence[int]) -> int:
-    for gk in candidates:
-        if required_count <= gk:
-            return int(gk)
-    return int(candidates[-1])
 
 
 def _segment_sources(start: int, end: int) -> List[Tuple[int, str]]:
@@ -364,7 +375,7 @@ def _segment_group_ks_for_boundaries(
     second_moments: Dict[Tuple[int, str], torch.Tensor],
     hidden_size: int,
     boundary_sizes: Sequence[int],
-    group_k_candidates: Sequence[int],
+    group_size: int,
     outlier_log_sigma: float,
 ) -> List[int]:
     outlier_sets = _residual_outlier_sets(second_moments, outlier_log_sigma)
@@ -374,11 +385,33 @@ def _segment_group_ks_for_boundaries(
         sources = _segment_sources(offsets[seg], offsets[seg + 1])
         mask = _segment_outlier_mask(sources, outlier_sets, hidden_size)
         union_count = int(mask.sum().item())
-        gk = _snap_group_k(union_count, group_k_candidates)
+        gk = _round_group_k_to_group_size(union_count, group_size, hidden_size)
         if union_count > gk:
             raise RuntimeError(
                 f"Manual segment {seg} L{offsets[seg]}-{offsets[seg + 1] - 1} has "
-                f"{union_count} true outliers, larger than max group_k candidate {gk}."
+                f"{union_count} true outliers, larger than group_k={gk}."
+            )
+        out.append(gk)
+    return out
+
+
+def _down_layer_group_ks(
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+    num_layers: int,
+    group_size: int,
+    outlier_log_sigma: float,
+) -> List[int]:
+    out: List[int] = []
+    for l in range(num_layers):
+        sm = second_moments.get((l, "down_proj"))
+        if sm is None:
+            out.append(int(group_size))
+            continue
+        n_outliers = int(_source_outliers(sm, outlier_log_sigma).numel())
+        gk = _round_group_k_to_group_size(n_outliers, group_size, sm.numel())
+        if n_outliers > gk:
+            raise RuntimeError(
+                f"Layer {l} down_proj has {n_outliers} true outliers, larger than group_k={gk}."
             )
         out.append(gk)
     return out
@@ -389,7 +422,6 @@ def auto_segment_by_outliers(
     hidden_size: int,
     num_layers: int,
     group_size: int,
-    group_k_candidates: Optional[Sequence[int]] = None,
     max_segments: int = 4,
     outlier_log_sigma: float = 3.0,
 ) -> Tuple[List[int], List[int], Dict]:
@@ -400,7 +432,6 @@ def auto_segment_by_outliers(
     log(E[x^2]) distribution, must fit in its segment bucket. Objective under
     num_segments <= max_segments: minimize sum(segment_num_layers * group_k).
     """
-    candidates = _normalize_group_k_candidates(group_k_candidates, group_size)
     max_segments = min(int(max_segments), int(num_layers))
     outlier_sets = _residual_outlier_sets(second_moments, outlier_log_sigma)
 
@@ -412,7 +443,7 @@ def auto_segment_by_outliers(
             sources = _segment_sources(start, end)
             mask = _segment_outlier_mask(sources, outlier_sets, hidden_size)
             union_count = int(mask.sum().item())
-            gk = _snap_group_k(union_count, candidates)
+            gk = _round_group_k_to_group_size(union_count, group_size, hidden_size)
             key = (start, end)
             seg_group_k[key] = gk
             seg_union_count[key] = union_count
@@ -446,8 +477,8 @@ def auto_segment_by_outliers(
     if best_nseg < 0:
         raise RuntimeError(
             "No automatic SQAT segment partition can capture all true outliers with "
-            f"max_segments={max_segments}, candidates={candidates}. Increase max_segments, "
-            "increase group_k_candidates, or raise outlier_log_sigma."
+            f"max_segments={max_segments}, group_size={group_size}. Increase max_segments "
+            "or relax the outlier threshold."
         )
 
     ranges: List[Tuple[int, int]] = []
@@ -466,7 +497,7 @@ def auto_segment_by_outliers(
         "rule": "minimize sum(segment_layers * group_k) subject to 100% true-outlier capture",
         "target_capture": TARGET_OUTLIER_CAPTURE,
         "outlier_log_sigma": float(outlier_log_sigma),
-        "group_k_candidates": list(candidates),
+        "group_size": int(group_size),
         "max_segments": int(max_segments),
         "cost_curve": curve,
         "segments": [
@@ -570,12 +601,12 @@ def select_internal_salient_channels(
     second_moments: Dict[Tuple[int, str], torch.Tensor],
     num_layers: int,
     group_k: int = 128,
-    layer_group_ks: Optional[Sequence[int]] = None,
+    down_layer_group_ks: Optional[Sequence[int]] = None,
 ) -> Dict[Tuple[int, str], List[int]]:
     """
     Per-block salient channel selection for down_proj only → full permutations.
 
-    down_proj (P4_l): flat top-group_k by E[x^2] across all intermediate_dim channels.
+    down_proj (P4_l): per-layer top-down_layer_group_k by E[x^2] across all intermediate_dim channels.
     Arbitrary cross-channel permutation is valid (element-wise MLP, no multi-head).
     Returns full permutation of length down_proj_in_features (salient first).
 
@@ -589,7 +620,7 @@ def select_internal_salient_channels(
         if key_d in second_moments:
             sm      = second_moments[key_d]
             down_in = sm.shape[0]
-            layer_k = int(layer_group_ks[l]) if layer_group_ks is not None else int(group_k)
+            layer_k = int(down_layer_group_ks[l]) if down_layer_group_ks is not None else int(group_k)
             k       = min(layer_k, down_in)
             result[key_d] = _build_segment_perm(sm.topk(k).indices.tolist(), down_in)
     return result
@@ -603,15 +634,16 @@ def compute_awq_scales(
     num_layers: int,
     group_k: int,
     layer_group_ks: Optional[Sequence[int]] = None,
+    down_layer_group_ks: Optional[Sequence[int]] = None,
     alpha: float = 0.5,
     max_s: float = 2.0,
     eps: float = 1e-12,
 ) -> Dict[str, torch.Tensor]:
     """
-    AWQ-style per-input-channel scale S on the salient slice [0:layer_group_k], per (layer, source):
+    AWQ-style per-input-channel scale S on the salient slice [0:group_k], per (layer, source):
       attn (q/k/v share)   ← (l,'attn')      E[x²] at the segment's salient channels
       mlp  (gate/up share) ← (l,'mlp')       E[x²] at the same salient channels
-      down (down_proj)     ← (l,'down_proj') E[x²] at the P4 salient channels
+      down (down_proj)     ← (l,'down_proj') E[x²] at the layer-local P4 salient channels
     S_j = (E[x²]_j)^alpha, normalized so min over the slice = 1, clamped to [1, max_s] (so S≥1,
     i.e. salient channels are only ever amplified). Returns {"attn"/"mlp"/"down": [L, max_group_k]}
     float32 (1.0 where a source is unavailable or where a layer's active group_k is smaller than
@@ -624,6 +656,13 @@ def compute_awq_scales(
         layer_group_ks = [int(x) for x in layer_group_ks]
         assert len(layer_group_ks) == num_layers, (
             f"len(layer_group_ks)={len(layer_group_ks)} != num_layers={num_layers}"
+        )
+    if down_layer_group_ks is None:
+        down_layer_group_ks = list(layer_group_ks)
+    else:
+        down_layer_group_ks = [int(x) for x in down_layer_group_ks]
+        assert len(down_layer_group_ks) == num_layers, (
+            f"len(down_layer_group_ks)={len(down_layer_group_ks)} != num_layers={num_layers}"
         )
     max_group_k = int(group_k)
 
@@ -642,18 +681,19 @@ def compute_awq_scales(
     mlp  = torch.ones(num_layers, max_group_k)
     down = torch.ones(num_layers, max_group_k)
     for l in range(num_layers):
-        gk_l = min(int(layer_group_ks[l]), max_group_k)
+        residual_gk_l = min(int(layer_group_ks[l]), max_group_k)
+        down_gk_l = min(int(down_layer_group_ks[l]), max_group_k)
         sal = residual_salient.get(seg_of(l))
-        if sal is not None and gk_l > 0:
-            idx = torch.as_tensor(list(sal)[:gk_l], dtype=torch.long)
+        if sal is not None and residual_gk_l > 0:
+            idx = torch.as_tensor(list(sal)[:residual_gk_l], dtype=torch.long)
             if (l, "attn") in second_moments:
-                attn[l, :gk_l] = _scale_from(second_moments[(l, "attn")][idx])
+                attn[l, :residual_gk_l] = _scale_from(second_moments[(l, "attn")][idx])
             if (l, "mlp") in second_moments:
-                mlp[l, :gk_l] = _scale_from(second_moments[(l, "mlp")][idx])
+                mlp[l, :residual_gk_l] = _scale_from(second_moments[(l, "mlp")][idx])
         dperm = internal_salient.get((l, "down_proj"))
-        if dperm is not None and (l, "down_proj") in second_moments and gk_l > 0:
-            didx = torch.as_tensor(list(dperm)[:gk_l], dtype=torch.long)
-            down[l, :gk_l] = _scale_from(second_moments[(l, "down_proj")][didx])
+        if dperm is not None and (l, "down_proj") in second_moments and down_gk_l > 0:
+            didx = torch.as_tensor(list(dperm)[:down_gk_l], dtype=torch.long)
+            down[l, :down_gk_l] = _scale_from(second_moments[(l, "down_proj")][didx])
     return {"attn": attn, "mlp": mlp, "down": down}
 
 
@@ -2097,6 +2137,7 @@ def install_fused_selective_qat(
     include_down_proj: bool = True,
     awq_scales: Optional[dict] = None,
     layer_group_ks: Optional[Sequence[int]] = None,
+    down_layer_group_ks: Optional[Sequence[int]] = None,
     enable_lsq: bool = False,
 ) -> List[nn.Module]:
     """
@@ -2122,6 +2163,13 @@ def install_fused_selective_qat(
         assert len(layer_group_ks) == len(layers), (
             f"len(layer_group_ks)={len(layer_group_ks)} != num_layers={len(layers)}"
         )
+    if down_layer_group_ks is None:
+        down_layer_group_ks = list(layer_group_ks)
+    else:
+        down_layer_group_ks = [int(x) for x in down_layer_group_ks]
+        assert len(down_layer_group_ks) == len(layers), (
+            f"len(down_layer_group_ks)={len(down_layer_group_ks)} != num_layers={len(layers)}"
+        )
 
     def _s(src: str, l: int, gk: int) -> Optional[torch.Tensor]:
         if not awq_scales or src not in awq_scales:
@@ -2134,18 +2182,20 @@ def install_fused_selective_qat(
     for l, layer in enumerate(layers):
         attn = layer.self_attn
         mlp  = layer.mlp
-        gk_l = int(layer_group_ks[l])
-        common = dict(
-            group_k=gk_l, group_size=group_size, q_bits=q_bits,
+        residual_gk_l = int(layer_group_ks[l])
+        down_gk_l = int(down_layer_group_ks[l])
+        common_residual = dict(
+            group_k=residual_gk_l, group_size=group_size, q_bits=q_bits,
             symmetric=symmetric, lora_scaling=lora_scaling, enable_lsq=enable_lsq,
         )
+        common_down = {**common_residual, "group_k": down_gk_l}
 
         if {"q_proj", "k_proj", "v_proj"} <= tset and all(
             _has_lora(getattr(attn, n)) for n in ("q_proj", "k_proj", "v_proj")
         ):
             injectors.append(FusedAttnQATInjector(
                 attn, attn.q_proj, attn.k_proj, attn.v_proj,
-                awq_s=_s("attn", l, gk_l), **common
+                awq_s=_s("attn", l, residual_gk_l), **common_residual
             ))
 
         if {"gate_proj", "up_proj"} <= tset and all(
@@ -2153,18 +2203,21 @@ def install_fused_selective_qat(
         ):
             injectors.append(FusedMLPQATInjector(
                 mlp, mlp.gate_proj, mlp.up_proj,
-                awq_s=_s("mlp", l, gk_l), **common
+                awq_s=_s("mlp", l, residual_gk_l), **common_residual
             ))
 
         if include_down_proj and "down_proj" in tset and _has_lora(mlp.down_proj):
-            injectors.append(DownProjQATInjector(mlp.down_proj, awq_s=_s("down", l, gk_l), **common))
+            injectors.append(DownProjQATInjector(
+                mlp.down_proj, awq_s=_s("down", l, down_gk_l), **common_down,
+            ))
 
     print(
         f"[qat_permute_sqat] Installed fused Selective-QAT injectors: "
         f"{sum(isinstance(i, FusedAttnQATInjector) for i in injectors)} attn, "
         f"{sum(isinstance(i, FusedMLPQATInjector) for i in injectors)} mlp, "
         f"{sum(isinstance(i, DownProjQATInjector) for i in injectors)} down  "
-        f"(group_k_by_layer={min(layer_group_ks)}..{max(layer_group_ks)}, "
+        f"(residual_group_k_by_layer={min(layer_group_ks)}..{max(layer_group_ks)}, "
+        f"down_group_k_by_layer={min(down_layer_group_ks)}..{max(down_layer_group_ks)}, "
         f"group_size={group_size}, symmetric={symmetric}, "
         f"awq_scale={'on' if awq_scales else 'off'}, enable_lsq={enable_lsq})"
     )
@@ -2195,11 +2248,11 @@ def build_permuted_fp16_checkpoint(
     group_size: int = 128,
     top_k_ratio: float = 0.01,
     outlier_log_sigma: float = 3.0,
+    down_outlier_log_sigma: Optional[float] = None,
     dtype: torch.dtype = torch.float16,
     device: Optional[torch.device] = None,
     awq_alpha: float = 0.5,
     awq_max: float = 2.0,
-    group_k_candidates: Optional[Sequence[int]] = None,
     max_segments: int = 4,
 ) -> dict:
     """
@@ -2225,6 +2278,9 @@ def build_permuted_fp16_checkpoint(
 
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if down_outlier_log_sigma is None:
+        down_outlier_log_sigma = outlier_log_sigma
+    down_outlier_log_sigma = float(down_outlier_log_sigma)
 
     print(f"[SegPerm] Stage-2 pre-quant: loading {model_name} in {dtype} (no BNB) ...")
     model = AutoModelForCausalLM.from_pretrained(
@@ -2245,7 +2301,6 @@ def build_permuted_fp16_checkpoint(
     )
 
     # ---- 2) automatic/manual segment + group_k resolution ----
-    candidates = _normalize_group_k_candidates(group_k_candidates, group_size)
     auto_summary = None
     if boundary_sizes is None:
         boundary_sizes, segment_group_ks, auto_summary = auto_segment_by_outliers(
@@ -2253,7 +2308,6 @@ def build_permuted_fp16_checkpoint(
             hidden_size=d_model,
             num_layers=num_layers,
             group_size=group_size,
-            group_k_candidates=candidates,
             max_segments=max_segments,
             outlier_log_sigma=outlier_log_sigma,
         )
@@ -2271,7 +2325,7 @@ def build_permuted_fp16_checkpoint(
                 second_moments=second_moments,
                 hidden_size=d_model,
                 boundary_sizes=boundary_sizes,
-                group_k_candidates=candidates,
+                group_size=group_size,
                 outlier_log_sigma=outlier_log_sigma,
             )
             print(
@@ -2290,7 +2344,18 @@ def build_permuted_fp16_checkpoint(
 
     num_segments = len(boundary_sizes)
     layer_group_ks = _expand_segment_group_ks(boundary_sizes, segment_group_ks)
-    max_group_k = int(max(segment_group_ks))
+    down_layer_group_ks = _down_layer_group_ks(
+        second_moments=second_moments,
+        num_layers=num_layers,
+        group_size=group_size,
+        outlier_log_sigma=down_outlier_log_sigma,
+    )
+    max_group_k = int(max(max(segment_group_ks), max(down_layer_group_ks)))
+    print(
+        f"[SegPerm] Down-proj per-layer group_k (sigma={down_outlier_log_sigma:g}): "
+        f"min={min(down_layer_group_ks)}, max={max(down_layer_group_ks)}, "
+        f"values={down_layer_group_ks}"
+    )
 
     # ---- 2b) salient selection ----
     residual_salient = select_salient_channels_variable(
@@ -2301,13 +2366,17 @@ def build_permuted_fp16_checkpoint(
         k: _build_segment_perm(residual_salient[k], d_model) for k in range(num_segments)
     }
     internal_salient = select_internal_salient_channels(
-        second_moments, num_layers, group_k=max_group_k, layer_group_ks=layer_group_ks,
+        second_moments, num_layers,
+        group_k=max_group_k,
+        down_layer_group_ks=down_layer_group_ks,
     )
 
     # ---- 2b) AWQ-style per-channel salient scales S (always computed; usage gated by config) ----
     awq_scales = compute_awq_scales(
         second_moments, residual_salient, internal_salient,
-        boundary_sizes, num_layers, max_group_k, layer_group_ks=layer_group_ks,
+        boundary_sizes, num_layers, max_group_k,
+        layer_group_ks=layer_group_ks,
+        down_layer_group_ks=down_layer_group_ks,
         alpha=awq_alpha, max_s=awq_max,
     )
 
@@ -2332,8 +2401,10 @@ def build_permuted_fp16_checkpoint(
         "group_k":                max_group_k,
         "segment_group_ks":       list(segment_group_ks),
         "layer_group_ks":         list(layer_group_ks),
-        "group_k_candidates":     list(candidates),
+        "down_layer_group_ks":    list(down_layer_group_ks),
         "group_size":             group_size,
+        "outlier_log_sigma":      float(outlier_log_sigma),
+        "down_outlier_log_sigma": down_outlier_log_sigma,
         "boundary_sizes":         list(boundary_sizes),
         "d_model":                d_model,
         "permuted_base_dir":      os.path.abspath(save_dir),
@@ -2511,6 +2582,7 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         group_k        = perm_meta["group_k"]
         group_size     = perm_meta["group_size"]
         layer_group_ks = layer_group_ks_from_meta(perm_meta) or [int(group_k)] * int(sum(perm_meta["boundary_sizes"]))
+        down_layer_group_ks = down_layer_group_ks_from_meta(perm_meta) or list(layer_group_ks)
         q_bits         = cfg["model"]["quant_bits"]
         symmetric      = cfg["qat"].get("symmetric", True)
         awq_enabled    = bool((sp_cfg.get("awq_scale", {}) or {}).get("enabled", False))
@@ -2548,6 +2620,7 @@ class SegmentPermutedSelectiveQAT(QATHandler):
                 include_down_proj=True,
                 awq_scales=awq_scales,
                 layer_group_ks=layer_group_ks,
+                down_layer_group_ks=down_layer_group_ks,
                 enable_lsq=enable_lsq,
             )
 
@@ -2566,7 +2639,8 @@ class SegmentPermutedSelectiveQAT(QATHandler):
 
         print(f"[SegPerm] prepare_model done: stage={stage}, "
               f"num_runtime_permutes={len(self.boundary_perms)}, "
-              f"group_k_by_layer={min(layer_group_ks)}..{max(layer_group_ks)} "
+              f"residual_group_k_by_layer={min(layer_group_ks)}..{max(layer_group_ks)}, "
+              f"down_group_k_by_layer={min(down_layer_group_ks)}..{max(down_layer_group_ks)} "
               f"(max={group_k}), group_size={group_size}, symmetric={symmetric}, "
               f"awq_scale={awq_enabled}, enable_lsq={enable_lsq}")
         return model

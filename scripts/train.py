@@ -357,11 +357,13 @@ def main():
                 group_size=cfg["qat"].get("group_size", 128),
                 top_k_ratio=sp_cfg.get("top_k_ratio", 0.01),
                 outlier_log_sigma=sp_cfg.get("outlier_log_sigma", 3.0),
+                down_outlier_log_sigma=sp_cfg.get(
+                    "down_outlier_log_sigma", sp_cfg.get("outlier_log_sigma", 3.0)
+                ),
                 dtype=getattr(torch, cfg["model"]["dtype"]),
                 device=accelerator.device,
                 awq_alpha=(sp_cfg.get("awq_scale", {}) or {}).get("alpha", 0.5),
                 awq_max=(sp_cfg.get("awq_scale", {}) or {}).get("max", 2.0),
-                group_k_candidates=sp_cfg.get("group_k_candidates", [64, 128, 256]),
                 max_segments=sp_cfg.get("max_segments", 4),
             )
         accelerator.wait_for_everyone()

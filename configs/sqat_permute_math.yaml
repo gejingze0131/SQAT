@@ -30,9 +30,8 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric affine (same as QA-LoRA convention)
-  group_size: 64          # every auto-selected per-segment group_k must be a multiple of this.
-                            # With group_k_candidates [64, 128, 256], salient cols occupy
-                            # exactly 1/2/4 complete quantization groups.
+  group_size: 64          # every auto-selected group_k is max(1, ceil(outliers/group_size))*group_size,
+                            # so salient cols occupy complete quantization groups at [0:group_k].
 
   # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
   # fakequant scale is replaced by a learnable nn.Parameter (asym → learn scale+zp, sym → learn
@@ -49,22 +48,25 @@ qat:
     calibration_seq_len: 2048
 
   sqat_permute:
-    # Segment partition + per-segment group_k are selected automatically from calibration E[x²].
+    # Residual segment partition + per-segment group_k are selected automatically from calibration E[x²].
     # Rule:
     #   1. Detect true per-source residual outliers by log(E[x²]) > mean + sigma * std.
     #   2. Search contiguous segmentations with num_segments <= max_segments.
-    #   3. Snap each segment's group_k to one of group_k_candidates.
+    #   3. Round each segment's group_k up to a positive multiple of qat.group_size.
     #   4. Pick the segmentation with 100% true-outlier capture and minimum
     #      sum(segment_num_layers * group_k).
     #
     # The resulting metadata records:
-    #   boundary_sizes, segment_group_ks, layer_group_ks, segment_perms
-    # and train/export both use the per-layer group_k from that metadata.
+    #   boundary_sizes, segment_group_ks, layer_group_ks, segment_perms,
+    #   down_layer_group_ks
+    # q/k/v/gate/up use residual layer_group_ks; down_proj uses its own per-layer
+    # down_layer_group_ks from each layer's down_proj E[x²] distribution.
     max_segments: 4
-    group_k_candidates: [64, 128, 256]
 
-    # Log-space z-score threshold for outlier detection.
-    outlier_log_sigma: 3.0
+    # Log-space z-score threshold for residual q/k/v/gate/up segment outlier detection.
+    outlier_log_sigma: 2.5
+    # Separate log-space z-score threshold for per-layer down_proj group_k selection.
+    down_outlier_log_sigma: 3
 
     # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
     stage: 2

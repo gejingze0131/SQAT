@@ -29,6 +29,7 @@ from src.qat_permute_sqat import (
     groupwise_symmetric_fakequant,
     groupwise_asymmetric_fakequant,
     fused_qat_residual_outputs,
+    group_k_for_module_name,
     FusedAttnQATInjector,
     FusedMLPQATInjector,
     DownProjQATInjector,
@@ -360,6 +361,26 @@ def test_awq_scale():
     _ok("FusedAttnQATInjector(awq_s=S) end-to-end")
 
 
+def test_per_module_group_k_meta():
+    print("test_per_module_group_k_meta")
+    meta = {
+        "boundary_sizes": [2, 2],
+        "segment_group_ks": [256, 64],
+        "layer_group_ks": [256, 256, 64, 64],
+        "down_layer_group_ks": [64, 128, 192, 128],
+        "group_k": 256,
+    }
+    assert group_k_for_module_name("model.layers.0.self_attn.q_proj", meta) == 256
+    assert group_k_for_module_name("model.layers.2.mlp.gate_proj", meta) == 64
+    assert group_k_for_module_name("model.layers.0.mlp.down_proj", meta) == 64
+    assert group_k_for_module_name("model.layers.2.mlp.down_proj", meta) == 192
+    assert group_k_for_module_name("model.layers.2.self_attn.o_proj", meta) == 0
+
+    legacy = {"boundary_sizes": [2, 2], "segment_group_ks": [256, 64], "group_k": 256}
+    assert group_k_for_module_name("model.layers.2.mlp.down_proj", legacy) == 64
+    _ok("down_proj uses down_layer_group_ks; legacy meta still falls back to residual k")
+
+
 def main():
     test_fakequant()
     test_fused_residual()
@@ -367,6 +388,7 @@ def main():
     test_mlp_and_down_injectors()
     test_grad_flow_to_lora()
     test_awq_scale()
+    test_per_module_group_k_meta()
     print("\nALL TESTS PASSED")
 
 
