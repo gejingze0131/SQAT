@@ -1,6 +1,6 @@
 model:
   name: "meta-llama/Llama-2-7b-hf"
-  quant_bits: 4
+  quant_bits: 3
   double_quant: true
   quant_type: "nf4"
   dtype: "bfloat16"
@@ -30,7 +30,7 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
-  group_size: 64            # group_k % group_size == 0 required.
+  group_size: 32            # group_k % group_size == 0 required.
                             # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
                             # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
                             # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
@@ -116,17 +116,18 @@ qat:
     # evaluate a permuted export with a loader that ignores that metadata.
 
 data:
-  train_dataset: "commonsense"          # zwhe99/commonsense_170k (BoolQ, PIQA, SIQA, ARC-e/c, HellaSwag, WinoGrande, OBQA)
+  train_dataset: "commonsense_qa"          # zwhe99/commonsense_170k (BoolQ, PIQA, SIQA, ARC-e/c, HellaSwag, WinoGrande, OBQA)
   train_split: "train"
   val_split: null                       # commonsense_170k ships only a train split
-  prompt_template: "commonsense"
+  prompt_template: "commonsense_qa"
 
 training:
   output_dir: "outputs/qlora-sqat-permute"
-  num_epochs: 2
+  num_epochs: 3
   per_device_train_batch_size: 8
   per_device_eval_batch_size: 8
   gradient_accumulation_steps: 4
+  group_by_length: false
   learning_rate: 2.0e-4
   weight_decay: 0.01
   lr_scheduler_type: "cosine"
@@ -139,7 +140,7 @@ training:
   save_total_limit: 1
   dataloader_num_workers: 4
   report_to: "wandb"
-  seed: 43
+  seed: 42
 
 export:
   merge_and_save: true

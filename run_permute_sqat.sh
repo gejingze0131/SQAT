@@ -35,8 +35,8 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 DATASET_NAME="math" # math or commonsense (must match the config yaml, which controls the boundary gather)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
-NUM_GPUS=4
-BITS=3          # 2 / 3 / 4  (must match configs/*.yaml model.quant_bits; base stays NF4)
+NUM_GPUS=2
+BITS=3
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 VALIDATION_BOUNDARY_SIZES="2 30"  # optional legacy Stage-0 sanity check only
@@ -51,20 +51,13 @@ AWQ_SCALE=true
 # true  → non-salient cols use GPTQ error compensation (salient slice stays on canonical grid)
 # false → non-salient cols use plain RTN (original export)
 # Composes with AWQ_SCALE (salient slice fixed to the amplified grid, non-salient GPTQ'd).
-GPTQ_NONSALIENT=true
-# LSQ / LSQ+ learnable quantization scale (LR-QAT style) on the salient slice; overrides the yaml.
-# true  → each salient slice [0:layer_group_k] is fakequant'd with a LEARNED scale[,zp] (asym→scale+zp),
-#         init current_minmax, learned in the AWQ-amplified space when AWQ_SCALE=true. Aimed at
-#         low-bit (W2/W3) stability. Composes with AWQ_SCALE and GPTQ_NONSALIENT.
-# false → per-step min-max scale (original scheme).
-# The export reads the learned scales from sqat_permute_meta.pt, so Stage-2 export needs no flag.
-ENABLE_LSQ=true
+GPTQ_NONSALIENT=false
 
 SKIP_VALIDATE=true
-SKIP_TRAIN=false
+SKIP_TRAIN=true
 SKIP_EVAL=false
 # CHECKPOINT_DIR="outputs/qlora-sqat-permute-4bit-sqat_permute/final"
-CHECKPOINT_DIR=""
+CHECKPOINT_DIR="outputs/qlora-sqat-permute-2bit-sqat_permute/final"
 # 从某个 Trainer checkpoint 恢复继续训练（例：outputs/qlora-sqat-permute-3bit-sqat_permute/checkpoint-6000）。
 # 留空 = 全新训练。sqat_permute 恢复时会复用已有的 <output_dir>/permuted_fp16_base（不重新生成 permute，
 # 否则与 checkpoint 的 LoRA 不匹配）。注意：若 checkpoint 已接近 max_steps，想多训需在 config 调大 num_epochs。
@@ -197,7 +190,7 @@ if [ "$SKIP_EVAL" = false ]; then
     echo -e "\n>>> Stage 3: Evaluating exported models"
     shopt -s nullglob
     found=false
-    for eval_dir in outputs/qlora-sqat-permute*-dequant-eval; do
+    for eval_dir in outputs/qlora-sqat-permute-${BITS}bit*-dequant-eval; do
         [ -d "$eval_dir" ] || continue
         found=true
         echo "  Evaluating $eval_dir"

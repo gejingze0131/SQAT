@@ -128,7 +128,7 @@ training:
   # for the longest sequences. group_by_length keeps padding waste low.
   per_device_train_batch_size: 8
   per_device_eval_batch_size: 8
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 4
   group_by_length: true
   learning_rate: 2.0e-4
   weight_decay: 0.01
@@ -142,7 +142,7 @@ training:
   save_total_limit: 1
   dataloader_num_workers: 4
   report_to: "wandb"
-  seed: 42
+  seed: 45
 
 export:
   merge_and_save: true
