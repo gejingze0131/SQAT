@@ -31,6 +31,7 @@ from src.qat_permute_sqat import (
     fused_qat_residual_outputs,
     group_k_for_module_name,
     auto_segment_with_fixed_group_k,
+    select_salient_channels,
     compute_fakequant_param_stats,
     FusedAttnQATInjector,
     FusedMLPQATInjector,
@@ -453,6 +454,29 @@ def test_fakequant_param_stats():
     _ok("fakequant parameter coverage counts salient columns only")
 
 
+def test_legacy_topk_ratio_salient_selection():
+    print("test_legacy_topk_ratio_salient_selection")
+    hidden = 10
+    attn = torch.ones(hidden)
+    mlp = torch.ones(hidden)
+    attn[0], attn[1] = 10.0, 9.0
+    mlp[2], mlp[3] = 8.0, 7.0
+    second_moments = {
+        (0, "attn"): attn,
+        (0, "mlp"): mlp,
+    }
+    salient = select_salient_channels(
+        second_moments=second_moments,
+        hidden_size=hidden,
+        boundary_sizes=[1],
+        top_k_ratio=0.2,
+        group_k=4,
+        group_size=2,
+    )
+    assert salient[0] == [0, 1, 2, 3], salient
+    _ok("manual fixed mode uses legacy top_k_ratio union-first selection")
+
+
 def main():
     test_fakequant()
     test_fused_residual()
@@ -463,6 +487,7 @@ def main():
     test_per_module_group_k_meta()
     test_fixed_group_k_auto_segments()
     test_fakequant_param_stats()
+    test_legacy_topk_ratio_salient_selection()
     print("\nALL TESTS PASSED")
 
 

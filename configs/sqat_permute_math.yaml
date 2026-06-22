@@ -1,6 +1,6 @@
 model:
   name: "meta-llama/Llama-2-7b-hf"
-  quant_bits: 3
+  quant_bits: 2
   double_quant: true
   quant_type: "nf4"
   dtype: "bfloat16"
@@ -30,7 +30,7 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric affine (same as QA-LoRA convention)
-  group_size: 64          # every auto-selected group_k is max(1, ceil(outliers/group_size))*group_size,
+  group_size: 16          # every auto-selected group_k is max(1, ceil(outliers/group_size))*group_size,
                             # so salient cols occupy complete quantization groups at [0:group_k].
 
   # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
@@ -48,8 +48,18 @@ qat:
     calibration_seq_len: 2048
 
   sqat_permute:
-    # Residual segment partition + per-segment group_k are selected automatically from calibration E[x²].
-    # Rule:
+    # Mode switch:
+    #   - omit boundary_sizes and group_k:
+    #       auto residual segments + auto residual group_k + auto per-layer down_proj group_k.
+    #   - set boundary_sizes only:
+    #       manual residual segments + auto residual group_k + auto per-layer down_proj group_k.
+    #   - set group_k only:
+    #       auto residual segments + fixed residual/down_proj group_k.
+    #   - set boundary_sizes + group_k + top_k_ratio:
+    #       legacy comparison mode: manual residual segments, fixed residual/down_proj group_k,
+    #       residual salient channels selected by per-source top_k_ratio union-first.
+    #
+    # Auto rule:
     #   1. Detect true per-source residual outliers by log(E[x²]) > mean + sigma * std.
     #   2. Search contiguous segmentations with num_segments <= max_segments.
     #   3. Round each segment's group_k up to a positive multiple of qat.group_size.
@@ -61,10 +71,9 @@ qat:
     #   down_layer_group_ks
     # q/k/v/gate/up use residual layer_group_ks; down_proj uses its own per-layer
     # down_layer_group_ks from each layer's down_proj E[x²] distribution.
-    max_segments: 4
-    # Optional global override. If set, every residual segment and every down_proj
-    # layer uses exactly this group_k instead of calibration-derived group_k values.
-    group_k: 256
+    boundary_sizes: [2, 30]
+    group_k: 128
+    top_k_ratio: 0.01
 
     # Log-space z-score threshold for residual q/k/v/gate/up segment outlier detection.
     outlier_log_sigma: 2.5
@@ -90,7 +99,7 @@ qat:
       # before one batched Hessian update). It is NOT the quantization group: the quant grid is
       # group_size (=64 above). blocksize only must be a multiple of group_size (auto-aligned in
       # code). 128 is the standard GPTQ default (= 2 groups of 64); larger=faster, smaller=exacter.
-      blocksize: 128
+      blocksize: 64
       batch_size: 2          # calibration micro-batch (keeps activation memory low)
 
     # awq_scale (Improvement 2): AWQ-style per-input-channel scaling of the per-layer salient slice
@@ -145,7 +154,7 @@ training:
   save_total_limit: 1
   dataloader_num_workers: 4
   report_to: "wandb"
-  seed: 45
+  seed: 42
 
 export:
   merge_and_save: true

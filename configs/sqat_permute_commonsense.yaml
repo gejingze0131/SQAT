@@ -50,17 +50,16 @@ qat:
     calibration_seq_len: 2048
 
   sqat_permute:
-    # Segment partition: sum must equal model.config.num_hidden_layers (32 for Llama-2-7b)
-    # Each segment gets an independent residual-stream permutation P_k.
-    # num_runtime_permutes = len(boundary_sizes) - 1  (one index_select gather per boundary)
+    # Legacy comparison mode: manual residual segments + fixed residual/down_proj group_k.
+    # With top_k_ratio present, residual salient channels are selected by per-source
+    # top_k_ratio union-first (old pipeline). num_runtime_permutes = len(boundary_sizes) - 1.
     boundary_sizes: [2, 30]
 
-    # Global manual override. When present, every residual segment and every down_proj
-    # layer uses exactly this group_k. Must be a positive multiple of qat.group_size.
+    # Global manual override. Every residual segment and every down_proj layer uses
+    # exactly this group_k. Outlier overflow is reported as a warning.
     group_k: 128
 
-    # Per-source top-k fraction for residual-stream salient selection
-    # (outlier-first fill: log-space z-score outliers take priority).
+    # Per-source top-k fraction for legacy residual-stream salient selection.
     top_k_ratio: 0.01
 
     # Log-space z-score threshold for residual-stream outlier detection.

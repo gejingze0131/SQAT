@@ -373,6 +373,15 @@ def _select_bucket_from_mask(
     return sorted(selected)
 
 
+def _topk_ratio_mask(values: torch.Tensor, top_k_ratio: float) -> torch.Tensor:
+    k = int(math.ceil(values.numel() * float(top_k_ratio)))
+    k = min(values.numel(), max(1, k))
+    idx = torch.topk(values.float(), k=k).indices
+    mask = torch.zeros(values.numel(), dtype=torch.bool)
+    mask[idx.cpu()] = True
+    return mask
+
+
 def _segment_group_ks_for_boundaries(
     second_moments: Dict[Tuple[int, str], torch.Tensor],
     hidden_size: int,
@@ -640,16 +649,13 @@ def auto_segment_with_fixed_group_k(
     max_segments: int = 4,
     outlier_log_sigma: float = 3.0,
 ) -> Tuple[List[int], List[int], Dict]:
-    """
-    Choose the fewest contiguous residual segments that capture all true residual
-    outliers when every segment is forced to use the same fixed group_k.
-    """
+    """Choose contiguous residual segments while forcing every segment to use group_k."""
     group_k = int(group_k)
     max_segments = min(int(max_segments), int(num_layers))
     outlier_sets = _residual_outlier_sets(second_moments, outlier_log_sigma)
 
     seg_union_count: Dict[Tuple[int, int], int] = {}
-    feasible: Dict[Tuple[int, int], bool] = {}
+    seg_overflow: Dict[Tuple[int, int], int] = {}
     for start in range(num_layers):
         for end in range(start + 1, num_layers + 1):
             sources = _segment_sources(start, end)
@@ -657,39 +663,41 @@ def auto_segment_with_fixed_group_k(
             union_count = int(mask.sum().item())
             key = (start, end)
             seg_union_count[key] = union_count
-            feasible[key] = union_count <= group_k
+            seg_overflow[key] = max(0, union_count - group_k)
 
-    reachable = torch.zeros((max_segments + 1, num_layers + 1), dtype=torch.bool)
+    inf = float("inf")
+    dp = torch.full((max_segments + 1, num_layers + 1), inf, dtype=torch.float64)
     prev = torch.full((max_segments + 1, num_layers + 1), -1, dtype=torch.long)
-    reachable[0, 0] = True
+    dp[0, 0] = 0.0
     for nseg in range(1, max_segments + 1):
         for end in range(1, num_layers + 1):
             for start in range(0, end):
                 key = (start, end)
-                if reachable[nseg - 1, start] and feasible[key]:
-                    reachable[nseg, end] = True
+                if not torch.isfinite(dp[nseg - 1, start]):
+                    continue
+                cand = dp[nseg - 1, start] + seg_overflow[key]
+                if cand < dp[nseg, end]:
+                    dp[nseg, end] = cand
                     prev[nseg, end] = start
-                    break
 
     curve = []
     best_nseg = -1
-    fixed_work = float(num_layers * group_k)
+    best_overflow = inf
     for nseg in range(1, max_segments + 1):
-        ok = bool(reachable[nseg, num_layers].item())
+        ok = bool(torch.isfinite(dp[nseg, num_layers]))
+        overflow = int(dp[nseg, num_layers].item()) if ok else None
         curve.append({
             "num_segments": nseg,
             "feasible": ok,
-            "selection_cost": fixed_work if ok else None,
+            "overflow_outliers": overflow,
+            "selection_cost": (float(num_layers * group_k + overflow) if ok else None),
         })
-        if ok and best_nseg < 0:
+        if ok and (overflow < best_overflow or (overflow == best_overflow and best_nseg < 0)):
+            best_overflow = overflow
             best_nseg = nseg
 
     if best_nseg < 0:
-        raise RuntimeError(
-            "No automatic SQAT segment partition can capture all true residual outliers with "
-            f"fixed group_k={group_k} and max_segments={max_segments}. Increase group_k, "
-            "increase max_segments, or relax the residual outlier threshold."
-        )
+        raise RuntimeError("Fixed-group_k segment DP reconstruction failed before any candidate was found.")
 
     ranges: List[Tuple[int, int]] = []
     end = num_layers
@@ -701,14 +709,22 @@ def auto_segment_with_fixed_group_k(
         end = start
     ranges.reverse()
 
+    if best_overflow > 0:
+        print(
+            f"[SegPerm] WARNING: fixed group_k={group_k} cannot cover all true residual "
+            f"outliers with <= {max_segments} segments; selected minimum-overflow split "
+            f"with {int(best_overflow)} outliers outside the protected buckets."
+        )
+
     boundary_sizes = [end - start for start, end in ranges]
     segment_group_ks = [group_k] * len(ranges)
     summary = {
-        "rule": "fewest segments subject to fixed group_k and 100% residual outlier capture",
+        "rule": "fixed group_k; choose <=max_segments split with minimum residual-outlier overflow",
         "target_capture": TARGET_OUTLIER_CAPTURE,
         "outlier_log_sigma": float(outlier_log_sigma),
         "fixed_group_k": group_k,
         "max_segments": int(max_segments),
+        "overflow_outliers": int(best_overflow),
         "cost_curve": curve,
         "segments": [
             {
@@ -734,28 +750,51 @@ def select_salient_channels(
     outlier_log_sigma: float = 3.0,
 ) -> Dict[int, List[int]]:
     """
-    Select top group_k salient RESIDUAL-STREAM channels per segment.
+    Legacy residual-stream salient selection for fixed manual experiments.
 
-    Algorithm (replicates analyze_boundary_salient_channels.py):
-      Sources: (l, 'attn') and (l, 'mlp') within each segment's layers.
-      1. Per-source normalize: sm / sm.max()
-      2. Per-source outlier set: log(sm) > mean + outlier_log_sigma * std
-      3. Segment outlier = union of per-source outlier sets
-      4. Aggregate = sum of normalized vectors
-      5. Fill group_k: outliers first (desc agg), then non-outlier by agg
+    For each segment:
+      1. Per-source normalize: sm / sm.max().
+      2. Take top ceil(hidden_size * top_k_ratio) channels per source.
+      3. Segment candidate set = union of those per-source top-ratio sets.
+      4. Fill fixed group_k: union-first by aggregate score, then non-union by aggregate score.
 
     Returns {segment_idx: sorted List[int]} in d_model coordinate system.
     """
     assert group_k % group_size == 0, \
         f"group_k={group_k} must be a multiple of group_size={group_size}"
-    return select_salient_channels_variable(
-        second_moments=second_moments,
-        hidden_size=hidden_size,
-        boundary_sizes=boundary_sizes,
-        segment_group_ks=[int(group_k)] * len(boundary_sizes),
-        group_size=group_size,
-        outlier_log_sigma=outlier_log_sigma,
-    )
+
+    b_offsets = _boundary_offsets(boundary_sizes)
+    result: Dict[int, List[int]] = {}
+    normalized_all = _normalized_residual_scores(second_moments)
+
+    for seg in range(len(boundary_sizes)):
+        b_start, b_end = b_offsets[seg], b_offsets[seg + 1]
+        b_sources = _segment_sources(b_start, b_end)
+        agg = _segment_aggregate_score(b_sources, normalized_all, hidden_size)
+        union_mask = torch.zeros(hidden_size, dtype=torch.bool)
+        for key in b_sources:
+            union_mask |= _topk_ratio_mask(normalized_all[key], top_k_ratio)
+
+        salient = _select_bucket_from_mask(agg, union_mask, int(group_k))
+        result[seg] = salient
+
+        sel_t = torch.tensor(salient, dtype=torch.long)
+        e_total = sum(second_moments[k].sum().item() for k in b_sources)
+        e_sel = sum(second_moments[k][sel_t].sum().item() for k in b_sources)
+        n_union = int(union_mask.sum().item())
+        print(
+            f"[SegPerm] Legacy seg {seg} (L{b_start}-L{b_end-1}): "
+            f"group_k={group_k}, top_k_ratio={top_k_ratio:g}, "
+            f"union_topk={n_union}, energy_cov={e_sel/(e_total+1e-30)*100:.1f}%, "
+            f"first10={salient[:10]}"
+        )
+        if n_union > group_k:
+            print(
+                f"[SegPerm] WARNING: legacy seg {seg} has top-ratio union size {n_union} "
+                f"> group_k={group_k}; only the highest aggregate-score union channels fit."
+            )
+
+    return result
 
 
 def select_salient_channels_variable(
@@ -2529,6 +2568,7 @@ def build_permuted_fp16_checkpoint(
 
     # ---- 2) automatic/manual segment + group_k resolution ----
     auto_summary = None
+    legacy_topk_ratio_mode = boundary_sizes is not None and fixed_group_k is not None
     if boundary_sizes is None:
         if fixed_group_k is None:
             boundary_sizes, segment_group_ks, auto_summary = auto_segment_by_outliers(
@@ -2581,16 +2621,18 @@ def build_permuted_fp16_checkpoint(
                 mask = _segment_outlier_mask(sources, outlier_sets, d_model)
                 union_count = int(mask.sum().item())
                 if union_count > fixed_group_k:
-                    raise RuntimeError(
+                    print(
+                        "[SegPerm] WARNING: "
                         f"Manual segment {seg_idx} L{offsets[seg_idx]}-{offsets[seg_idx + 1] - 1} "
                         f"has {union_count} true residual outliers, larger than fixed "
-                        f"group_k={fixed_group_k}. Increase group_k, split the segment, or relax "
-                        "the residual outlier threshold."
+                        f"group_k={fixed_group_k}; only the selected top-{fixed_group_k} "
+                        "channels will be protected."
                     )
             segment_group_ks = [fixed_group_k] * len(boundary_sizes)
             print(
-                f"[SegPerm] Manual segments + fixed global group_k: "
-                f"boundary_sizes={boundary_sizes}, group_k={fixed_group_k}"
+                f"[SegPerm] Manual segments + fixed global group_k + legacy top_k_ratio selection: "
+                f"boundary_sizes={boundary_sizes}, group_k={fixed_group_k}, "
+                f"top_k_ratio={top_k_ratio:g}"
             )
 
     num_segments = len(boundary_sizes)
@@ -2616,10 +2658,11 @@ def build_permuted_fp16_checkpoint(
                 )
             n_outliers = int(_source_outliers(sm, down_outlier_log_sigma).numel())
             if n_outliers > fixed_group_k:
-                raise RuntimeError(
+                print(
+                    "[SegPerm] WARNING: "
                     f"Layer {layer_idx} down_proj has {n_outliers} true outliers "
                     f"(sigma={down_outlier_log_sigma:g}), larger than fixed group_k={fixed_group_k}. "
-                    "Increase group_k or relax the down outlier threshold."
+                    f"Only the top-{fixed_group_k} down_proj channels will be protected."
                 )
         down_layer_group_ks = [fixed_group_k] * num_layers
     max_group_k = int(max(max(segment_group_ks), max(down_layer_group_ks)))
@@ -2647,10 +2690,19 @@ def build_permuted_fp16_checkpoint(
     )
 
     # ---- 2b) salient selection ----
-    residual_salient = select_salient_channels_variable(
-        second_moments, d_model, boundary_sizes, segment_group_ks,
-        group_size=group_size, outlier_log_sigma=outlier_log_sigma,
-    )
+    if legacy_topk_ratio_mode:
+        residual_salient = select_salient_channels(
+            second_moments, d_model, boundary_sizes,
+            top_k_ratio=top_k_ratio,
+            group_k=int(fixed_group_k),
+            group_size=group_size,
+            outlier_log_sigma=outlier_log_sigma,
+        )
+    else:
+        residual_salient = select_salient_channels_variable(
+            second_moments, d_model, boundary_sizes, segment_group_ks,
+            group_size=group_size, outlier_log_sigma=outlier_log_sigma,
+        )
     segment_perms = {
         k: _build_segment_perm(residual_salient[k], d_model) for k in range(num_segments)
     }
@@ -2692,6 +2744,8 @@ def build_permuted_fp16_checkpoint(
         "layer_group_ks":         list(layer_group_ks),
         "down_layer_group_ks":    list(down_layer_group_ks),
         "fixed_group_k":          fixed_group_k,
+        "legacy_topk_ratio_mode": bool(legacy_topk_ratio_mode),
+        "top_k_ratio":            float(top_k_ratio),
         "fakequant_param_stats":  fakequant_param_stats,
         "group_size":             group_size,
         "outlier_log_sigma":      float(outlier_log_sigma),
