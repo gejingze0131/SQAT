@@ -2,12 +2,11 @@
 """
 verify_permute.py — Stage-1 equivalence + AWQ-S fusion verification for permuted SQAT.
 
-Stage-1 (permutation equivalence): applies the three OFFLINE equivalence transforms on a plain
+Stage-1 (permutation equivalence): applies the OFFLINE equivalence transforms on a plain
 fp32 model and checks that the permuted model (with runtime boundary gathers) reproduces the
 original logits:
   (A) residual-stream permutation P_k       (+ num_segments-1 boundary gathers)
   (B) MLP block-internal permutation P4_l    (down_proj salient-first)
-  (C) per-head Hadamard rotation H on v/o_proj
 
 Stage-1b (AWQ-S fusion, optional --awq_scale): builds the AWQ-style per-channel salient scales S
 from the SAME calibration and checks, on the permuted weights, that the fusion is mathematically
@@ -45,11 +44,13 @@ from src.qat_permute_sqat import (
     build_and_verify_permutation_fp32,
     compute_awq_scales,
     awq_s_for_module,
+    expand_group_ids_to_indices,
+    _layer_idx_from_module_name,
     verify_permute_quant_consistency,
     group_fakequant,
 )
 
-_AWQ_TARGETS = {"q_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj"}
+_AWQ_TARGETS = {"q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"}
 
 
 def _load_calibration(tokenizer, n_samples, seq_len, dataset):
@@ -84,12 +85,13 @@ def _verify_awq_fusion(permuted_model, artifacts, boundary_sizes, group_k, group
 
     awq_scales = compute_awq_scales(
         artifacts["second_moments"], artifacts["residual_salient"],
-        artifacts["internal_salient"], boundary_sizes, num_layers, group_k,
+        artifacts["internal_salient"], boundary_sizes, num_layers, group_k, group_size,
+        o_proj_salient_group_ids=artifacts.get("o_proj_salient_group_ids"),
         alpha=alpha, max_s=max_s,
     )
 
     # (1) shape / range / normalization of S
-    for src in ("attn", "mlp", "down"):
+    for src in ("attn", "mlp", "down", "o"):
         S = awq_scales[src]
         assert S.shape == (num_layers, group_k), f"{src} S shape {tuple(S.shape)}"
         assert (S >= 1.0 - 1e-5).all() and (S <= max_s + 1e-5).all(), f"{src} S out of [1,{max_s}]"
@@ -103,10 +105,18 @@ def _verify_awq_fusion(permuted_model, artifacts, boundary_sizes, group_k, group
     for name, m in permuted_model.named_modules():
         if not isinstance(m, nn.Linear) or name.split(".")[-1] not in _AWQ_TARGETS:
             continue
-        S = awq_s_for_module(awq_scales, name)         # None for o_proj (no salient slice)
+        S = awq_s_for_module(awq_scales, name, group_k)
         if S is None:
             continue
-        W = m.weight.detach()[:, :group_k].float().cpu()
+        if name.split(".")[-1] == "o_proj":
+            lidx = _layer_idx_from_module_name(name)
+            if lidx is None:
+                continue
+            gids = artifacts["o_proj_salient_group_ids"][lidx]
+            idx = expand_group_ids_to_indices(gids, group_size, device=m.weight.device)
+            W = m.weight.detach().index_select(1, idx).float().cpu()
+        else:
+            W = m.weight.detach()[:, :group_k].float().cpu()
         s = S.view(1, -1)
         grid_err = verify_permute_quant_consistency(W, group_k, group_size, q_bits, symmetric, awq_s=S)
         amp   = group_fakequant(W * s, group_size, q_bits, symmetric) / s

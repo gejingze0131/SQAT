@@ -576,20 +576,28 @@ def _resolve_sqat_permute_export_state(
     return state
 
 
-# AWQ-style per-channel salient scaling (Improvement 2). The salient slice [0:layer_group_k] of each
-# q/k/v/gate/up/down projection is quantized in the AMPLIFIED space (W[:, :gk] * S); the /S is
-# baked back into the dequantized dense weight so the deployed weight == quant(W*S)/S, matching
-# the training fakequant. o_proj has no salient slice (awq_s_for_module returns None for it).
+# AWQ-style per-channel salient scaling (Improvement 2). q/k/v/gate/up/down use the leading
+# salient slice [0:layer_group_k]; o_proj uses selected complete quant groups. The protected
+# columns are quantized in the AMPLIFIED space (W_S * S); the /S is baked back into the
+# dequantized dense weight so the deployed weight == quant(W*S)/S, matching the training fakequant.
 def _unscale_salient_cols(
-    W_deq: torch.Tensor, name: str, group_k: int, awq_scales,
+    W_deq: torch.Tensor,
+    name: str,
+    group_k: int,
+    awq_scales,
+    salient_indices: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    """Bake 1/S back into the salient cols: W_deq[:, :group_k] /= S (deployed = quant(W*S)/S)."""
+    """Bake 1/S back into protected cols (deployed = quant(W*S)/S)."""
     from .qat_permute_sqat import awq_s_for_module
     s = awq_s_for_module(awq_scales, name, group_k)
     if s is None:
         return W_deq
     out = W_deq.clone().to(torch.float32)
-    out[:, :group_k] = out[:, :group_k] / s.view(1, -1).to(out.device)
+    if salient_indices is None:
+        out[:, :group_k] = out[:, :group_k] / s.view(1, -1).to(out.device)
+    else:
+        idx = salient_indices.to(out.device)
+        out[:, idx] = out[:, idx] / s.view(1, -1).to(out.device)
     return out.to(W_deq.dtype)
 
 
@@ -1174,32 +1182,36 @@ def _group_quantize_sqat_permute_lsq(
     group_size: int,
     q_bits: int,
     symmetric: bool,
-    fixed,                      # LSQ scale[, zp] for the salient slice (amplified space if AWQ)
+    fixed,                      # LSQ scale[, zp] for protected columns (amplified space if AWQ)
     awq_s,                      # [group_k] AWQ scale or None
     group_quantize,            # the qat_permute_sqat.group_quantize callable
+    salient_indices: Optional[torch.Tensor] = None,
 ):
     """
-    RTN-export of a sqat_permute weight when LSQ is on: the salient slice [0:layer_group_k] uses the
-    LEARNED scale[, zp] (LSQ grid, amplified space if AWQ); the non-salient block [layer_group_k:] keeps
-    the per-step min-max grid (unchanged from the original scheme). Returns (W_int, scale, zp) in the
-    canonical group_quantize layout so the existing group_dequantize path reconstructs the weight.
+    RTN-export of a sqat_permute weight when LSQ is on: protected columns use the LEARNED scale[, zp]
+    (LSQ grid, amplified space if AWQ); all other groups keep the per-step min-max grid. Protected
+    columns are [0:group_k] by default, or `salient_indices` for o_proj complete groups.
     """
-    import torch as _t
-    out_f, in_f = W.shape
-    n_sal_g = group_k // group_size
-    # salient slice (amplified if AWQ) → LSQ grid
-    W_sal = W[:, :group_k].clone()
+    if salient_indices is None:
+        salient_indices = torch.arange(group_k, dtype=torch.long, device=W.device)
+    else:
+        salient_indices = salient_indices.to(W.device)
+        group_k = int(salient_indices.numel())
+    assert group_k % group_size == 0
+
+    W_all = W.clone()
+    if awq_s is not None:
+        W_all[:, salient_indices] *= awq_s.view(1, -1).to(W_all.device)
+    W_int, scale, zp = group_quantize(W_all, group_size, q_bits, symmetric)
+
+    W_sal = W[:, salient_indices].clone()
     if awq_s is not None:
         W_sal = W_sal * awq_s.view(1, -1).to(W_sal.device)
     wi_s, sc_s, zp_s = group_quantize(W_sal, group_size, q_bits, symmetric, fixed_scale=fixed)
-    if group_k >= in_f:
-        return wi_s, sc_s, zp_s
-    # non-salient block → min-max grid
-    W_non = W[:, group_k:]
-    wi_n, sc_n, zp_n = group_quantize(W_non, group_size, q_bits, symmetric)
-    W_int = _t.cat([wi_s, wi_n], dim=1)
-    scale = _t.cat([sc_s, sc_n], dim=1)
-    zp    = _t.cat([zp_s, zp_n], dim=1)
+    W_int[:, salient_indices] = wi_s.to(W_int.device)
+    group_ids = (salient_indices.view(-1, group_size)[:, 0] // group_size).to(scale.device)
+    scale[:, group_ids] = sc_s.to(scale.device)
+    zp[:, group_ids] = zp_s.to(zp.device)
     return W_int, scale, zp
 
 
@@ -1208,6 +1220,13 @@ class _SqatPermuteLayerGrid:
     group_k: int
     awq_s: Optional[torch.Tensor] = None
     fixed_scale: Optional[object] = None
+    salient_group_ids: Optional[list] = None
+
+    def salient_indices(self, group_size: int, device: Optional[torch.device] = None) -> Optional[torch.Tensor]:
+        if self.salient_group_ids is None:
+            return None
+        from .qat_permute_sqat import expand_group_ids_to_indices
+        return expand_group_ids_to_indices(self.salient_group_ids, group_size, device=device)
 
 
 def _sqat_permute_layer_grid(
@@ -1218,7 +1237,12 @@ def _sqat_permute_layer_grid(
     lsq_scales: Optional[Dict[str, dict]],
     symmetric: bool,
 ) -> _SqatPermuteLayerGrid:
-    from .qat_permute_sqat import awq_s_for_module, group_k_for_module_name, lsq_scale_for_module
+    from .qat_permute_sqat import (
+        awq_s_for_module,
+        group_k_for_module_name,
+        lsq_scale_for_module,
+        salient_group_ids_for_module_name,
+    )
 
     group_k = group_k_for_module_name(
         name, perm_meta=perm_meta, default_group_k=default_group_k,
@@ -1228,7 +1252,14 @@ def _sqat_permute_layer_grid(
         lsq_scale_for_module(lsq_scales, name, symmetric)
         if lsq_scales and group_k > 0 else None
     )
-    return _SqatPermuteLayerGrid(group_k=group_k, awq_s=awq_s, fixed_scale=fixed)
+    return _SqatPermuteLayerGrid(
+        group_k=group_k,
+        awq_s=awq_s,
+        fixed_scale=fixed,
+        salient_group_ids=(
+            salient_group_ids_for_module_name(name, perm_meta) if group_k > 0 else None
+        ),
+    )
 
 
 # ============================================================================
@@ -1276,11 +1307,12 @@ def _quantize_all_layers(
         W = module.weight.data.float()
 
         if qat_mode == "sqat_permute":
-            # Permuted SQAT: the salient slice sits in the first group_k/group_size complete
-            # groups. Quantize the WHOLE weight with the SAME canonical group quantizer the
-            # training fakequant uses (qat_permute_sqat.group_quantize) so the salient-slice
-            # grid is IDENTICAL train↔export — the fix for the train/export quantizer mismatch.
-            # (AWQ-scale, if on, amplifies the salient slice here and is baked back after dequant.)
+            # Permuted SQAT: q/k/v/gate/up/down protect the leading salient slice after their
+            # offline permutations; o_proj protects arbitrary original-order complete quant groups.
+            # Quantize the WHOLE weight with the SAME canonical group quantizer the training
+            # fakequant uses (qat_permute_sqat.group_quantize) so the protected grid is IDENTICAL
+            # train↔export — the fix for the train/export quantizer mismatch. AWQ, if on,
+            # amplifies only the protected columns here and is baked back after dequant.
             from .qat_permute_sqat import group_quantize
 
             grid = _sqat_permute_layer_grid(
@@ -1292,16 +1324,21 @@ def _quantize_all_layers(
                 symmetric=symmetric,
             )
             if grid.fixed_scale is not None:
-                # group_quantize fixed_scale applies to the WHOLE weight; the sqat_permute non-salient
-                # cols must keep min-max. So quantize the salient slice and non-salient block apart,
-                # then stitch (this matches training: only [0:layer_group_k] is LSQ-fakequant'd).
+                # group_quantize fixed_scale applies to the WHOLE tensor passed to it; the
+                # sqat_permute non-salient cols must keep min-max. So quantize the whole layer with
+                # min-max, then overwrite the protected complete groups with the LSQ grid.
                 W_int, scales, zeros = _group_quantize_sqat_permute_lsq(
                     W, grid.group_k, group_size, q_bits, symmetric,
                     grid.fixed_scale, grid.awq_s, group_quantize,
+                    salient_indices=grid.salient_indices(group_size, device=W.device),
                 )
             elif grid.awq_s is not None and grid.group_k:
                 Wq = W.clone()
-                Wq[:, :grid.group_k] = Wq[:, :grid.group_k] * grid.awq_s.view(1, -1).to(Wq.device)
+                idx = grid.salient_indices(group_size, device=Wq.device)
+                if idx is None:
+                    Wq[:, :grid.group_k] = Wq[:, :grid.group_k] * grid.awq_s.view(1, -1).to(Wq.device)
+                else:
+                    Wq[:, idx] = Wq[:, idx] * grid.awq_s.view(1, -1).to(Wq.device)
                 W_int, scales, zeros = group_quantize(Wq, group_size, q_bits, symmetric)
             else:
                 W_int, scales, zeros = group_quantize(W, group_size, q_bits, symmetric)
@@ -1724,26 +1761,38 @@ def merge_and_export(
             gk = grid.group_k
             if gk <= 0:
                 continue
+            salient_idx = grid.salient_indices(group_size, device=W.device)
             n_sal_g = gk // group_size
             err = verify_permute_quant_consistency(
                 W, gk, group_size, q_bits, symmetric,
                 awq_s=grid.awq_s,
                 fixed_scale=grid.fixed_scale,
+                salient_indices=salient_idx,
             )
             worst = max(worst, err)
             status = "OK" if err < 1e-4 else "MISMATCH"
             line = f"  [Permute-grid] {name}: group_k={gk}, max|Δ|={err:.3e} [{status}]"
             # GPTQ guard: the EXPORTED salient ints must still equal the canonical training grid
-            # (only the [group_k:] non-salient cols are GPTQ'd). The grid is checked in the same
-            # (possibly AWQ-amplified) space the slice was quantized in. o_proj has no slice → skip.
-            # gptq_full ablation GPTQ's the whole weight (no fixed slice), so skip this check.
-            if (sp_state.gptq_enabled and not gptq_full and name in quantized_layers
-                    and name.split(".")[-1] != "o_proj"):
+            # (only non-salient cols are GPTQ'd). The grid is checked in the same
+            # (possibly AWQ-amplified) space the protected columns were quantized in. gptq_full
+            # ablation GPTQ's the whole weight (no fixed slice), so skip this check.
+            if sp_state.gptq_enabled and not gptq_full and name in quantized_layers:
                 wi, sc, zp = quantized_layers[name]
+                if salient_idx is None:
+                    wi_s = wi[:, :gk]
+                    sc_s = sc[:, :n_sal_g]
+                    zp_s = zp[:, :n_sal_g]
+                    W_sal = W[:, :gk].float()
+                else:
+                    idx_cpu = salient_idx.cpu()
+                    gids = (idx_cpu.view(-1, group_size)[:, 0] // group_size).to(torch.long)
+                    wi_s = wi[:, idx_cpu]
+                    sc_s = sc[:, gids]
+                    zp_s = zp[:, gids]
+                    W_sal = W[:, salient_idx.to(W.device)].float()
                 sal_dq = group_dequantize(
-                    wi[:, :gk], sc[:, :n_sal_g], zp[:, :n_sal_g], group_size, gk, symmetric,
+                    wi_s, sc_s, zp_s, group_size, gk, symmetric,
                 )
-                W_sal = W[:, :gk].float()
                 if grid.awq_s is not None:
                     W_sal = W_sal * grid.awq_s.view(1, -1)
                 canon = group_fakequant(
@@ -1821,8 +1870,10 @@ def merge_and_export(
                     symmetric=symmetric,
                 )
                 if grid.group_k > 0:
+                    salient_idx = grid.salient_indices(group_size, device=W_deq.device)
                     W_deq = _unscale_salient_cols(
                         W_deq, name, grid.group_k, sp_state.awq_scales,
+                        salient_indices=salient_idx,
                     )
 
             mod.weight.data.copy_(W_deq.to(mod.weight.dtype))

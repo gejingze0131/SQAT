@@ -9,29 +9,30 @@ This single module owns the whole permuted-QLoRA Selective-QAT stack:
         + LNs + embed/lm_head. Needs num_segments-1 runtime boundary gathers on the residual.
     (B) MLP block-internal permutation P4_l (per layer): top layer_group_k salient down_proj input
         channels → [0, layer_group_k); folded into gate/up output rows + down input cols.
-    (C) Per-head Hadamard rotation H on v_proj/o_proj (per layer): SpinQuant-style PTQ floor;
-        no QAT on o_proj. Skipped for GQA.
 
   Stage-2 training (the from-scratch fused Selective-QAT forward):
     Fakequant is implemented HERE (not imported from qat_base): per-output-row, per-input-group,
-    STE, on the permuted physical columns [0:layer_group_k] only. A `symmetric` flag selects the
-    symmetric vs affine-asymmetric branch.
+    STE. q/k/v/gate/up/down use the permuted physical columns [0:layer_group_k]. o_proj cannot
+    permute its attention-output input, so it protects the most salient complete quantization
+    groups in the original o_proj input order. A `symmetric` flag selects the symmetric vs
+    affine-asymmetric branch.
 
     Injection is BLOCK-LEVEL and FUSED via hooks (no forward replacement):
       - Attention: a forward_pre_hook on self_attn computes ONE fused delta for q/k/v
         (one BMM for B@A_S when shapes are uniform, one fused fakequant, one GEMM), splits it,
         and stashes the q/k/v slices; forward_hooks on q/k/v_proj add their slice.
       - MLP: gate/up_proj likewise → one fused delta, one GEMM, split + add.
-      - down_proj: no sibling to fuse with → a single self-contained forward_hook (small GEMM).
-    Net per block: 2 fused big GEMMs (QKV, GateUp) + 1 small GEMM (down) instead of 5 separate
+      - o_proj/down_proj: no sibling to fuse with → one self-contained forward_hook each.
+    Net per block: 2 fused big GEMMs (QKV, GateUp) + 2 small GEMMs (o/down) instead of 6 separate
     small delta GEMMs — fewer kernel launches, same QLoRA main path.
 
 Hard invariants:
   * Never materialize the full merged weight W + B@A. Only the salient slice
     W_curr_S = W_base_salient + (B @ A_S) * lora_scaling  of shape [out, layer_group_k].
   * Never replace the BnB/QLoRA projection forward — deltas are ADDED via forward hooks.
-  * layer_group_k % group_size == 0. No pre-permutation salient_idx, no index_select/gather on the
-    salient slice. X_S = hidden_states[..., :layer_group_k].
+  * layer_group_k % group_size == 0. For permuted projections there is no pre-permutation
+    salient_idx, no index_select/gather on the slice: X_S = hidden_states[..., :layer_group_k].
+    o_proj is the exception: it gathers the selected full quant groups by group id.
   * QKV never share qparams; Gate/Up never share qparams — fakequant is per-output-row, so
     concatenating along the output dim before quantizing is identical to quantizing separately.
 
@@ -46,7 +47,7 @@ for training (prepare_model) AND on the exported model for inference (register_b
 LoRA dropout: weight-level (W_base + B@A_S) injection equals the runtime LoRA forward only when
 lora_dropout == 0. A non-zero dropout triggers a warning (recommend 0 for selective-QAT training).
 
-Stage-1 equivalence verification (P_k + P4 + H all closed, plain fp32) lives in
+Stage-1 equivalence verification (P_k + P4 closed, plain fp32) lives in
 scripts/verify_permute.py, which drives build_and_verify_permutation_fp32() here.
 """
 
@@ -182,8 +183,10 @@ def _collect_second_moments(
 # ============================================================================
 
 TARGET_OUTLIER_CAPTURE = 1.0
-QAT_FAKEQUANT_TERMINALS = ("q_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj")
-PERMUTE_TARGET_TERMINALS = QAT_FAKEQUANT_TERMINALS + ("o_proj",)
+QAT_FAKEQUANT_TERMINALS = (
+    "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj",
+)
+PERMUTE_TARGET_TERMINALS = QAT_FAKEQUANT_TERMINALS
 
 
 def _round_group_k_to_group_size(
@@ -258,6 +261,31 @@ def down_layer_group_ks_from_meta(meta: Optional[dict]) -> Optional[List[int]]:
     return layer_group_ks_from_meta(meta)
 
 
+def o_proj_salient_group_ids_from_meta(meta: Optional[dict]) -> Optional[List[List[int]]]:
+    meta = _unwrap_perm_model_meta(meta)
+    if not meta or "o_proj_salient_group_ids" not in meta:
+        return None
+    out: List[List[int]] = []
+    for row in meta["o_proj_salient_group_ids"]:
+        if torch.is_tensor(row):
+            row = row.tolist()
+        out.append([int(x) for x in row])
+    return out
+
+
+def o_layer_group_ks_from_meta(meta: Optional[dict]) -> Optional[List[int]]:
+    meta = _unwrap_perm_model_meta(meta)
+    if not meta:
+        return None
+    if "o_layer_group_ks" in meta:
+        return [int(x) for x in meta["o_layer_group_ks"]]
+    gids = o_proj_salient_group_ids_from_meta(meta)
+    if gids is None:
+        return None
+    group_size = int(meta["group_size"])
+    return [len(row) * group_size for row in gids]
+
+
 def _layer_idx_from_module_name(name: str) -> Optional[int]:
     parts = name.split(".")
     for i, part in enumerate(parts[:-1]):
@@ -273,9 +301,13 @@ def group_k_for_module_name(
 ) -> int:
     """Return the active salient slice width for a projection name."""
     terminal = name.split(".")[-1] if name else ""
-    if terminal == "o_proj":
-        return 0
     if default_group_k == 0:
+        return 0
+    if terminal == "o_proj":
+        layer_group_ks = o_layer_group_ks_from_meta(perm_meta)
+        layer_idx = _layer_idx_from_module_name(name)
+        if layer_group_ks is not None and layer_idx is not None and layer_idx < len(layer_group_ks):
+            return int(layer_group_ks[layer_idx])
         return 0
     layer_group_ks = (
         down_layer_group_ks_from_meta(perm_meta)
@@ -290,6 +322,35 @@ def group_k_for_module_name(
     if mm and "group_k" in mm:
         return int(mm["group_k"])
     return 0
+
+
+def salient_group_ids_for_module_name(
+    name: str,
+    perm_meta: Optional[dict] = None,
+) -> Optional[List[int]]:
+    """Return selected complete quant-group ids for modules whose salient set is not leading."""
+    terminal = name.split(".")[-1] if name else ""
+    if terminal != "o_proj":
+        return None
+    gids = o_proj_salient_group_ids_from_meta(perm_meta)
+    layer_idx = _layer_idx_from_module_name(name)
+    if gids is None or layer_idx is None or layer_idx >= len(gids):
+        return None
+    return list(gids[layer_idx])
+
+
+def expand_group_ids_to_indices(
+    group_ids: Sequence[int],
+    group_size: int,
+    *,
+    device: Optional[torch.device] = None,
+) -> torch.Tensor:
+    """Expand complete quantization group ids to column indices, preserving group-id order."""
+    gids = torch.as_tensor([int(g) for g in group_ids], dtype=torch.long, device=device)
+    if gids.numel() == 0:
+        return torch.empty(0, dtype=torch.long, device=device)
+    offsets = torch.arange(int(group_size), dtype=torch.long, device=device)
+    return (gids[:, None] * int(group_size) + offsets[None, :]).reshape(-1)
 
 
 def _normalized_residual_scores(
@@ -449,21 +510,25 @@ def compute_fakequant_param_stats(
     model: nn.Module,
     layer_group_ks: Sequence[int],
     down_layer_group_ks: Sequence[int],
+    o_layer_group_ks: Optional[Sequence[int]] = None,
     target_modules: Optional[Sequence[str]] = None,
     include_down_proj: bool = True,
 ) -> Dict:
     """
     Count weight parameters that will pass through Selective-QAT fakequant.
 
-    fakequant_params counts only the salient input columns [0:group_k] for modules
-    that actually use Selective-QAT fakequant. o_proj is kept as a denominator-only
-    target when present in target_modules because it is Hadamard-rotated but has no
-    contiguous salient slice.
+    fakequant_params counts only the protected input columns/groups for modules that actually use
+    Selective-QAT fakequant. q/k/v/gate/up/down use leading [0:group_k] slices after permutation;
+    o_proj uses complete original-order quant groups selected from its own activation statistics.
     """
     layers = _resolve_decoder_layers(model)
     target_set = set(target_modules or PERMUTE_TARGET_TERMINALS)
     layer_group_ks = [int(x) for x in layer_group_ks]
     down_layer_group_ks = [int(x) for x in down_layer_group_ks]
+    if o_layer_group_ks is None:
+        o_layer_group_ks = list(layer_group_ks)
+    else:
+        o_layer_group_ks = [int(x) for x in o_layer_group_ks]
     total_model_params = int(sum(p.numel() for p in model.parameters()))
 
     fakequant_params = 0
@@ -475,7 +540,7 @@ def compute_fakequant_param_stats(
         ("self_attn", "q_proj", "residual"),
         ("self_attn", "k_proj", "residual"),
         ("self_attn", "v_proj", "residual"),
-        ("self_attn", "o_proj", "none"),
+        ("self_attn", "o_proj", "o"),
         ("mlp", "gate_proj", "residual"),
         ("mlp", "up_proj", "residual"),
         ("mlp", "down_proj", "down"),
@@ -500,7 +565,10 @@ def compute_fakequant_param_stats(
 
             group_k = (
                 down_layer_group_ks[layer_idx]
-                if group_source == "down" else layer_group_ks[layer_idx]
+                if group_source == "down" else
+                o_layer_group_ks[layer_idx]
+                if group_source == "o" else
+                layer_group_ks[layer_idx]
             )
             active_cols = min(int(group_k), in_features)
             active_params = out_features * active_cols
@@ -525,8 +593,8 @@ def compute_fakequant_param_stats(
         "ratio_of_model_params": _pct(fakequant_params, total_model_params),
         "by_projection": by_projection,
         "note": (
-            "fakequant_params=sum(out_features*group_k) over q/k/v/gate/up/down; "
-            "o_proj is denominator-only when it appears in target_modules."
+            "fakequant_params=sum(out_features*protected_cols) over q/k/v/o/gate/up/down; "
+            "o_proj protected_cols are selected complete quantization groups."
         ),
     }
     return stats
@@ -860,8 +928,6 @@ def select_internal_salient_channels(
     Arbitrary cross-channel permutation is valid (element-wise MLP, no multi-head).
     Returns full permutation of length down_proj_in_features (salient first).
 
-    o_proj is handled by Hadamard rotation (apply_hadamard_rotation_fp32), not here.
-
     Returns {(l, 'down_proj'): full permutation List[int]} (length = intermediate_dim).
     """
     result: Dict[Tuple[int, str], List[int]] = {}
@@ -876,6 +942,50 @@ def select_internal_salient_channels(
     return result
 
 
+def select_o_proj_salient_groups(
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+    num_layers: int,
+    group_size: int,
+    o_layer_group_ks: Sequence[int],
+) -> List[List[int]]:
+    """
+    Select o_proj salient inputs at quantization-group granularity.
+
+    o_proj cannot permute its attention-output input, so the protected set is a list of complete
+    original-order quant groups per layer. If group_size=64 and layer group_k=128, this selects the
+    two groups with largest summed E[x^2] in that layer.
+    """
+    o_layer_group_ks = [int(x) for x in o_layer_group_ks]
+    assert len(o_layer_group_ks) == num_layers, (
+        f"len(o_layer_group_ks)={len(o_layer_group_ks)} != num_layers={num_layers}"
+    )
+    out: List[List[int]] = []
+    for l in range(num_layers):
+        sm = second_moments.get((l, "o_proj"))
+        if sm is None:
+            out.append([])
+            continue
+        full_groups = int(sm.numel()) // int(group_size)
+        if full_groups <= 0:
+            raise ValueError(
+                f"Layer {l} o_proj input dim={int(sm.numel())} is smaller than group_size={group_size}"
+            )
+        n_groups = max(1, int(o_layer_group_ks[l]) // int(group_size))
+        n_groups = min(n_groups, full_groups)
+        scores = sm[:full_groups * group_size].float().reshape(full_groups, group_size).sum(dim=1)
+        top = torch.topk(scores, k=n_groups).indices.sort().values
+        gids = [int(x) for x in top.tolist()]
+        idx = expand_group_ids_to_indices(gids, group_size)
+        e_total = sm[:full_groups * group_size].sum().item()
+        e_sel = sm[idx].sum().item() if idx.numel() else 0.0
+        print(
+            f"[SegPerm] Layer {l} o_proj: group_k={n_groups * group_size}, "
+            f"selected_groups={gids[:10]}, energy_cov={e_sel/(e_total+1e-30)*100:.1f}%"
+        )
+        out.append(gids)
+    return out
+
+
 def compute_awq_scales(
     second_moments: Dict[Tuple[int, str], torch.Tensor],
     residual_salient: Dict[int, List[int]],
@@ -883,21 +993,24 @@ def compute_awq_scales(
     boundary_sizes: List[int],
     num_layers: int,
     group_k: int,
+    group_size: int,
     layer_group_ks: Optional[Sequence[int]] = None,
     down_layer_group_ks: Optional[Sequence[int]] = None,
+    o_proj_salient_group_ids: Optional[Sequence[Sequence[int]]] = None,
     alpha: float = 0.5,
     max_s: float = 2.0,
     eps: float = 1e-12,
 ) -> Dict[str, torch.Tensor]:
     """
-    AWQ-style per-input-channel scale S on the salient slice [0:group_k], per (layer, source):
+    AWQ-style per-input-channel scale S on protected columns, per (layer, source):
       attn (q/k/v share)   ← (l,'attn')      E[x²] at the segment's salient channels
       mlp  (gate/up share) ← (l,'mlp')       E[x²] at the same salient channels
       down (down_proj)     ← (l,'down_proj') E[x²] at the layer-local P4 salient channels
+      o    (o_proj)        ← (l,'o_proj')    E[x²] at selected full quant groups
     S_j = (E[x²]_j)^alpha, normalized so min over the slice = 1, clamped to [1, max_s] (so S≥1,
-    i.e. salient channels are only ever amplified). Returns {"attn"/"mlp"/"down": [L, max_group_k]}
-    float32 (1.0 where a source is unavailable or where a layer's active group_k is smaller than
-    max_group_k). Indexed by PERMUTED position (matches the slice).
+    i.e. salient channels are only ever amplified). Returns {"attn"/"mlp"/"down"/"o":
+    [L, max_group_k]} float32 (1.0 where a source is unavailable or where a layer's active group_k
+    is smaller than max_group_k). For o_proj, entries are in selected group-id order.
     """
     b_off = [0] + list(itertools.accumulate(boundary_sizes))
     if layer_group_ks is None:
@@ -930,6 +1043,7 @@ def compute_awq_scales(
     attn = torch.ones(num_layers, max_group_k)
     mlp  = torch.ones(num_layers, max_group_k)
     down = torch.ones(num_layers, max_group_k)
+    o    = torch.ones(num_layers, max_group_k)
     for l in range(num_layers):
         residual_gk_l = min(int(layer_group_ks[l]), max_group_k)
         down_gk_l = min(int(down_layer_group_ks[l]), max_group_k)
@@ -944,7 +1058,16 @@ def compute_awq_scales(
         if dperm is not None and (l, "down_proj") in second_moments and down_gk_l > 0:
             didx = torch.as_tensor(list(dperm)[:down_gk_l], dtype=torch.long)
             down[l, :down_gk_l] = _scale_from(second_moments[(l, "down_proj")][didx])
-    return {"attn": attn, "mlp": mlp, "down": down}
+        if (
+            o_proj_salient_group_ids is not None
+            and l < len(o_proj_salient_group_ids)
+            and (l, "o_proj") in second_moments
+        ):
+            oidx = expand_group_ids_to_indices(o_proj_salient_group_ids[l], group_size)
+            if oidx.numel() > 0:
+                o_gk_l = min(int(oidx.numel()), max_group_k)
+                o[l, :o_gk_l] = _scale_from(second_moments[(l, "o_proj")][oidx[:o_gk_l]])
+    return {"attn": attn, "mlp": mlp, "down": down, "o": o}
 
 
 # ============================================================================
@@ -1078,7 +1201,6 @@ def apply_block_internal_permutations_fp32(
       gate_proj output rows (dim 0) ← P4_l
       up_proj   output rows (dim 0) ← P4_l
       down_proj input cols  (dim 1) ← P4_l
-    o_proj is handled separately by apply_hadamard_rotation_fp32.
     Returns {(l, 'down_proj'): P4_l}.
     """
     num_layers    = model.config.num_hidden_layers
@@ -1106,63 +1228,7 @@ def apply_block_internal_permutations_fp32(
 
 
 # ============================================================================
-# Part 5 — Attention Hadamard rotation (o_proj, per-layer per-head)
-# ============================================================================
-
-def _build_hadamard(n: int) -> torch.Tensor:
-    """Normalized Walsh-Hadamard matrix n×n (n a power of 2); H @ H = I, entries ±1/sqrt(n)."""
-    assert n > 0 and (n & (n - 1)) == 0, f"n={n} must be a power of 2"
-    H = torch.ones(1, 1, dtype=torch.float64)
-    while H.shape[0] < n:
-        H = torch.cat([
-            torch.cat([H,  H], dim=1),
-            torch.cat([H, -H], dim=1),
-        ], dim=0)
-    return (H / math.sqrt(n)).float()
-
-
-def apply_hadamard_rotation_fp32(
-    model: nn.Module,
-    num_layers: int,
-    num_kv_heads: int,
-    head_dim: int,
-) -> int:
-    """
-    Apply per-head Hadamard rotation to v_proj/o_proj in-place (equivalence transform):
-      v_proj.weight[h*hd:(h+1)*hd, :] ← H @ v_proj.weight[...]   (rotate v output rows per head)
-      o_proj.weight[:, h*hd:(h+1)*hd] ← o_proj.weight[...] @ H   (H^{-1}=H cancels)
-
-    Rotation runs in fp32 then casts back to the param dtype, so this is correct for both the
-    fp32 Stage-1 model and the fp16 Stage-2 base. Skipped for GQA (v_out != o_in).
-    Returns number of layers rotated.
-    """
-    H = _build_hadamard(head_dim).to(next(model.parameters()).device)
-    rotated = 0
-    for l in range(num_layers):
-        attn  = model.model.layers[l].self_attn
-        o_in  = attn.o_proj.weight.shape[1]
-        v_out = attn.v_proj.weight.shape[0]
-        if v_out != o_in:
-            continue   # GQA: skip
-        H_l = H.to(attn.v_proj.weight.device)
-        v_dtype = attn.v_proj.weight.dtype
-        o_dtype = attn.o_proj.weight.dtype
-        v_w  = attn.v_proj.weight.data.float()
-        o_w  = attn.o_proj.weight.data.float()
-        for h in range(num_kv_heads):
-            s, e = h * head_dim, (h + 1) * head_dim
-            v_w[s:e, :] = H_l @ v_w[s:e, :]
-            o_w[:, s:e] = o_w[:, s:e] @ H_l
-        attn.v_proj.weight.data = v_w.to(v_dtype)
-        attn.o_proj.weight.data = o_w.to(o_dtype)
-        rotated += 1
-    print(f"[SegPerm] Hadamard rotation applied to {rotated}/{num_layers} layers "
-          f"(head_dim={head_dim}, num_kv_heads={num_kv_heads})")
-    return rotated
-
-
-# ============================================================================
-# Part 6 — Boundary gather hooks (residual stream; train + inference)
+# Part 5 — Boundary gather hooks (residual stream; train + inference)
 # ============================================================================
 
 class BoundaryGatherHook:
@@ -1306,8 +1372,8 @@ def build_and_verify_permutation_fp32(
 ):
     """
     Stage-1 driver (used by scripts/verify_permute.py): on a plain fp32 `model`, calibrate →
-    select salient → deep-copy the original → apply P_k + P4 + Hadamard → register boundary
-    gathers → verify equivalence. Returns the max logit error. Mutates `model` in place.
+    select salient → deep-copy the original → apply P_k + P4 → register boundary gathers →
+    verify equivalence. Returns the max logit error. Mutates `model` in place.
 
     return_artifacts=True additionally returns the calibration/saliency intermediates
     (second_moments, residual_salient, internal_salient, ...) so callers can build and verify the
@@ -1318,9 +1384,6 @@ def build_and_verify_permutation_fp32(
     device         = next(model.parameters()).device
     d_model        = model.config.hidden_size
     num_layers     = model.config.num_hidden_layers
-    num_kv_heads   = model.config.num_key_value_heads
-    num_attn_heads = model.config.num_attention_heads
-    head_dim       = d_model // num_attn_heads
     num_segments   = len(boundary_sizes)
 
     print("[SegPerm] Stage 1: collecting E[x²] (all sources) ...")
@@ -1338,19 +1401,21 @@ def build_and_verify_permutation_fp32(
         k: _build_segment_perm(residual_salient[k], d_model) for k in range(num_segments)
     }
     internal_salient = select_internal_salient_channels(second_moments, num_layers, group_k=group_k)
+    o_proj_salient_group_ids = select_o_proj_salient_groups(
+        second_moments, num_layers, group_size, [int(group_k)] * num_layers
+    )
 
     print("[SegPerm] Stage 1: deep-copying fp32 model for comparison ...")
     original = copy.deepcopy(model)
 
-    print("[SegPerm] Stage 1: applying P_k + P4 + Hadamard ...")
+    print("[SegPerm] Stage 1: applying P_k + P4 ...")
     boundary_perms   = apply_segment_permutation_fp32(model, segment_perms, boundary_sizes)
     applied_internal = apply_block_internal_permutations_fp32(model, internal_salient)
-    apply_hadamard_rotation_fp32(model, num_layers, num_kv_heads, head_dim)
 
     bli   = _boundary_layer_indices(boundary_sizes)
     hooks = register_boundary_gathers(model, boundary_perms, bli, d_model)
     try:
-        print("[SegPerm] Stage 1: verifying equivalence (P_k + P4 + H all closed) ...")
+        print("[SegPerm] Stage 1: verifying equivalence (P_k + P4 closed) ...")
         max_err = verify_permutation_equivalence(original, model, test_inputs, tol=tol)
     finally:
         for h in hooks:
@@ -1358,7 +1423,7 @@ def build_and_verify_permutation_fp32(
 
     print(
         f"\n[SegPerm] Stage 1 RESULT: num_runtime_permutes={len(boundary_perms)}, "
-        f"num_P4_perms={len(applied_internal)}, num_H_layers={num_layers}, "
+        f"num_P4_perms={len(applied_internal)}, "
         f"max_abs_logit_err={max_err:.2e}"
     )
     if return_artifacts:
@@ -1366,6 +1431,7 @@ def build_and_verify_permutation_fp32(
             "second_moments":   second_moments,
             "residual_salient": residual_salient,
             "internal_salient": internal_salient,
+            "o_proj_salient_group_ids": o_proj_salient_group_ids,
             "segment_perms":    segment_perms,
             "num_layers":       num_layers,
             "d_model":          d_model,
@@ -1576,18 +1642,24 @@ def verify_permute_quant_consistency(
     W: torch.Tensor, group_k: int, group_size: int, q_bits: int, symmetric: bool,
     awq_s: Optional[torch.Tensor] = None,
     fixed_scale=None,
+    salient_indices: Optional[torch.Tensor] = None,
 ) -> float:
     """
-    Assert the SALIENT slice's training grid == export grid. Returns max|Δ| over [out, group_k]
-    between training fakequant and export quantize→dequant on the salient slice. With the shared
+    Assert the protected columns' training grid == export grid. Returns max|Δ| over the protected
+    columns between training fakequant and export quantize→dequant. By default the protected set is
+    [0:group_k]; pass `salient_indices` for arbitrary complete groups (o_proj). With the shared
     qparams this must be ~0 (fp round-off only). If AWQ-style scaling is used, pass the per-channel
-    `awq_s` the slice is quantized in (the amplify+de-amplify cancels, so it stays a self-check of
-    the quantizer formulas in the amplified space).
+    `awq_s` the slice is quantized in.
 
     fixed_scale (LSQ): when given, both the training fakequant and the export quant→dequant use the
     learned scale[, zp] (LSQ grid) — the check then confirms the LSQ train↔export grids match.
     """
-    W_s = W[:, :group_k].float()
+    if salient_indices is None:
+        W_s = W[:, :group_k].float()
+    else:
+        idx = salient_indices.to(W.device)
+        W_s = W.index_select(1, idx).float()
+        group_k = int(idx.numel())
     if awq_s is not None:
         s = awq_s.to(torch.float32).view(1, -1)
         fq = group_fakequant(W_s * s, group_size, q_bits, symmetric, fixed_scale=fixed_scale) / s
@@ -1603,13 +1675,12 @@ def verify_permute_quant_consistency(
 # ============================================================================
 # Part 8b — GPTQ (Optimal Brain Quantization) for the NON-salient columns.
 #
-# Improvement over plain RTN export: the ~97% non-salient columns are quantized with OBS error
-# compensation instead of round-to-nearest. The salient slice [0:layer_group_k] is the QAT-protected
-# part and MUST keep the EXACT canonical group_quantize grid the LoRA was trained against (else
-# the QAT benefit does not transfer — the earlier min/max-vs-pos/neg regression). So GPTQ here:
-#   * fixes columns [0:layer_group_k] to the canonical RTN grid (training-consistent), and
-#   * GPTQ-quantizes columns [layer_group_k:] with OBS compensation (same group_size and asym/sym as QAT).
-# o_proj carries no salient slice (group_k=0) → it is fully GPTQ-quantized.
+# Improvement over plain RTN export: the non-salient columns are quantized with OBS error
+# compensation instead of round-to-nearest. The QAT-protected columns MUST keep the EXACT canonical
+# group_quantize grid the LoRA was trained against. For q/k/v/gate/up/down this is the leading
+# slice [0:layer_group_k]. For o_proj this is an arbitrary set of complete quant groups; the GPTQ
+# helper temporarily moves those groups to the front, reuses the leading-slice solver, then restores
+# the original group layout.
 #
 # The Hessian H = X^T X must be in the SAME (permuted) basis as the weight columns — collect it on
 # the permuted base with the boundary gathers registered (gptq_quantize_model_sequential does this).
@@ -1658,12 +1729,13 @@ def gptq_quantize_layer(
     awq_s: Optional[torch.Tensor] = None,   # [group_k] AWQ scale for the salient slice, or None
     keep_salient_fp16: bool = False,        # ablation: leave the salient slice as fp16 (no quant)
     fixed_scale=None,                       # LSQ learned scale[, zp] for the salient slice, or None
+    salient_group_ids: Optional[Sequence[int]] = None,
 ):
     """
-    Quantize the salient slice [0:group_k] to the canonical SQAT grid (training-consistent) and
-    GPTQ-quantize ONLY the non-salient block [group_k:]. Returns (W_int [out,in], scale [out,ng],
-    zp [out,ng]) in the EXACT layout of group_quantize, so the existing group_dequantize path
-    reconstructs the deployed weight unchanged.
+    Quantize the salient columns to the canonical SQAT grid (training-consistent) and GPTQ-quantize
+    ONLY the non-salient block. By default the salient set is the leading slice [0:group_k]. When
+    `salient_group_ids` is given, it identifies arbitrary complete original-layout quant groups
+    (o_proj); the returned (W_int, scale, zp) are restored to the original layout.
 
     IMPORTANT — the salient slice's quantization error is NOT propagated into the non-salient
     columns. The QAT/LoRA was trained to tolerate the salient slice's quant error (training saw
@@ -1686,6 +1758,47 @@ def gptq_quantize_layer(
         f"group_k ({group_k}) must be a multiple of group_size ({group_size})"
     ng = in_f // group_size
     q_max = _sym_q_max(q_bits) if symmetric else _asym_q_max(q_bits)
+
+    if salient_group_ids is not None:
+        gids = torch.as_tensor([int(g) for g in salient_group_ids], dtype=torch.long, device=dev)
+        if gids.numel() == 0:
+            return gptq_quantize_layer(
+                W, H, 0, group_size, q_bits, symmetric,
+                percdamp=percdamp, blocksize=blocksize, eps=eps,
+                awq_s=None, keep_salient_fp16=keep_salient_fp16, fixed_scale=None,
+            )
+        if gids.unique().numel() != gids.numel():
+            raise ValueError(f"salient_group_ids must be unique, got {gids.tolist()}")
+        if int(gids.min().item()) < 0 or int(gids.max().item()) >= ng:
+            raise ValueError(
+                f"salient_group_ids out of range for {ng} groups: {gids.tolist()}"
+            )
+        expected_group_k = int(gids.numel()) * int(group_size)
+        if int(group_k) != expected_group_k:
+            raise ValueError(
+                f"group_k={group_k} does not match {gids.numel()} salient groups "
+                f"with group_size={group_size} (expected {expected_group_k})"
+            )
+        mask = torch.ones(ng, dtype=torch.bool, device=dev)
+        mask[gids] = False
+        rest = torch.arange(ng, dtype=torch.long, device=dev)[mask]
+        group_perm = torch.cat([gids, rest], dim=0)
+        col_perm = expand_group_ids_to_indices(group_perm.tolist(), group_size, device=dev)
+        Wp = W.index_select(1, col_perm)
+        Hp = H.to(dev).index_select(0, col_perm).index_select(1, col_perm)
+        wi_p, sc_p, zp_p = gptq_quantize_layer(
+            Wp, Hp, group_k, group_size, q_bits, symmetric,
+            percdamp=percdamp, blocksize=blocksize, eps=eps,
+            awq_s=awq_s, keep_salient_fp16=keep_salient_fp16, fixed_scale=fixed_scale,
+            salient_group_ids=None,
+        )
+        W_int = torch.empty_like(wi_p)
+        scale = torch.empty_like(sc_p)
+        zp = torch.empty_like(zp_p)
+        W_int[:, col_perm] = wi_p
+        scale[:, group_perm] = sc_p
+        zp[:, group_perm] = zp_p
+        return W_int, scale, zp
 
     # block size aligned to group_size so a quant group never straddles a block boundary
     if blocksize < group_size:
@@ -1788,7 +1901,7 @@ def gptq_quantize_layer(
 # ----------------------------------------------------------------------------
 
 _AWQ_SOURCE = {
-    "q_proj": "attn", "k_proj": "attn", "v_proj": "attn",
+    "q_proj": "attn", "k_proj": "attn", "v_proj": "attn", "o_proj": "o",
     "gate_proj": "mlp", "up_proj": "mlp",
     "down_proj": "down",
 }
@@ -1799,7 +1912,7 @@ def awq_s_for_module(
     name: str,
     group_k: Optional[int] = None,
 ) -> Optional[torch.Tensor]:
-    """Return the [group_k] AWQ scale for a linear by full name, or None (o_proj / disabled)."""
+    """Return the [group_k] AWQ scale for a linear by full name, or None when disabled."""
     if not awq_scales:
         return None
     src = _AWQ_SOURCE.get(name.split(".")[-1])
@@ -1867,11 +1980,9 @@ def gptq_quantize_model_sequential(
 ) -> Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """
     In-place sequential GPTQ on a dense (permuted) fp16 model. For every nn.Linear whose terminal
-    name is in `target_terminals`:
-       * q/k/v/gate/up/down_proj → columns [0:layer_group_k] fixed to the canonical SQAT grid, the
-         rest GPTQ-quantized. layer_group_k is read from perm_meta when present, otherwise
-         perm_group_k is used for backward compatibility;
-       * o_proj                  → no salient slice (group_k=0) → fully GPTQ.
+    name is in `target_terminals`, QAT-protected columns stay on the canonical SQAT grid and the
+    rest are GPTQ-quantized. q/k/v/gate/up/down use leading slices; o_proj uses the selected
+    complete quant groups from perm_meta.
     Each decoder layer is quantized using the ALREADY-quantized previous layers' outputs (true
     cross-layer sequential GPTQ): weights are replaced in place with their quantize→dequant values,
     and the per-layer (W_int, scale, zp) are returned (on CPU) in the group_quantize layout.
@@ -1931,15 +2042,15 @@ def gptq_quantize_model_sequential(
 
     for L in tqdm(range(num_layers), desc="[GPTQ] Sequential quantize"):
         layer = layers[L]
-        subs = {}                                   # full_name -> (module, group_k)
+        subs = {}                                   # full_name -> (module, group_k, group_ids)
         for sub in layer.modules():
             if isinstance(sub, nn.Linear) and name_of[sub].split(".")[-1] in target_terminals:
-                term = name_of[sub].split(".")[-1]
                 nm = name_of[sub]
-                gk = 0 if term == "o_proj" else group_k_for_module_name(
+                gk = group_k_for_module_name(
                     nm, perm_meta=perm_meta, default_group_k=perm_group_k,
                 )
-                subs[nm] = (sub, gk)
+                gids = salient_group_ids_for_module_name(nm, perm_meta) if gk > 0 else None
+                subs[nm] = (sub, gk, gids)
         if not subs:
             continue
 
@@ -1955,7 +2066,7 @@ def gptq_quantize_model_sequential(
                 Hs[nm] = xtx if nm not in Hs else Hs[nm].add_(xtx)
             return _h
 
-        for nm, (mod, _) in subs.items():
+        for nm, (mod, _, _) in subs.items():
             handles.append(mod.register_forward_hook(_mk(nm)))
         for i in range(len(inps)):
             layer(inps[i].to(device), **_kw_to_dev(kwargs_list[i]))
@@ -1963,27 +2074,35 @@ def gptq_quantize_model_sequential(
             h.remove()
 
         # 2) GPTQ each sublayer; replace its weight with quantize->dequant
-        for nm, (mod, gk) in subs.items():
+        for nm, (mod, gk, gids) in subs.items():
             W = mod.weight.data.float()
             awq_s = awq_s_for_module(awq_scales, nm, gk) if gk > 0 else None
-            # LSQ: salient slice uses the learned scale[, zp] (o_proj gk=0 → none).
+            # LSQ: salient columns use the learned scale[, zp].
             fixed_scale = (lsq_scale_for_module(lsq_scales, nm, symmetric)
                            if (lsq_scales and gk > 0) else None)
             W_int, sc, zp = gptq_quantize_layer(
                 W, Hs[nm], gk, group_size, q_bits, symmetric,
                 percdamp=percdamp, blocksize=blocksize, awq_s=awq_s,
                 keep_salient_fp16=keep_salient_fp16,
-                fixed_scale=fixed_scale,
+                fixed_scale=fixed_scale, salient_group_ids=gids,
             )
             W_deq = group_dequantize(W_int, sc, zp, group_size, W.shape[1], symmetric)
             if keep_salient_fp16 and gk > 0:
-                # Ablation: restore the un-quantized fp16 salient slice (group_dequantize left it 0).
+                # Ablation: restore the un-quantized fp16 salient columns (group_dequantize left them 0).
                 # The cross-layer propagation below then sees the salient slice at full precision.
-                W_deq[:, :gk] = W[:, :gk]
-            if awq_s is not None:
+                if gids is None:
+                    W_deq[:, :gk] = W[:, :gk]
+                else:
+                    idx = expand_group_ids_to_indices(gids, group_size, device=W_deq.device)
+                    W_deq[:, idx] = W[:, idx]
+            if awq_s is not None and not keep_salient_fp16:
                 # bake 1/S back into the salient columns so the in-place (and exported) dense
                 # weight is the deployed value W_fq/S — matching the training fakequant.
-                W_deq[:, :gk] = W_deq[:, :gk] / awq_s.view(1, -1).to(W_deq.device)
+                if gids is None:
+                    W_deq[:, :gk] = W_deq[:, :gk] / awq_s.view(1, -1).to(W_deq.device)
+                else:
+                    idx = expand_group_ids_to_indices(gids, group_size, device=W_deq.device)
+                    W_deq[:, idx] = W_deq[:, idx] / awq_s.view(1, -1).to(W_deq.device)
             mod.weight.data.copy_(W_deq.to(mod.weight.dtype))
             quantized_layers[nm] = (W_int.cpu(), sc.cpu(), zp.cpu())
             Hs[nm] = None
@@ -2110,6 +2229,12 @@ def _lora_A_S(proj: nn.Module, group_k: int) -> torch.Tensor:
     return proj.lora_A[_adapter_name(proj)].weight[:, :group_k]
 
 
+def _lora_A_indices(proj: nn.Module, indices: torch.Tensor) -> torch.Tensor:
+    """A[:, indices]: [rank, K] for non-contiguous salient groups."""
+    idx = indices.to(proj.lora_A[_adapter_name(proj)].weight.device)
+    return proj.lora_A[_adapter_name(proj)].weight.index_select(1, idx)
+
+
 def _lora_B(proj: nn.Module) -> torch.Tensor:
     """B: [out_features, rank]."""
     return proj.lora_B[_adapter_name(proj)].weight
@@ -2137,6 +2262,13 @@ def _dequant_base_salient(proj: nn.Module, group_k: int) -> torch.Tensor:
     """Frozen dequantized NF4 base, salient slice [out, group_k], fp32 on the proj's device."""
     W = dequantize_layer(proj)                              # [out, in]
     return W[:, :group_k].detach().to(torch.float32).contiguous()
+
+
+def _dequant_base_indices(proj: nn.Module, indices: torch.Tensor) -> torch.Tensor:
+    """Frozen dequantized NF4 base at arbitrary salient columns, fp32 on the proj's device."""
+    W = dequantize_layer(proj)
+    idx = indices.to(W.device)
+    return W.index_select(1, idx).detach().to(torch.float32).contiguous()
 
 
 # ============================================================================
@@ -2372,6 +2504,111 @@ class DownProjQATInjector(nn.Module):
         self._handles = []
 
 
+class OProjQATInjector(nn.Module):
+    """
+    Single-projection QAT residual for o_proj.
+
+    Unlike q/k/v/gate/up/down, o_proj cannot move its salient inputs into a leading slice because
+    the attention output is structured by heads before this projection. We therefore select complete
+    original-order quant groups and gather those columns from both X and A at runtime.
+    """
+
+    def __init__(
+        self,
+        o_proj: nn.Module,
+        salient_group_ids: Sequence[int],
+        group_size: int,
+        q_bits: int,
+        symmetric: bool,
+        lora_scaling: float,
+        awq_s: Optional[torch.Tensor] = None,
+        enable_lsq: bool = False,
+    ):
+        super().__init__()
+        group_ids = [int(g) for g in salient_group_ids]
+        if not group_ids:
+            raise ValueError("OProjQATInjector requires at least one salient group id")
+        self.o_proj      = o_proj
+        self.group_size  = int(group_size)
+        self.q_bits      = q_bits
+        self.symmetric   = symmetric
+        self.lora_scaling = lora_scaling
+        self.enable_lsq  = bool(enable_lsq)
+        self.group_k     = len(group_ids) * self.group_size
+
+        salient_indices = expand_group_ids_to_indices(group_ids, self.group_size)
+        W_full = dequantize_layer(o_proj)
+        if int(salient_indices.max().item()) >= W_full.shape[1]:
+            raise ValueError(
+                f"o_proj salient group id out of range: max col={int(salient_indices.max().item())}"
+            )
+        W_base = (
+            W_full.index_select(1, salient_indices.to(W_full.device))
+            .detach()
+            .to(torch.float32)
+            .contiguous()
+        )
+
+        _warn_if_lora_dropout([o_proj], "self_attn(o)")
+        self.register_buffer(
+            "salient_group_ids",
+            torch.as_tensor(group_ids, dtype=torch.long),
+            persistent=False,
+        )
+        self.register_buffer(
+            "salient_indices",
+            salient_indices.to(W_base.device),
+            persistent=False,
+        )
+        self.register_buffer("W_base_salient", W_base, persistent=False)
+
+        if awq_s is not None:
+            self.register_buffer(
+                "awq_s",
+                awq_s.to(torch.float32).view(-1).to(self.W_base_salient.device),
+                persistent=False,
+            )
+        else:
+            self.awq_s = None
+        self.out_splits = (self.W_base_salient.shape[0],)
+
+        if self.enable_lsq:
+            W0 = self.W_base_salient.to(torch.float32)
+            if self.awq_s is not None:
+                W0 = W0 * self.awq_s.view(1, -1).to(W0.device)
+            if symmetric:
+                s0 = _lsq_init_sym(W0, self.group_size, q_bits)
+                o_proj.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+            else:
+                s0, z0 = _lsq_init_asym(W0, self.group_size, q_bits)
+                o_proj.lsq_w_scale = nn.Parameter(s0.to(W0.device), requires_grad=True)
+                o_proj.lsq_w_zp = nn.Parameter(z0.to(W0.device), requires_grad=True)
+
+        self._handles = [o_proj.register_forward_hook(self._hook)]
+
+    def _hook(self, module, inp, out):
+        idx = self.salient_indices.to(inp[0].device)
+        X_S = inp[0].index_select(-1, idx)
+        A_S = _lora_A_indices(self.o_proj, self.salient_indices)
+        B   = _lora_B(self.o_proj)
+        lsq_scale = lsq_zp = None
+        if self.enable_lsq:
+            lsq_scale = self.o_proj.lsq_w_scale
+            if not self.symmetric:
+                lsq_zp = self.o_proj.lsq_w_zp
+        (delta_out,) = fused_qat_residual_outputs(
+            self.W_base_salient, [A_S], [B], self.out_splits, X_S,
+            self.group_size, self.q_bits, self.symmetric, self.lora_scaling,
+            awq_s=self.awq_s, lsq_scale=lsq_scale, lsq_zp=lsq_zp,
+        )
+        return out + delta_out
+
+    def remove(self) -> None:
+        for h in self._handles:
+            h.remove()
+        self._handles = []
+
+
 # ============================================================================
 # Part 12 — Install / remove fused injectors
 # ============================================================================
@@ -2388,19 +2625,21 @@ def install_fused_selective_qat(
     awq_scales: Optional[dict] = None,
     layer_group_ks: Optional[Sequence[int]] = None,
     down_layer_group_ks: Optional[Sequence[int]] = None,
+    o_proj_salient_group_ids: Optional[Sequence[Sequence[int]]] = None,
     enable_lsq: bool = False,
 ) -> List[nn.Module]:
     """
     Install block-level fused Selective-QAT injectors on every decoder layer.
 
     - q/k/v_proj   → one FusedAttnQATInjector per layer (pre-hook on self_attn + add-hooks).
+    - o_proj       → one OProjQATInjector per layer, gathering selected full quant groups.
     - gate/up_proj → one FusedMLPQATInjector per layer.
     - down_proj    → one DownProjQATInjector per layer (single small GEMM, no fusion).
 
-    awq_scales: if given ({"attn"/"mlp"/"down": [num_layers, max_group_k]}), the salient slice of each
-    projection group is quantized in the AWQ-amplified space (q/k/v share the layer's "attn" S,
-    gate/up share "mlp", down_proj uses "down"). o_proj is never injected (per-head Hadamard only).
-    The /S is baked into the dense weight at export — a better quant grid, bit-identical output.
+    awq_scales: if given ({"attn"/"mlp"/"down"/"o": [num_layers, max_group_k]}), the salient slice
+    of each projection group is quantized in the AWQ-amplified space. q/k/v share the layer's
+    "attn" S, gate/up share "mlp", down_proj uses "down", and o_proj uses "o". The /S is baked
+    into the dense weight at export — a better quant grid, bit-identical output.
 
     Only projections that are LoRA-wrapped AND listed in `target_modules` are injected.
     Returns the list of injectors (keep a reference; call .remove() on each to uninstall).
@@ -2419,6 +2658,14 @@ def install_fused_selective_qat(
         down_layer_group_ks = [int(x) for x in down_layer_group_ks]
         assert len(down_layer_group_ks) == len(layers), (
             f"len(down_layer_group_ks)={len(down_layer_group_ks)} != num_layers={len(layers)}"
+        )
+    if o_proj_salient_group_ids is not None:
+        o_proj_salient_group_ids = [
+            [int(g) for g in row] for row in o_proj_salient_group_ids
+        ]
+        assert len(o_proj_salient_group_ids) == len(layers), (
+            f"len(o_proj_salient_group_ids)={len(o_proj_salient_group_ids)} "
+            f"!= num_layers={len(layers)}"
         )
 
     def _s(src: str, l: int, gk: int) -> Optional[torch.Tensor]:
@@ -2448,6 +2695,25 @@ def install_fused_selective_qat(
                 awq_s=_s("attn", l, residual_gk_l), **common_residual
             ))
 
+        if (
+            "o_proj" in tset
+            and _has_lora(attn.o_proj)
+            and o_proj_salient_group_ids is not None
+            and l < len(o_proj_salient_group_ids)
+            and len(o_proj_salient_group_ids[l]) > 0
+        ):
+            o_gids = o_proj_salient_group_ids[l]
+            injectors.append(OProjQATInjector(
+                attn.o_proj,
+                salient_group_ids=o_gids,
+                group_size=group_size,
+                q_bits=q_bits,
+                symmetric=symmetric,
+                lora_scaling=lora_scaling,
+                awq_s=_s("o", l, len(o_gids) * group_size),
+                enable_lsq=enable_lsq,
+            ))
+
         if {"gate_proj", "up_proj"} <= tset and all(
             _has_lora(getattr(mlp, n)) for n in ("gate_proj", "up_proj")
         ):
@@ -2464,6 +2730,7 @@ def install_fused_selective_qat(
     print(
         f"[qat_permute_sqat] Installed fused Selective-QAT injectors: "
         f"{sum(isinstance(i, FusedAttnQATInjector) for i in injectors)} attn, "
+        f"{sum(isinstance(i, OProjQATInjector) for i in injectors)} o, "
         f"{sum(isinstance(i, FusedMLPQATInjector) for i in injectors)} mlp, "
         f"{sum(isinstance(i, DownProjQATInjector) for i in injectors)} down  "
         f"(residual_group_k_by_layer={min(layer_group_ks)}..{max(layer_group_ks)}, "
@@ -2510,11 +2777,10 @@ def build_permuted_fp16_checkpoint(
     Stage-2 pre-quantization step — run on ONE process only (rank 0).
 
       1. Load `model_name` in `dtype` (fp16/bf16): no BNB, no LoRA.
-      2. Calibrate E[x²] (residual + down_proj) on `calibration_dataloader`.
-      3. Apply the three equivalence transforms IN fp16 (dtype-preserving):
+      2. Calibrate E[x²] (residual + o_proj/down_proj) on `calibration_dataloader`.
+      3. Apply the equivalence transforms IN fp16 (dtype-preserving):
            residual-stream P_k  → apply_segment_permutation_fp32
            MLP block P4_l        → apply_block_internal_permutations_fp32
-           per-head Hadamard H   → apply_hadamard_rotation_fp32
       4. save_pretrained(save_dir) + tokenizer.save_pretrained(save_dir).
 
     Quantization is intentionally NOT done here. The caller sets cfg["model"]["name"]=save_dir
@@ -2542,9 +2808,6 @@ def build_permuted_fp16_checkpoint(
 
     d_model        = model.config.hidden_size
     num_layers     = model.config.num_hidden_layers
-    num_kv_heads   = model.config.num_key_value_heads
-    num_attn_heads = model.config.num_attention_heads
-    head_dim       = d_model // num_attn_heads
     fixed_group_k: Optional[int] = None
     if group_k is not None:
         fixed_group_k = int(group_k)
@@ -2677,10 +2940,19 @@ def build_permuted_fp16_checkpoint(
             f"[SegPerm] Down-proj fixed global group_k: "
             f"group_k={fixed_group_k}, values={down_layer_group_ks}"
         )
+
+    o_layer_group_ks = list(layer_group_ks)
+    o_proj_salient_group_ids = select_o_proj_salient_groups(
+        second_moments=second_moments,
+        num_layers=num_layers,
+        group_size=group_size,
+        o_layer_group_ks=o_layer_group_ks,
+    )
     fakequant_param_stats = compute_fakequant_param_stats(
         model=model,
         layer_group_ks=layer_group_ks,
         down_layer_group_ks=down_layer_group_ks,
+        o_layer_group_ks=o_layer_group_ks,
         target_modules=target_modules,
         include_down_proj=True,
     )
@@ -2715,16 +2987,16 @@ def build_permuted_fp16_checkpoint(
     # ---- 2b) AWQ-style per-channel salient scales S (always computed; usage gated by config) ----
     awq_scales = compute_awq_scales(
         second_moments, residual_salient, internal_salient,
-        boundary_sizes, num_layers, max_group_k,
+        boundary_sizes, num_layers, max_group_k, group_size,
         layer_group_ks=layer_group_ks,
         down_layer_group_ks=down_layer_group_ks,
+        o_proj_salient_group_ids=o_proj_salient_group_ids,
         alpha=awq_alpha, max_s=awq_max,
     )
 
-    # ---- 3) apply the three transforms IN fp16 (dtype-preserving, equivalence-preserving) ----
+    # ---- 3) apply the offline transforms IN fp16 (dtype-preserving, equivalence-preserving) ----
     boundary_perms = apply_segment_permutation_fp32(model, segment_perms, boundary_sizes)
     block_internal = apply_block_internal_permutations_fp32(model, internal_salient)
-    apply_hadamard_rotation_fp32(model, num_layers, num_kv_heads, head_dim)
 
     # ---- 4) save permuted fp16 base + tokenizer ----
     os.makedirs(save_dir, exist_ok=True)
@@ -2743,6 +3015,8 @@ def build_permuted_fp16_checkpoint(
         "segment_group_ks":       list(segment_group_ks),
         "layer_group_ks":         list(layer_group_ks),
         "down_layer_group_ks":    list(down_layer_group_ks),
+        "o_layer_group_ks":       list(o_layer_group_ks),
+        "o_proj_salient_group_ids": [list(x) for x in o_proj_salient_group_ids],
         "fixed_group_k":          fixed_group_k,
         "legacy_topk_ratio_mode": bool(legacy_topk_ratio_mode),
         "top_k_ratio":            float(top_k_ratio),
@@ -2893,8 +3167,8 @@ class SegmentPermutedSelectiveQAT(QATHandler):
     plus `perm_meta`, and only:
       1. Re-registers the runtime boundary gathers (residual reorder; cannot be folded).
       2. [stage>=2] Installs block-level fused Selective-QAT injectors (hooks) on
-         q/k/v/gate/up/down_proj — QKV and Gate/Up each fuse into ONE big GEMM, down_proj is one
-         small GEMM. o_proj is NOT injected (Hadamard-rotated only).
+         q/k/v/o/gate/up/down_proj — QKV and Gate/Up each fuse into ONE big GEMM, o_proj and
+         down_proj are one small GEMM each.
       3. Attaches _sqat_permute_meta for export.
     """
 
@@ -2928,6 +3202,8 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         group_size     = perm_meta["group_size"]
         layer_group_ks = layer_group_ks_from_meta(perm_meta) or [int(group_k)] * int(sum(perm_meta["boundary_sizes"]))
         down_layer_group_ks = down_layer_group_ks_from_meta(perm_meta) or list(layer_group_ks)
+        o_layer_group_ks = o_layer_group_ks_from_meta(perm_meta) or list(layer_group_ks)
+        o_proj_group_ids = o_proj_salient_group_ids_from_meta(perm_meta)
         q_bits         = cfg["model"]["quant_bits"]
         symmetric      = cfg["qat"].get("symmetric", True)
         awq_enabled    = bool((sp_cfg.get("awq_scale", {}) or {}).get("enabled", False))
@@ -2966,6 +3242,7 @@ class SegmentPermutedSelectiveQAT(QATHandler):
                 awq_scales=awq_scales,
                 layer_group_ks=layer_group_ks,
                 down_layer_group_ks=down_layer_group_ks,
+                o_proj_salient_group_ids=o_proj_group_ids,
                 enable_lsq=enable_lsq,
             )
 
@@ -2985,6 +3262,7 @@ class SegmentPermutedSelectiveQAT(QATHandler):
         print(f"[SegPerm] prepare_model done: stage={stage}, "
               f"num_runtime_permutes={len(self.boundary_perms)}, "
               f"residual_group_k_by_layer={min(layer_group_ks)}..{max(layer_group_ks)}, "
+              f"o_group_k_by_layer={min(o_layer_group_ks)}..{max(o_layer_group_ks)}, "
               f"down_group_k_by_layer={min(down_layer_group_ks)}..{max(down_layer_group_ks)} "
               f"(max={group_k}), group_size={group_size}, symmetric={symmetric}, "
               f"awq_scale={awq_enabled}, enable_lsq={enable_lsq}")

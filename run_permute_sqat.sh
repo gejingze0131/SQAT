@@ -129,7 +129,7 @@ echo "  LSQ:           $ENABLE_LSQ"
 echo "============================================================"
 
 # ---------------------------------------------------------------------------
-# Stage 0: Permutation equivalence verification (P_k + P4 + Hadamard, fp32)
+# Stage 0: Permutation equivalence verification (P_k + P4, fp32)
 # ---------------------------------------------------------------------------
 if [ "$SKIP_VALIDATE" = false ]; then
     echo -e "\n>>> Stage 0: Legacy fixed-segment permutation verification (fp32, no training)"

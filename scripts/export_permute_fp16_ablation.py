@@ -10,7 +10,7 @@ What our method does (run_permute_sqat.sh):
 
 What THIS ablation does (the upper bound of that methodology):
   run the IDENTICAL permute algorithm (same calibration set, same saliency selection, same
-  P_k / P4 / Hadamard transforms, same boundary gathers), but instead of QAT-protecting the
+  P_k / P4 transforms, same boundary gathers), but instead of QAT-protecting the
   salient slice, keep it at FULL PRECISION fp16. The non-salient columns are still GPTQ'd.
   => the ONLY difference vs. our method is salient = fp16 (here) vs. salient = QAT (ours).
 
@@ -24,11 +24,12 @@ outputs/qlora-none-math-3bit-none/final) whose adapter was trained on the ORIGIN
      real permute-SQAT run, so the comparison is rigorous.
   2. Merge the trained QLoRA adapter into a dense fp16 base IN ORIGINAL ORDER
      (dequant(NF4 base) + B@A * scaling), reusing the export merge helpers.
-  3. Apply the three equivalence transforms (P_k residual permute, P4 MLP-internal permute,
-     per-head Hadamard) to the merged dense weights. This is a pure equivalence transform on
+  3. Apply the equivalence transforms (P_k residual permute, P4 MLP-internal permute)
+     to the merged dense weights. This is a pure equivalence transform on
      the merged weight, so + boundary gathers it reproduces the original merged model exactly.
-  4. PTQ: salient slice [0:group_k] -> kept fp16; non-salient [group_k:] -> GPTQ. o_proj has no
-     salient slice (group_k=0) -> fully GPTQ. Same group_size / asym-sym as the config.
+  4. PTQ: leading salient slices [0:group_k] -> kept fp16; non-salient columns -> GPTQ. o_proj
+     keeps its selected complete quant groups in fp16 and GPTQs the rest. Same group_size /
+     asym-sym as the config.
   5. Save the dense model + tokenizer + sqat_permute_meta.pt (boundary gathers) so the eval
      scripts auto-register the runtime residual reorder, exactly like a real permute export.
 
@@ -75,10 +76,10 @@ from src.qat_permute_sqat import (
     _build_segment_perm,
     _collect_second_moments,
     apply_block_internal_permutations_fp32,
-    apply_hadamard_rotation_fp32,
     apply_segment_permutation_fp32,
     gptq_quantize_model_sequential,
     select_internal_salient_channels,
+    select_o_proj_salient_groups,
     select_salient_channels,
 )
 
@@ -189,9 +190,6 @@ def main() -> None:
 
     d_model        = clean_base.config.hidden_size
     num_layers     = clean_base.config.num_hidden_layers
-    num_kv_heads   = clean_base.config.num_key_value_heads
-    num_attn_heads = clean_base.config.num_attention_heads
-    head_dim       = d_model // num_attn_heads
     assert sum(boundary_sizes) == num_layers, (
         f"sum(boundary_sizes)={sum(boundary_sizes)} != num_hidden_layers={num_layers}"
     )
@@ -209,6 +207,11 @@ def main() -> None:
         k: _build_segment_perm(residual_salient[k], d_model) for k in range(num_segments)
     }
     internal_salient = select_internal_salient_channels(second_moments, num_layers, group_k=group_k)
+    layer_group_ks = [int(group_k)] * num_layers
+    down_layer_group_ks = [int(group_k)] * num_layers
+    o_proj_salient_group_ids = select_o_proj_salient_groups(
+        second_moments, num_layers, group_size, layer_group_ks
+    )
 
     del clean_base, second_moments
     gc.collect()
@@ -248,15 +251,14 @@ def main() -> None:
         torch.cuda.empty_cache()
 
     # ---------------------------------------------------------------------------------
-    # 3) Apply the three equivalence transforms to the MERGED dense weights.
+    # 3) Apply the equivalence transforms to the MERGED dense weights.
     #    Pure equivalence transform on the merged weight => + boundary gathers it reproduces
-    #    the original merged model. (Hadamard skipped for GQA; Llama-2-7b is MHA so it runs.)
+    #    the original merged model.
     # ---------------------------------------------------------------------------------
-    print("\n[3/5] Applying P_k / P4 / Hadamard equivalence transforms to the merged weights ...")
+    print("\n[3/5] Applying P_k / P4 equivalence transforms to the merged weights ...")
     merged.to(device)
     boundary_perms = apply_segment_permutation_fp32(merged, segment_perms, boundary_sizes)
     block_internal = apply_block_internal_permutations_fp32(merged, internal_salient)
-    apply_hadamard_rotation_fp32(merged, num_layers, num_kv_heads, head_dim)
 
     bli = _boundary_layer_indices(boundary_sizes)
     perm_meta = {
@@ -265,6 +267,11 @@ def main() -> None:
         "segment_perms":          {k: list(v) for k, v in segment_perms.items()},
         "block_internal_perms":   {f"{k[0]}_{k[1]}": v for k, v in block_internal.items()},
         "group_k":                group_k,
+        "segment_group_ks":       [group_k] * len(boundary_sizes),
+        "layer_group_ks":         layer_group_ks,
+        "down_layer_group_ks":    down_layer_group_ks,
+        "o_layer_group_ks":       layer_group_ks,
+        "o_proj_salient_group_ids": [list(x) for x in o_proj_salient_group_ids],
         "group_size":             group_size,
         "boundary_sizes":         list(boundary_sizes),
         "d_model":                d_model,
@@ -277,8 +284,7 @@ def main() -> None:
     }
 
     # ---------------------------------------------------------------------------------
-    # 4) PTQ: salient slice [0:group_k] kept fp16; non-salient [group_k:] GPTQ'd.
-    #    o_proj has no salient slice (group_k=0 inside the sequential quantizer) -> fully GPTQ.
+    # 4) PTQ: protected columns kept fp16; all other columns GPTQ'd.
     #    Boundary gathers are registered inside the quantizer (perm_meta) so activations/Hessians
     #    are captured in the deployment basis.
     # ---------------------------------------------------------------------------------

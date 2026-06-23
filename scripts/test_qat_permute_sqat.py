@@ -30,6 +30,7 @@ from src.qat_permute_sqat import (
     groupwise_asymmetric_fakequant,
     fused_qat_residual_outputs,
     group_k_for_module_name,
+    salient_group_ids_for_module_name,
     auto_segment_with_fixed_group_k,
     select_salient_channels,
     compute_fakequant_param_stats,
@@ -379,6 +380,15 @@ def test_per_module_group_k_meta():
     assert group_k_for_module_name("model.layers.2.mlp.down_proj", meta) == 192
     assert group_k_for_module_name("model.layers.2.self_attn.o_proj", meta) == 0
 
+    meta_o = {
+        **meta,
+        "group_size": 64,
+        "o_layer_group_ks": [128, 64, 192, 64],
+        "o_proj_salient_group_ids": [[1, 3], [0], [2, 4, 5], [1]],
+    }
+    assert group_k_for_module_name("model.layers.2.self_attn.o_proj", meta_o) == 192
+    assert salient_group_ids_for_module_name("model.layers.2.self_attn.o_proj", meta_o) == [2, 4, 5]
+
     legacy = {"boundary_sizes": [2, 2], "segment_group_ks": [256, 64], "group_k": 256}
     assert group_k_for_module_name("model.layers.2.mlp.down_proj", legacy) == 64
     _ok("down_proj uses down_layer_group_ks; legacy meta still falls back to residual k")
@@ -446,10 +456,11 @@ def test_fakequant_param_stats():
         down_layer_group_ks=[6, 8],
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     )
-    assert stats["fakequant_params"] == 448
-    assert stats["qat_target_weight_params"] == 1152
+    assert stats["fakequant_params"] == 496
+    assert stats["qat_target_weight_params"] == 1280
     assert stats["lora_target_weight_params"] == 1280
-    assert abs(stats["ratio_of_qat_target_weights"] - 448 / 1152) < 1e-12
+    assert abs(stats["ratio_of_qat_target_weights"] - 496 / 1280) < 1e-12
+    assert stats["by_projection"]["o_proj"]["fakequant_params"] == 48
     assert stats["by_projection"]["down_proj"]["fakequant_params"] == 112
     _ok("fakequant parameter coverage counts salient columns only")
 

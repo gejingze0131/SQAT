@@ -1,6 +1,6 @@
 model:
   name: "meta-llama/Llama-2-7b-hf"
-  quant_bits: 2
+  quant_bits: 3
   double_quant: true
   quant_type: "nf4"
   dtype: "bfloat16"
@@ -15,8 +15,8 @@ lora:
   #   q/k/v/gate/up_proj : residual-stream P_k permute → QAT on salient cols [0:layer_group_k]
   #   down_proj          : block-internal P4_l permute (salient-first) → QAT on [0:layer_group_k]
   #                        (arbitrary intermediate-dim permutation, no multi-head constraint)
-  #   o_proj             : per-head Hadamard fold (H into v_proj + H^T into o_proj), NO QAT
-  #                        (within-head permutation can't produce contiguous salient slice)
+  #   o_proj             : no input permutation; select the most salient complete quant groups
+  #                        and QAT those groups by gathered group id.
   target_modules:
     - "q_proj"
     - "k_proj"
@@ -30,7 +30,7 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric affine (same as QA-LoRA convention)
-  group_size: 16          # every auto-selected group_k is max(1, ceil(outliers/group_size))*group_size,
+  group_size: 64          # every auto-selected group_k is max(1, ceil(outliers/group_size))*group_size,
                             # so salient cols occupy complete quantization groups at [0:group_k].
 
   # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
@@ -88,9 +88,10 @@ qat:
     # (training-consistent) grid; the non-salient block is GPTQ'd INDEPENDENTLY (no salient-error
     # leakage — the QAT/LoRA was trained to tolerate the salient quant error, so the non-salient
     # cols must approximate their fp16 weights, not compensate for the salient slice). Uses the
-    # SAME group_size and asym/sym as QAT. Dense (--export_dequant) only; o_proj has no salient
-    # slice → fully GPTQ. Composes with awq_scale. Calibrated on the training data in the permuted
-    # basis (boundary gathers active), sequential per decoder layer (memory-bounded).
+    # SAME group_size and asym/sym as QAT. Dense (--export_dequant) only; o_proj keeps its selected
+    # full quant groups on the canonical grid and GPTQs the rest. Composes with awq_scale.
+    # Calibrated on the training data in the permuted basis (boundary gathers active), sequential
+    # per decoder layer (memory-bounded).
     gptq:
       enabled: true
       nsamples: 128          # calibration sequences for the Hessian
@@ -104,11 +105,11 @@ qat:
 
     # awq_scale (Improvement 2): AWQ-style per-input-channel scaling of the per-layer salient slice
     # [0:layer_group_k]. Within each block, q/k/v share one scale S1 (they read the same input), gate/up
-    # share S2, down_proj uses its own S3 (on its P4 intermediate slice); o_proj is untouched (it
-    # keeps its per-head Hadamard, NO QAT). S_j = (E[x²]_j)^alpha normalized so min=1, clamped to
-    # [1, max]. Training fakequants in the amplified space W*S; export bakes 1/S into the dense
-    # weight (deployed = quant(W*S)/S), so it is purely a better quant grid — bit-identical output,
-    # no runtime scaling. Dense (--export_dequant) only; composes with gptq. false = original scheme.
+    # share S2, down_proj uses its own S3 (on its P4 intermediate slice), and o_proj uses S4 on its
+    # selected full quant groups. S_j = (E[x²]_j)^alpha normalized so min=1, clamped to [1, max].
+    # Training fakequants in the amplified space W*S; export bakes 1/S into the dense weight
+    # (deployed = quant(W*S)/S), so it is purely a better quant grid — bit-identical output, no
+    # runtime scaling. Dense (--export_dequant) only; composes with gptq. false = original scheme.
     awq_scale:
       enabled: true
       alpha: 0.5             # exponent on E[x²]; larger = stronger amplification of salient channels
@@ -140,7 +141,7 @@ training:
   # for the longest sequences. group_by_length keeps padding waste low.
   per_device_train_batch_size: 8
   per_device_eval_batch_size: 8
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 2
   group_by_length: true
   learning_rate: 2.0e-4
   weight_decay: 0.01

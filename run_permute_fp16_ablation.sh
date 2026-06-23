@@ -3,7 +3,7 @@
 # run_permute_fp16_ablation.sh — Permuted Selective-QAT UPPER-BOUND ablation
 #
 # Runs the IDENTICAL permute algorithm as run_permute_sqat.sh (same calibration
-# set, saliency selection, P_k / P4 / Hadamard transforms, boundary gathers), but
+# set, saliency selection, P_k / P4 transforms, boundary gathers), but
 # instead of QAT-protecting the salient slice it keeps that slice at FULL fp16.
 # The non-salient columns are still GPTQ'd. The ONLY difference vs. our method is:
 #   ours      : salient slice = low-bit QAT-protected weight

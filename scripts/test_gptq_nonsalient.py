@@ -10,7 +10,7 @@ Checks, on synthetic weights + calibration activations (CPU, no model needed):
   3. The OBS objective trace(ΔW H ΔWᵀ) (output error on the calibration set) is LOWER for GPTQ than
      for plain RTN — i.e. the non-salient columns are genuinely better, and they also absorb the
      salient slice's quant error.
-  4. o_proj case (group_k=0, fully GPTQ) — still beats RTN, no fixed slice.
+  4. Arbitrary complete salient group ids (o_proj path) stay fixed while the rest is GPTQ'd.
   5. Works for both asymmetric and symmetric grids and at INT3/INT4.
 
 Run:  python scripts/test_gptq_nonsalient.py
@@ -24,6 +24,7 @@ import torch
 
 from src.qat_permute_sqat import (
     gptq_quantize_layer,
+    expand_group_ids_to_indices,
     group_quantize,
     group_dequantize,
     group_fakequant,
@@ -37,6 +38,12 @@ def _obs_objective(W_deq, W, H, col0=0):
     block, not the whole weight."""
     dW = (W_deq[:, col0:] - W[:, col0:]).float()
     Hb = H[col0:, col0:]
+    return torch.einsum("oi,ij,oj->", dW, Hb, dW).item()
+
+
+def _obs_objective_cols(W_deq, W, H, cols):
+    dW = (W_deq[:, cols] - W[:, cols]).float()
+    Hb = H[cols][:, cols]
     return torch.einsum("oi,ij,oj->", dW, Hb, dW).item()
 
 
@@ -94,7 +101,7 @@ def _check_case(symmetric, q_bits, group_size, group_k, tag):
 
 def _check_awq_case(symmetric, q_bits, group_size, group_k, tag):
     """GPTQ + AWQ-scale: the salient slice (after /S bake-back) must equal the amplified canonical
-    training grid quant(W_S*S)/S; o_proj-style gk=0 has no slice."""
+    training grid quant(W_S*S)/S."""
     W, H, _ = _make_problem()
     out_f, in_f = W.shape
     s = (1.0 + torch.rand(group_k)).clamp(max=2.0)
@@ -110,12 +117,44 @@ def _check_awq_case(symmetric, q_bits, group_size, group_k, tag):
     print(f"[OK] {tag:42s} AWQ salient (post-/S) max|Δ|={sal_err:.1e}")
 
 
+def _check_arbitrary_group_case(symmetric, q_bits, group_size, group_ids, tag):
+    W, H, _ = _make_problem()
+    out_f, in_f = W.shape
+    group_k = len(group_ids) * group_size
+    idx = expand_group_ids_to_indices(group_ids, group_size)
+
+    wi_r, sc_r, zp_r = group_quantize(W, group_size, q_bits, symmetric)
+    W_rtn = group_dequantize(wi_r, sc_r, zp_r, group_size, in_f, symmetric)
+
+    wi_g, sc_g, zp_g = gptq_quantize_layer(
+        W, H, group_k, group_size, q_bits, symmetric,
+        salient_group_ids=group_ids,
+    )
+    W_gptq = group_dequantize(wi_g, sc_g, zp_g, group_size, in_f, symmetric)
+
+    canon = group_fakequant(W[:, idx].float(), group_size, q_bits, symmetric)
+    sal_err = (W_gptq[:, idx] - canon).abs().max().item()
+    assert sal_err < 1e-5, f"[{tag}] arbitrary salient groups disturbed: max|Δ|={sal_err:.2e}"
+
+    mask = torch.ones(in_f, dtype=torch.bool)
+    mask[idx] = False
+    cols = torch.where(mask)[0]
+    obj_rtn = _obs_objective_cols(W_rtn, W, H, cols)
+    obj_gptq = _obs_objective_cols(W_gptq, W, H, cols)
+    ratio = obj_gptq / max(obj_rtn, 1e-12)
+    assert obj_gptq < obj_rtn, (
+        f"[{tag}] GPTQ arbitrary-group non-salient obj {obj_gptq:.4e} not < RTN {obj_rtn:.4e}"
+    )
+    print(f"[OK] {tag:42s} arbitrary groups={group_ids} salient max|Δ|={sal_err:.1e}  "
+          f"non-sal OBS: RTN={obj_rtn:.3e} GPTQ={obj_gptq:.3e}  (GPTQ/RTN={ratio:.3f})")
+
+
 def main():
     torch.manual_seed(0)
     cases = [
         # (symmetric, q_bits, group_size, group_k, tag)
         (False, 4, 64, 128, "asym INT4 gs64 gk128 (q/k/v/gate/up/down)"),
-        (False, 4, 64, 0,   "asym INT4 gs64 gk0   (o_proj: fully GPTQ)"),
+        (False, 4, 64, 0,   "asym INT4 gs64 gk0   (GPTQ full-weight fallback)"),
         (True,  4, 64, 128, "sym  INT4 gs64 gk128"),
         (False, 3, 64, 128, "asym INT3 gs64 gk128"),
         (False, 4, 32, 128, "asym INT4 gs32 gk128"),
@@ -127,6 +166,8 @@ def main():
     for sym, qb, gs, gk, tag in cases:
         if gk > 0:
             _check_awq_case(sym, qb, gs, gk, tag)
+    _check_arbitrary_group_case(False, 4, 64, [1, 3], "asym INT4 gs64 arbitrary o_proj groups")
+    _check_arbitrary_group_case(True, 4, 64, [0, 2], "sym  INT4 gs64 arbitrary o_proj groups")
     print("\nAll GPTQ non-salient sanity tests passed.")
 
 
