@@ -30,7 +30,7 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric affine (same as QA-LoRA convention)
-  group_size: 16          # every auto-selected group_k is max(1, ceil(outliers/group_size))*group_size,
+  group_size: 32          # every auto-selected group_k is max(1, ceil(outliers/group_size))*group_size,
                             # so salient cols occupy complete quantization groups at [0:group_k].
 
   # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
@@ -140,7 +140,7 @@ training:
   # for the longest sequences. group_by_length keeps padding waste low.
   per_device_train_batch_size: 8
   per_device_eval_batch_size: 8
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 2
   group_by_length: true
   learning_rate: 2.0e-4
   weight_decay: 0.01

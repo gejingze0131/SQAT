@@ -131,6 +131,11 @@ def eval_benchmarks(
         batch_size=batch_size,
     )
 
+    # Under data-parallel eval (accelerate launch --num_processes N), simple_evaluate
+    # aggregates onto the main process and returns None on the others — nothing to save there.
+    if results is None:
+        return None
+
     # Build summary table
     summary = {}
     raw_results = results.get("results", {})

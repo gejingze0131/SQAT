@@ -41,7 +41,11 @@ BITS=3
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 VALIDATION_BOUNDARY_SIZES="2 30"  # optional legacy Stage-0 sanity check only
 VALIDATION_GROUP_K=128
-EVAL_GPU=0                # single GPU used for export + evaluation
+EVAL_GPU=0                # single GPU used for export
+EVAL_GPUS="0,1,2,3"       # GPUs used for evaluation; comma-separated. >1 id ⇒ data-parallel
+                          # eval via `accelerate launch` (each GPU holds a full model copy and
+                          # the eval set is sharded across them). Set to a single id (e.g. "0")
+                          # for legacy single-GPU eval.
 # Improvement 2: AWQ-style per-channel scaling of the salient slice; overrides the yaml.
 # true  → quantize the salient slice in the amplified space W*S (q/k/v share S1, gate/up S2,
 #         down S3), bake 1/S into the dense weight (better grid, no runtime cost)
@@ -78,6 +82,7 @@ while [[ $# -gt 0 ]]; do
         --config)         CONFIG="$2";        shift 2 ;;
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
+        --eval_gpus)      EVAL_GPUS="$2";     shift 2 ;;
         --awq_scale)              AWQ_SCALE="$2";            shift 2 ;;
         --gptq_nonsalient)        GPTQ_NONSALIENT="$2";      shift 2 ;;
         --enable_lsq)             ENABLE_LSQ="$2";           shift 2 ;;
@@ -106,6 +111,16 @@ else
     LSQ_FLAG="--no_enable_lsq"
 fi
 
+# Build the eval launch prefix. >1 GPU id ⇒ data-parallel eval via `accelerate launch`
+# (no DeepSpeed/FSDP for eval — plain DDP data sharding); a single id ⇒ one-GPU `python`.
+EVAL_NUM_GPUS=$(awk -F',' '{print NF}' <<< "$EVAL_GPUS")
+if [ "$EVAL_NUM_GPUS" -gt 1 ]; then
+    EVAL_LAUNCH="accelerate launch --num_processes $EVAL_NUM_GPUS --num_machines 1 \
+        --gpu_ids $EVAL_GPUS --mixed_precision no --main_process_port ${EVAL_PORT:-29600}"
+else
+    EVAL_LAUNCH="env CUDA_VISIBLE_DEVICES=$EVAL_GPUS python"
+fi
+
 # Resume: continue TRAINING from the checkpoint (reuses the permuted base; does NOT skip train).
 RESUME_FLAG=""
 if [ -n "$RESUME_FROM" ]; then
@@ -120,7 +135,7 @@ echo "============================================================"
 echo "  Permuted Selective-QAT Pipeline"
 echo "  Config:      $CONFIG"
 echo "  Model:       $MODEL_NAME"
-echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (eval)"
+echo "  GPUs:        $NUM_GPUS (train) / [$EVAL_GPUS] (eval, $EVAL_NUM_GPUS-way data-parallel)"
 echo "  Segments:    auto (<= config qat.sqat_permute.max_segments); bits=$BITS"
 echo "  AWQ-scale:     $AWQ_SCALE"
 echo "  GPTQ non-sal:  $GPTQ_NONSALIENT"
@@ -197,15 +212,15 @@ if [ "$SKIP_EVAL" = false ]; then
         echo "  Evaluating $eval_dir"
         if [ $DATASET_NAME = "commonsense" ]; then
             # For commonsense, we run both benchmarks to see if the permutation has any effect on one but not the other.
-             CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_benchmarks.py eval \
+            $EVAL_LAUNCH scripts/eval_benchmarks.py eval \
                 --model_path "$eval_dir" \
                 --output_dir results/benchmarks
-             CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_mmlu.py \
+            $EVAL_LAUNCH scripts/eval_mmlu.py \
                 --model_path  "$eval_dir" \
                 --num_fewshot 0 \
                 --output_dir  results/mmlu
         elif [ $DATASET_NAME = "math" ]; then
-            CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_math.py \
+            $EVAL_LAUNCH scripts/eval_math.py \
                 --model_path  "$eval_dir" \
                 --num_fewshot 5 \
                 --output_dir  results/math
