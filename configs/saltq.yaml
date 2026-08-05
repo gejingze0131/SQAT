@@ -1,5 +1,5 @@
 # =============================================================================
-# SALT-Q — Saliency-Allocated Low-bit Trainability   (MetaMathQA, Llama-2-7B, INT2)
+# SALT-Q — Saliency-Allocated Low-bit Trainability   (MetaMathQA, Llama-2-7B, INT3 g64)
 #
 # The method is defined by HOW TRAINABLE FREEDOM IS ALLOCATED across each weight matrix,
 # after the shared offline permutation has moved the salient input channels to the front:
@@ -17,7 +17,10 @@
 
 model:
   name: "meta-llama/Llama-2-7b-hf"
-  quant_bits: 2
+  # INT3 first: there is an existing Permuted-SQAT 3-bit MetaMath baseline to compare against,
+  # and a run that lands on a regime the old method already handles is the cleaner first signal
+  # that the machinery is sound. INT2 (where GPTQ-only non-salient collapses) comes after.
+  quant_bits: 3
   # double_quant / quant_type are NF4 knobs and are UNUSED by SALT-Q (there is no bitsandbytes in
   # this path at all — the base is real INT-b GPTQ codes, so there is no double quantization).
   double_quant: true
@@ -47,12 +50,14 @@ lora:
 
 qat:
   mode: "saltq"
-  # MUST be asymmetric. At 2 bit the symmetric grid has 3 usable levels {-1,0,1} while the affine
-  # grid has 4; and the affine (q - z) * s convention is exactly what GPTQ/AWQ checkpoints store,
-  # so the trained (s, z) drop into the existing metadata slots with no format change.
+  # MUST be asymmetric. The affine (q - z) * s convention is exactly what GPTQ/AWQ checkpoints
+  # store, so the trained (s, z) drop into the existing metadata slots with no format change.
+  # (At 2 bit it is doubly forced: the symmetric grid has 3 usable levels {-1,0,1} vs 4 affine.)
   symmetric: false
-  group_size: 32            # group_k is always a multiple of this, so the salient columns occupy
-                            # COMPLETE quantization groups starting at column 0.
+  # group_k is always a multiple of this, so the salient columns occupy COMPLETE quantization
+  # groups starting at column 0. group_size also sets the DENSITY of the non-salient segment's
+  # affine freedom: (s, z) count = 2 * weights / group_size, i.e. 202M at 64 vs 405M at 32.
+  group_size: 64
 
   # NOTE: qat.lsq is the *sqat_permute / full* switch. SALT-Q's salient segment is ALWAYS LSQ
   # (that is what makes its trained weights land on the grid), so this flag does not gate it.
@@ -103,7 +108,8 @@ qat:
     gptq:
       nsamples: 128          # calibration sequences for the Hessian
       percdamp: 0.01         # Hessian diagonal damping (fraction of mean diag)
-      blocksize: 64          # GPTQ lazy-batch compute block; must be a multiple of group_size
+      blocksize: 128         # GPTQ lazy-batch compute block (= 2 groups of 64). NOT the quant
+                             # group; only has to be a multiple of group_size (auto-aligned).
       batch_size: 2          # calibration micro-batch
 
     # --- offline stages (run automatically by scripts/train.py on rank 0) --------------------
@@ -122,16 +128,17 @@ data:
 training:
   output_dir: "outputs/saltq"
   num_epochs: 1
-  # 3 x RTX 6000 Ada (46 GB). At group_size=32 / group_k=128 on Llama-2-7B the resident cost per
+  # 3 x RTX 6000 Ada (46 GB). At group_size=64 / group_k=128 on Llama-2-7B the resident cost per
   # GPU is roughly:
   #   frozen int8 codes            6.3 GB   (buffers; DDP broadcast is disabled for them)
   #   157M salient weights
-  #   + 405M (s, z)  = 562M fp32   9.0 GB   (params + grads + AdamW moments)
+  #   + 202M (s, z)  = 360M fp32   5.8 GB   (params + grads + AdamW moments)
   #   fp16 embed/norm/head         0.5 GB
-  #   -> ~16 GB before activations.
+  #   -> ~12.6 GB before activations (group_size=32 would add ~3.2 GB).
   # Each forward also rebuilds one [out, in] fp32 weight per projection; gradient checkpointing
-  # bounds that to one decoder layer at a time. Peak observed headroom is comfortable at bs=4.
+  # bounds that to one decoder layer at a time.
   # 4 x 5 x 3 GPUs = effective batch 60 (the 4-GPU sqat_permute math baseline used 64).
+  # Keep this FIXED across the bit/group_size sweep so those comparisons stay single-variable.
   per_device_train_batch_size: 4
   per_device_eval_batch_size: 4
   gradient_accumulation_steps: 5

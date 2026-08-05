@@ -46,7 +46,8 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 CONFIG="configs/saltq.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=3                # 3 x RTX 6000 Ada (46 GB)
-BITS=2                    # SALT-Q's target regime: this is where GPTQ-only non-salient collapses
+BITS=3                    # first run: INT3 g64, where a Permuted-SQAT MetaMath baseline exists.
+                          # INT2 (where GPTQ-only non-salient collapses) is the target regime next.
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 OUTPUT_ROOT="outputs/saltq"     # must match training.output_dir in the yaml

@@ -29,6 +29,7 @@ import csv
 import glob
 import json
 import os
+import re
 import sys
 from typing import Dict, List, Optional
 
@@ -80,7 +81,11 @@ def _load_torch_meta(path: str) -> Optional[dict]:
 
 def _infer_method(model_dir: str) -> str:
     name = os.path.basename(model_dir.rstrip("/")).lower()
+    # Order matters: the ablation dirs also contain the parent method's name, and an ablation is
+    # not the method — mislabelling one as "Permuted-SQAT" would silently corrupt the comparison.
     for key, label in (
+        ("fp16salient-ablation", "PSQAT-abl fp16-salient(UB)"),
+        ("gptqfull-ablation", "PSQAT-abl GPTQ-full(LB)"),
         ("saltq", "SALT-Q"),
         ("sqat_permute", "Permuted-SQAT"),
         ("qalora", "QA-LoRA"),
@@ -119,6 +124,13 @@ def _run_context(model_dir: str, cfg: Optional[dict]) -> Dict[str, object]:
             ctx["trainable_qparams_M"] = round(pc.get("trainable_qparams", 0) / 1e6, 1)
             ctx["frozen_codes_M"] = round(pc.get("frozen_codes", 0) / 1e6, 1)
             break
+
+    # Last resort for bits: the export dir name encodes it ("...-3bit-..."). Matters for older
+    # baseline runs, whose artifacts predate saltq_meta.pt and which are ingested without a config.
+    if not ctx["bits"]:
+        m = re.search(r"(\d+)bit", os.path.basename(model_dir.rstrip("/")))
+        if m:
+            ctx["bits"] = int(m.group(1))
 
     if cfg:
         sq_cfg = (cfg.get("qat", {}) or {}).get("saltq", {}) or {}
