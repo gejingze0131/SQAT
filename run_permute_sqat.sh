@@ -32,17 +32,17 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-DATASET_NAME="math" # math or commonsense (must match the config yaml, which controls the boundary gather)
+DATASET_NAME="commonsense" # math or commonsense (must match the config yaml, which controls the boundary gather)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
-NUM_GPUS=4
+NUM_GPUS=3
 BITS=3
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 VALIDATION_BOUNDARY_SIZES="2 30"  # optional legacy Stage-0 sanity check only
 VALIDATION_GROUP_K=128
 EVAL_GPU=0                # single GPU used for export
-EVAL_GPUS="0,1,2,3"       # GPUs used for evaluation; comma-separated. >1 id ⇒ data-parallel
+EVAL_GPUS="0,1,2"       # GPUs used for evaluation; comma-separated. >1 id ⇒ data-parallel
                           # eval via `accelerate launch` (each GPU holds a full model copy and
                           # the eval set is sharded across them). Set to a single id (e.g. "0")
                           # for legacy single-GPU eval.
