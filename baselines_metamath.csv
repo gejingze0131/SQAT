@@ -1,0 +1,27 @@
+method,bits,group_size,task,metric,value_pct,num_fewshot,dataset,note
+# Authoritative MetaMath (395k) / Llama2-7B GSM8k baselines from the 6.12 experiment report.
+# These SUPERSEDE anything scraped out of results/math/*.json on this box - those JSONs are
+# intermediate artifacts from an earlier development round and must not be used as baselines.
+# value_pct is a percentage (as the report quotes it); the collector normalizes it to a fraction.
+# The report does not say whether its exact-match is lm-eval's strict-match or flexible-extract
+# filter, so these rows use the unqualified metric name rather than claiming one.
+QLoRA (mix) fp16,16,64,gsm8k,exact_match,45.2,5,metamath,report 6.12 - fp16 reference ceiling
+QLoRA (merged),4,64,gsm8k,exact_match,41.2,5,metamath,report 6.12
+Full STE-QAT (LR-QAT),4,64,gsm8k,exact_match,45.2,5,metamath,report 6.12
+QA-LoRA,4,64,gsm8k,exact_match,42.8,5,metamath,report 6.12
+SQAT (top-1%),4,64,gsm8k,exact_match,43.7,5,metamath,report 6.12
+SQAT (top-2%),4,64,gsm8k,exact_match,43.8,5,metamath,report 6.12
+PSQAT+RTN,4,64,gsm8k,exact_match,43.6,5,metamath,report 6.12
+PSQAT+GPTQ,4,64,gsm8k,exact_match,45.2,5,metamath,report 6.12 - fully recovers fp16
+QLoRA (merged w/RTN),3,64,gsm8k,exact_match,26.1,5,metamath,report 6.12
+QLoRA (merged w/GPTQ),3,64,gsm8k,exact_match,28.7,5,metamath,report 6.12
+QLoRA (merged w/RTN),3,32,gsm8k,exact_match,36.5,5,metamath,report 6.12
+QLoRA (merged w/GPTQ),3,32,gsm8k,exact_match,38.8,5,metamath,report 6.12
+Full STE-QAT (LR-QAT),3,64,gsm8k,exact_match,41.4,5,metamath,report 6.12 - initial loss 10.0, unstable
+QA-LoRA,3,64,gsm8k,exact_match,39.0,5,metamath,report 6.12 - GPTQ INT3 base, trains zero-point low-rank only
+SQAT (top-1%),3,64,gsm8k,exact_match,40.7,5,metamath,report 6.12
+PSQAT+RTN,3,64,gsm8k,exact_match,40.8,5,metamath,report 6.12
+PSQAT+GPTQ,3,64,gsm8k,exact_match,42.6,5,metamath,report 6.12 - SALT-Q INT3 g64 TARGET TO BEAT
+SalientFP16+GPTQ,3,64,gsm8k,exact_match,42.3,5,metamath,report 6.12 - salient kept fp16 (PSQAT beats it)
+PSQAT+GPTQ,3,32,gsm8k,exact_match,44.8,5,metamath,report 6.12
+SalientFP16+GPTQ,3,32,gsm8k,exact_match,44.8,5,metamath,report 6.12

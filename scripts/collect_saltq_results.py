@@ -36,6 +36,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 COLUMNS = [
+    "source",
     "timestamp",
     "method",
     "model_dir",
@@ -171,6 +172,7 @@ def _rows_from_json(path: str, cfg: Optional[dict], note: str) -> List[Dict[str,
     model_dir = conf.get("model_path", "")
     ctx = _run_context(model_dir, cfg)
     ctx.update(
+        source="lm-eval",
         timestamp=payload.get("timestamp", ""),
         method=_infer_method(model_dir),
         model_dir=model_dir,
@@ -201,6 +203,43 @@ def _rows_from_json(path: str, cfg: Optional[dict], note: str) -> List[Dict[str,
     return rows
 
 
+def _rows_from_seed(path: str) -> List[Dict[str, object]]:
+    """
+    Ingest hand-entered reference numbers (published/reported baselines) from a small CSV.
+
+    These do not come from a JSON this repo produced, so they are marked source="report" and
+    carry no result_json. Keeping them in the SAME table as the lm-eval rows is the point — a
+    comparison split across a PDF and a CSV is a comparison nobody actually makes — but the
+    source column must stay honest about which rows this machine measured.
+
+    Seed columns: method,bits,group_size,task,metric,value_pct,num_fewshot,dataset,note
+    value_pct is a PERCENTAGE (as reports quote it) and is normalized to a fraction here so it
+    lines up with lm-eval's scale.
+    """
+    rows: List[Dict[str, object]] = []
+    with open(path, newline="", encoding="utf-8") as f:
+        for rec in csv.DictReader(f):
+            if not rec.get("method") or rec.get("method", "").startswith("#"):
+                continue
+            row = {c: "" for c in COLUMNS}
+            row.update(
+                source="report",
+                timestamp=rec.get("timestamp", "") or "reported",
+                method=rec["method"].strip(),
+                model_dir="",
+                dataset=rec.get("dataset", "metamath"),
+                task=rec.get("task", "gsm8k"),
+                metric=rec.get("metric", "exact_match"),
+                value=float(rec["value_pct"]) / 100.0,
+                num_fewshot=rec.get("num_fewshot", 5),
+                bits=rec.get("bits", ""),
+                group_size=rec.get("group_size", ""),
+                note=rec.get("note", ""),
+            )
+            rows.append(row)
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(description="Fold lm-eval JSON results into one CSV")
     ap.add_argument("--results_dir", default="results",
@@ -212,6 +251,9 @@ def main():
                     help="Only ingest results whose model_dir contains this substring "
                          "(e.g. 'saltq'). Empty = everything.")
     ap.add_argument("--note", default="", help="Free-text note stamped on the new rows")
+    ap.add_argument("--seed", default="",
+                    help="Also ingest reported reference numbers from this CSV "
+                         "(method,bits,group_size,task,metric,value_pct,...). Marked source=report.")
     args = ap.parse_args()
 
     cfg = None
@@ -228,6 +270,17 @@ def main():
                               row.get("task"), row.get("metric")))
 
     new_rows: List[Dict[str, object]] = []
+    if args.seed:
+        for row in _rows_from_seed(args.seed):
+            # reported rows have no model_dir, so key on the method instead
+            key = (row["timestamp"], f"{row['method']}|{row['bits']}|{row['group_size']}",
+                   row["task"], row["metric"])
+            if key in existing:
+                continue
+            existing.add(key)
+            row["model_dir"] = f"{row['method']}|{row['bits']}|{row['group_size']}"
+            new_rows.append(row)
+
     for path in sorted(glob.glob(os.path.join(args.results_dir, "**", "*.json"), recursive=True)):
         try:
             rows = _rows_from_json(path, cfg, args.note)

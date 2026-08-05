@@ -79,9 +79,38 @@ Eval  lm_eval_model_kwargs() 自动构建带 boundary gather 的 HFLM
 
 ## 4. 效果与失效点
 
-3/4 bit：优于 QA-LoRA，略逊于 LR-QAT，但**效率远高于 LR-QAT**（只 fakequant 1–2% 的列）。
+真实结果来自 6.12 实验报告（Llama2-7B，MetaMath 395k 全量微调，GSM8k 5-shot exact-match，asym）。
+**注意：`results/math/*.json` 里那批是上一轮开发的中间产物，不是 baseline，不要拿来对照。**
+权威数字已落在 `baselines_metamath.csv`，由 `collect_saltq_results.py --seed` 并入结果表。
 
-**≤2 bit 崩溃**。原因很清楚：98–99% 的非 salient 部分只有 GPTQ 这一手 PTQ，2bit 下 GPTQ 的误差已经压不住；而这部分在训练中**完全没有任何自由度**（LoRA 在这些列上的 delta，导出时会被重量化抹掉——正是最开头那个 merge 矛盾）。
+| Method | INT4 g64 | INT3 g64 | INT3 g32 |
+|---|---|---|---|
+| QLoRA (mix) fp16 参考 | **45.2** | 45.2 | 45.2 |
+| QLoRA (merged, RTN / GPTQ) | 41.2 | 26.1 / 28.7 | 36.5 / 38.8 |
+| Full STE-QAT (LR-QAT) | 45.2 | 41.4 | — |
+| QA-LoRA | 42.8 | 39.0 | — |
+| SQAT (top-1% / top-2%) | 43.7 / 43.8 | 40.7 | — |
+| PSQAT+RTN | 43.6 | 40.8 | — |
+| **PSQAT+GPTQ** | **45.2** | **42.6** | **44.8** |
+| SalientFP16+GPTQ（salient 存 fp16） | — | 42.3 | 44.8 |
+
+三个必须记住的事实（都与"直觉版叙事"不同）：
+
+1. **PSQAT 不逊于 LR-QAT，反而更好**。INT4 g64 两者都完全恢复 fp16（45.2）；INT3 g64
+   PSQAT+GPTQ 42.6 **高于** LR-QAT 41.4。LR-QAT 在 3bit 下初始 loss 高达 10.0（因为一上来就
+   "感知"全权重的 3bit 量化）导致训练不稳定，而 PSQAT 初始 loss 只有 1.8（QLoRA 是 1.0）。
+   **LR-QAT 不是本方法的上界。**
+2. **低比特 salient QAT 打得过把 salient 留在 fp16**：INT3 g64 下 PSQAT+GPTQ 42.6 > SalientFP16+GPTQ
+   42.3。也就是说不必保留高精度通道。
+3. **效率**（W3g64，bs=8×ga=2×4卡）：QLoRA 6.76h / 23.2 GB，PSQAT 7.35h（**+8.7%**）/ 24.2 GB，
+   SQAT 7.95h（+17.6%）/ 26.3 GB，QA-LoRA 6.43h（−4.8%），LR-QAT 18.9h（**+175%**）/ 26.8 GB。
+
+正确的叙事（报告结论 3，已取代旧版）：**对所有权重都做 QAT 是计算与内存的浪费；只需对 salient
+channel 聚集的那一段做 QAT，剩下的 non-salient 段没有 outlier，用轻量的 GPTQ 就能恢复性能。**
+
+**失效点：≤2 bit。** 到 2bit，non-salient 段仅靠 GPTQ 已经压不住误差，而它在训练中
+**完全没有任何自由度**（LoRA 在这些列上的 delta 导出时会被重量化抹掉——正是 §1 那个 merge 矛盾）。
+这正是 SALT-Q 存在的理由。
 
 ## 5. 代码地图（`src/`）
 
@@ -161,7 +190,8 @@ codes 零自由度。permutation 只是让这个分配能落在连续的量化�
   zero-point——即它训练的是 `z` 的一个 rank-r 受限参数化。SALT-Q 直接训每 (行, 组) 的 `z`（无 rank 约束），
   并且同时训 `s`。
 - **LR-QAT** 全权重每步 fakequant 且仍需 BF16 低秩项；SALT-Q 只 fakequant 1–2%，非显著段完全不需要
-  fakequant（前向只是一次 `(q−z)·s` 的 elementwise 重建）。
+  fakequant（前向只是一次 `(q−z)·s` 的 elementwise 重建）。注意 LR-QAT **不是上界**（见 §4）：它在
+  3bit 下初始 loss 10.0、训练不稳定，PSQAT 已经超过它。
 - **不再经过 NF4**：当前 2/3bit 走的是"NF4 基座 + 在 fakequant/导出里做真实位宽取整"
   （`model_loader._get_bnb_config` 的 WARN）。SALT-Q 的基座就是 INT-b codes，训练看到的就是部署的网格。
 - **o_proj 首次可训**：它 `group_k=0`，在 SALT-Q 里就是"全列冻结 codes + 可训 `(s,z)`"。
@@ -252,3 +282,18 @@ bash run_saltq.sh --resume_from outputs/saltq-2bit-saltq/checkpoint-500
 
 两个离线基座（`outputs/saltq/permuted_fp16_base` ~13 GB、`outputs/saltq/saltq_base` ~7 GB）在 resume 和
 export 时**必须复用**，不要手工删除。
+
+结果表：`results_saltq.csv`（长表）。reported baseline 来自 `baselines_metamath.csv`（`source=report`），
+本机跑出来的走 lm-eval（`source=lm-eval`）——**这一列必须保持诚实**，不要把没测过的数字标成 lm-eval。
+
+### 首个 run 的预期与诊断
+
+第一个 run 是 **INT3 g64**，对标 §4 的 **PSQAT+GPTQ 42.6**。这是"打平/别退步"的 sanity 检查，不是
+SALT-Q 应该发光的地方——3bit g64 下 PSQAT 已经工作得很好（距 fp16 只差 2.6%）。SALT-Q 的价值命题在 2bit。
+
+**step-0 的 loss 是最有价值的早期诊断。** SALT-Q 第 0 步的模型就是 GPTQ INT3 模型本身（M2 门保证的
+逐位等价），而 QLoRA merged w/GPTQ 3bit g64 = 28.7 GSM8k 是个能工作的模型，所以初始 loss 应该是
+**中等偏高但远不到 LR-QAT 的 10.0**（参考：QLoRA 1.0、PSQAT 1.8、LR-QAT 10.0）。
+
+- 初始 loss ≈ 10 → 大概率是 codes / scale 对不上，或 boundary gather 没注册，**立刻停**；
+- 初始 loss ≈ 1.0 → 反而可疑：说明量化没真正生效（比如在跑 fp16 权重）。

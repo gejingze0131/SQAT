@@ -216,10 +216,15 @@ if [ "$SKIP_EVAL" = false ]; then
     # the pipeline never duplicates rows. Run-level context (bits / group_size / group_k / lrs /
     # the freedom split) is recovered from the artifacts next to the evaluated model.
     echo -e "\n>>> Collecting results into $RESULTS_CSV"
+    # --seed merges the reported MetaMath baselines (source=report) so the new SALT-Q row lands
+    # next to what it has to beat. --filter saltq keeps the lm-eval side to SALT-Q only: the older
+    # JSONs under results/ are intermediate artifacts from a previous development round and are
+    # NOT valid baselines.
     python scripts/collect_saltq_results.py \
         --results_dir results \
         --csv         "$RESULTS_CSV" \
         --config      "$CONFIG" \
+        --seed        baselines_metamath.csv \
         --filter      saltq \
         --note        "${RESULTS_NOTE}"
 fi
