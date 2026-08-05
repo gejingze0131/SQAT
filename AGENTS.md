@@ -215,19 +215,37 @@ codes 零自由度。permutation 只是让这个分配能落在连续的量化�
 是满秩的，并且原生可部署。这个对照建议直接写进论文。`(s, z)` 看似额外，但**它们不是额外的部署开销**——GPTQ
 checkpoint 本来就要存这些 metadata。
 
-## 10. 前向 / 反向
+## 10. 成本账本（决定了默认配置）
 
-```
-W_S_eff = LSQ_fakequant(W_S ; s_S, z_S)          # W_S / s_S / z_S 可训，STE
-W_N_eff = (q_N − round_ste(z_N)) · s_N           # q_N 冻结 int8，s_N / z_N 可训
-y = x @ cat([W_S_eff, W_N_eff], dim=1)ᵀ
-```
+设 `G_W = ∂L/∂W = gy^T x`，`N` = 目标线性层权重总数，`k` = salient 占比，`g` = group_size。
+三组可训参数的代价差了两个数量级：
 
-关于"不 materialize"的准确表述：对 `(s, z)` 的梯度确实可以闭式约简
-（`∂L/∂s[o,g] = Σ_j G_W·(q−z)`、`∂L/∂z[o,g] = −s·Σ_j G_W`），但 **`∂L/∂x = gy @ W_eff` 绕不开
-`[out, in]` 规模的重建**。当前实现（P1）用普通 autograd 每次 forward 重建 `W_eff`，开销 profile 与既有
-`FullQATLoRAInjector` 一致，梯度检查点把它限制在一层之内。P2（自定义 `autograd.Function`，forward 不保存
-`W_eff`）见 §13。
+| 梯度 | 形式 | 代价 | 为什么 |
+|---|---|---|---|
+| `∂L/∂W_S` | `gy^T x_S` | **2N·k**（≈2%） | 只涉及 salient 那几列，一条窄条 GEMM |
+| `∂L/∂z[o,g]` | `−s·Σ_t gy[t,o]·(Σ_{j∈g} x[t,j])` | **2N/g**（g=64 时 ≈1.5%） | 组内是**均匀求和**，可以先塌进 `x` 变成 pooled 输入，把 GEMM 的 K 维缩小 g 倍 |
+| `∂L/∂s[o,g]` | `Σ_{j∈g}(q−z)[o,j]·G_W[o,j]` | **2N，不可约** | 逐元素因子 `(q−z)[o,j]` 同时依赖 `o` 和 `j`，塌不进 `x`（缺 o）也塌不进 `gy`（缺 j）。这是真正的三元缩并 `Σ_{t,j} gy[t,o]·x[t,j]·(q−z)[o,j]`，**无论怎么结合都要 T×out×in 次乘加，且与 s 的参数个数无关** |
+
+所以总账是 `6N + 2N·k + 2N/g + 2N·[train_scale]`。**唯一昂贵的是 s。**
+
+### 由此得到的默认配置：z-only
+
+`train_scale: false` 是默认，不是妥协：
+
+- 训练代价回到 `≈6N`，**与 PSQAT / QLoRA 同级**；
+- 适配容量**严格大于** PSQAT 与 QA-LoRA 的并集——QA-LoRA 的 group-pooled adapter 恰好就是这个
+  `Δz` 的 rank-r 受限参数化，这里是满秩的；
+- **前向也一并变便宜**：s 冻结 ⇒ `q·s` 是常数，预计算一次存成 `wq`，于是
+  ```
+  y_N = x @ (q·s)ᵀ  −  pool_g(x) @ (z·s)ᵀ
+  ```
+  一个冻结 GEMM + 一个 `[T, in/g] × [in/g, out]` 的修正。**前向反向都不再出现 [out,in] 的重建张量**，
+  普通 autograd 在这个写法上自动给出上表的廉价梯度，不需要自定义 `autograd.Function`。
+
+> 早先版本这里写过"fp32 重建 + 独立 GEMM 是固有代价"——**那是错的**。可训练性不改变前向的形态，
+> 额外代价全在反向；而反向的昂贵部分只来自 s。
+
+`train_scale: true` 保留为消融，走 reconstruct-then-GEMM 的慢路径，明码标价 +2N。
 
 ## 11. 实现现状（已完成）
 
@@ -255,7 +273,10 @@ y = x @ cat([W_S_eff, W_N_eff], dim=1)ᵀ
 
 ## 12. 消融清单
 
-1. **段拆分消融**：full SALT-Q / 只训 salient / 只训 `(s,z)` / 旧 Permuted SQAT。支撑"两半各自承接
+0. **【第一优先】`z-only` vs `s+z`**（`train_scale`）。若 z-only 够用，§10 那 +2N 从根上消失，
+   SALT-Q 与 PSQAT 同成本。先验预期 z 吃掉大部分收益：组内加性平移直接对抗量化的 clipping/偏置
+   误差，而 QA-LoRA 仅靠它的**低秩**版本就能 work，本身就是证据。
+1. **段拆分消融**：full SALT-Q / 只训 salient / 只训 z / 旧 Permuted SQAT。支撑"两半各自承接
    `BA` 的哪部分"的叙事。
 2. `group_k` 扫描（1 / 2 / 4 组）与 `group_size` 扫描（32 / 64，直接改变 `(s,z)` 的自由度密度）。
 3. `s` / `z` 分别冻结——验证 QA-LoRA "只训 z 且受 rank 限制"的退化关系。
@@ -267,7 +288,8 @@ y = x @ cat([W_S_eff, W_N_eff], dim=1)ᵀ
 
 ## 13. 后续（未做）
 
-- **P2 自定义 `autograd.Function`**：forward 不保存 `W_eff`，backward 重建并用约简式求 `∂L/∂s, ∂L/∂z`。
+- ~~P2 自定义 `autograd.Function`~~：**z-only 下已不需要**——pooled-GEMM 写法让普通 autograd
+  直接给出廉价梯度，且全程不物化 `W_eff`。只有 `train_scale=true` 的消融路径还会重建权重。
 - **codes 位打包**：当前 int8 6.3 GB/rank。46 GB 卡够用；换 24 GB 卡或更大模型时必须打包
   （2bit→1.6 GB、3bit→2.4 GB），`SALTQLinear.codes` 是唯一需要改的接口。
 - **真 packed GPTQ checkpoint 导出**：现有 `export.pack_int4` 是 4bit + AWQ 列序 + `AWQ_ZERO_POINT=8`

@@ -60,14 +60,25 @@ WAITED=0
 while true; do
     BUSY="$(gpu_busy_pids)"
     if [ -z "$BUSY" ]; then
-        log "GPUs look free ($(gpu_mem_summary)) — confirming in ${CONFIRM_GAP}s ..."
+        log "GPUs look free ($(gpu_mem_summary)) — confirming over ${CONFIRM_GAP}s ..."
         status "waiting: confirming GPUs are free"
-        sleep "$CONFIRM_GAP"
-        if [ -z "$(gpu_busy_pids)" ]; then
-            log "Confirmed free. Starting the SALT-Q pipeline."
+        # Poll ACROSS the window rather than one long sleep: a single `sleep` can return early
+        # when a signal is delivered (observed once), which would silently shorten the guard.
+        # This also catches a job that starts and finishes inside the window.
+        CONFIRM_END=$(( $(date +%s) + CONFIRM_GAP ))
+        STILL_FREE=true
+        while [ "$(date +%s)" -lt "$CONFIRM_END" ]; do
+            sleep 15
+            if [ -n "$(gpu_busy_pids)" ]; then
+                STILL_FREE=false
+                break
+            fi
+        done
+        if [ "$STILL_FREE" = true ]; then
+            log "Confirmed free for ${CONFIRM_GAP}s. Starting the SALT-Q pipeline."
             break
         fi
-        log "A process reappeared during the confirmation window — keep waiting."
+        log "A process appeared during the confirmation window — keep waiting."
     fi
 
     if [ "$(date +%s)" -ge "$DEADLINE" ]; then

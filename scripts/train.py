@@ -559,6 +559,7 @@ def main():
             param_dtype=torch.float32,
             gradient_checkpointing=True,
             train_layernorms=bool(cfg["qat"]["saltq"].get("train_layernorms", False)),
+            train_scale=bool(cfg["qat"]["saltq"].get("train_scale", False)),
         )
         base_model_ref = model
     else:

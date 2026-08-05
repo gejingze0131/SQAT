@@ -46,7 +46,7 @@ def check(cond, msg):
         print(f"  [FAIL] {msg}")
 
 
-def build_layer(out_f, in_f, gk, gs, bits, symmetric, seed=0, hess=None):
+def build_layer(out_f, in_f, gk, gs, bits, symmetric, seed=0, hess=None, train_scale=False):
     """Build a SALTQLinear the way build_saltq_base does: GPTQ codes + fp32 salient init."""
     torch.manual_seed(seed)
     W = torch.randn(out_f, in_f) * 0.02
@@ -67,6 +67,7 @@ def build_layer(out_f, in_f, gk, gs, bits, symmetric, seed=0, hess=None):
         q_bits=bits, symmetric=symmetric,
         codes=W_int[:, gk:], s_n=scale[:, n_sal_g:], z_n=zp[:, n_sal_g:],
         w_s=w_s, s_s=s_s, z_s=z_s,
+        train_scale=train_scale, wq_dtype=torch.float32,
     )
     return layer, W, (W_int, scale, zp)
 
@@ -130,7 +131,7 @@ def test_freedom_allocation():
     print("\ntest_freedom_allocation  (who gets gradients)")
     for out_f, in_f, gk, gs, bits, sym, label in CASES:
         layer, _, _ = build_layer(out_f, in_f, gk, gs, bits, sym, seed=3)
-        codes_before = layer.codes.clone()
+        codes_before = layer._codes_cpu.clone()
         x = torch.randn(8, in_f)
         layer(x).square().mean().backward()
 
@@ -140,38 +141,89 @@ def test_freedom_allocation():
             ok &= layer.lsq_w_scale.grad is not None and layer.lsq_w_scale.grad.abs().sum() > 0
             if not sym:
                 ok &= layer.lsq_w_zp.grad is not None and layer.lsq_w_zp.grad.abs().sum() > 0
-        ok &= layer.saltq_s.grad is not None and layer.saltq_s.grad.abs().sum() > 0
         if not sym:
             ok &= layer.saltq_z.grad is not None and layer.saltq_z.grad.abs().sum() > 0
-        check(bool(ok), f"{label:34s} salient weights + (s, z) all receive gradients")
+        check(bool(ok), f"{label:34s} salient weights + z receive gradients")
 
         opt = torch.optim.SGD([p for p in layer.parameters() if p.requires_grad], lr=1e-3)
         opt.step()
-        check(torch.equal(layer.codes, codes_before),
+        check(torch.equal(layer._codes_cpu, codes_before),
               f"{label:34s} frozen codes unchanged after an optimizer step")
-        check(not layer.codes.requires_grad and not layer.codes.is_floating_point(),
-              f"{label:34s} codes are a non-grad int buffer")
+        check(not layer._codes_cpu.requires_grad and not layer._codes_cpu.is_floating_point(),
+              f"{label:34s} codes are a non-grad int tensor")
 
 
 def test_codes_not_in_state_dict():
     print("\ntest_codes_not_in_state_dict  (checkpoints must not carry the frozen codes)")
     layer, _, _ = build_layer(64, 256, 64, 32, 2, False, seed=4)
     keys = set(layer.state_dict().keys())
-    check("codes" not in keys, f"codes excluded from state_dict (keys={sorted(keys)})")
+    check("codes" not in keys and "wq" not in keys,
+          f"codes and the precomputed q*s stay out of state_dict (keys={sorted(keys)})")
     trainable = {n for n, p in layer.named_parameters() if p.requires_grad}
-    check(trainable == {"saltq_s", "saltq_z", "weight_salient", "lsq_w_scale", "lsq_w_zp"},
+    check(trainable == {"saltq_z", "weight_salient", "lsq_w_scale", "lsq_w_zp"},
           f"trainable set == {sorted(trainable)}")
 
 
 def test_forward_matches_linear():
-    print("\ntest_forward_matches_linear")
-    for out_f, in_f, gk, gs, bits, sym, label in CASES[:3]:
+    """
+    The z-only forward never builds W_eff: it is x @ (q*s)^T - pool_g(x) @ (z*s)^T. That is an
+    algebraic rearrangement of x @ W_eff^T, so it must agree with the reference to fp round-off.
+    This is the test that would catch a wrong sign, a mis-sliced pooled input, or a group
+    misalignment between the pooled x and the zero-point rows.
+    """
+    print("\ntest_forward_matches_linear  (fast path == x @ W_eff^T)")
+    for out_f, in_f, gk, gs, bits, sym, label in CASES:
         layer, _, _ = build_layer(out_f, in_f, gk, gs, bits, sym, seed=5)
+        with torch.no_grad():   # move z off its init so the correction term is non-trivial
+            if not sym:
+                layer.saltq_z.add_(torch.randn_like(layer.saltq_z) * 0.5)
         x = torch.randn(4, 7, in_f)
         y = layer(x)
         y_ref = x @ layer.effective_weight().t()
+        scale = y_ref.abs().max().item()
         err = (y - y_ref).abs().max().item()
-        check(err < 1e-5, f"{label:34s} forward == x @ W_eff^T, max|Δ|={err:.3e}")
+        check(err / max(scale, 1e-9) < 1e-5,
+              f"{label:34s} rel err {err / max(scale, 1e-9):.2e}")
+
+
+def test_z_only_freedom():
+    """
+    Default (train_scale=False): z trains, s does not. This is the whole cost argument — dL/ds
+    would force a full [out, in] weight-gradient GEMM (2N) while dL/dz collapses into a pooled
+    input (2N/g), so s silently becoming trainable would quietly cost ~33% more FLOPs per step.
+    """
+    print("\ntest_z_only_freedom  (s must be frozen by default)")
+    for out_f, in_f, gk, gs, bits, sym, label in CASES:
+        if sym:
+            continue
+        layer, _, _ = build_layer(out_f, in_f, gk, gs, bits, sym, seed=7)
+        names = {n for n, _ in layer.named_parameters()}
+        check("saltq_z" in names and "saltq_s" not in names,
+              f"{label:34s} trainable: z yes, s no ({sorted(names)})")
+        check(hasattr(layer, "wq") and not layer.wq.requires_grad,
+              f"{label:34s} q*s precomputed as a frozen buffer")
+        check(layer._codes_cpu.device.type == "cpu",
+              f"{label:34s} codes kept on the host")
+
+        x = torch.randn(8, in_f)
+        layer(x).square().mean().backward()
+        check(layer.saltq_z.grad is not None and layer.saltq_z.grad.abs().sum() > 0,
+              f"{label:34s} z receives a gradient")
+
+
+def test_train_scale_ablation():
+    """train_scale=True must restore a trainable s and still satisfy the deploy-equality gate."""
+    print("\ntest_train_scale_ablation")
+    for out_f, in_f, gk, gs, bits, sym, label in CASES[:3]:
+        layer, _, _ = build_layer(out_f, in_f, gk, gs, bits, sym, seed=8, train_scale=True)
+        names = {n for n, _ in layer.named_parameters()}
+        check("saltq_s" in names, f"{label:34s} s is trainable in the ablation path")
+        x = torch.randn(8, in_f)
+        layer(x).square().mean().backward()
+        check(layer.saltq_s.grad is not None and layer.saltq_s.grad.abs().sum() > 0,
+              f"{label:34s} s receives a gradient")
+        err = (layer.deployed_weight() - layer.effective_weight()).abs().max().item()
+        check(err == 0.0, f"{label:34s} deployed == effective still exact, max|Δ|={err:.3e}")
 
 
 def main():
@@ -184,6 +236,8 @@ def main():
     test_freedom_allocation()
     test_codes_not_in_state_dict()
     test_forward_matches_linear()
+    test_z_only_freedom()
+    test_train_scale_ablation()
     print("\n" + "=" * 68)
     print(f"  SALT-Q: {PASSED} passed, {FAILED} failed")
     print("=" * 68)

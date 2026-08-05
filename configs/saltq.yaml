@@ -73,11 +73,24 @@ qat:
     calibration_seq_len: 2048
 
   saltq:
-    # ---- learning rates for the three tiers of freedom ------------------------------------
+    # ---- what the non-salient segment is allowed to train -----------------------------------
+    # false (default) = z-only. This is the configuration that makes SALT-Q cost the same as
+    #   PSQAT/QLoRA. dL/dz is a UNIFORM sum over each quant group, so it collapses into a pooled
+    #   input and costs 2N/g (~1.5% at g=64); and with s frozen, q*s is constant, so it is
+    #   precomputed once and the forward is a frozen GEMM plus a pooled correction — no [out, in]
+    #   weight is ever reconstructed in either direction.
+    # true = also train s. dL/ds carries a per-element (q-z) factor that folds into neither
+    #   operand, forcing the full [out, in] weight-gradient GEMM: +2N FLOPs, irreducible, and
+    #   independent of how few scale parameters there are. It also forces the slow
+    #   reconstruct-then-GEMM forward. Run this ONLY as the "is s worth it" ablation.
+    train_scale: false
+
+    # ---- learning rates for the tiers of freedom --------------------------------------------
     # salient_lr trains REAL WEIGHTS, not an adapter. A LoRA lr (2e-4) will destroy them.
     # This is the single most important new hyper-parameter; sweep it first.
     salient_lr: 2.0e-5
-    # (s, z) of BOTH segments. The non-salient segment's entire task adaptation lives here.
+    # The quantization params: the non-salient z (and s when train_scale=true), plus the salient
+    # slice's own LSQ grid. The non-salient segment's entire task adaptation lives in z.
     scales_lr: 1.0e-5
     # RMSNorm weights stay fp16 at deploy, so training them is free extra freedom. Off = the
     # clean "only the two segments are trained" ablation.

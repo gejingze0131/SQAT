@@ -13,11 +13,19 @@ split into two segments that are trained in COMPLETELY DIFFERENT ways:
 
     columns [group_k : in)  ~98-99%  AFFINE-ONLY freedom
         The integer codes q are FROZEN (GPTQ-initialized). Only the per-(output row, quant group)
-        scale s and zero-point z are trained. The deployed weight is (q - z) * s, and s/z are
-        written straight into the metadata slots a normal GPTQ checkpoint already has.
-        This segment carries the intra-group shift/scale part of the task adaptation.
+        zero-point z is trained by default; the scale s stays frozen (train_scale=True restores it
+        as an ablation). The deployed weight is (q - z) * s, and s/z are written straight into the
+        metadata slots a normal GPTQ checkpoint already has.
+        This segment carries the intra-group shift part of the task adaptation.
 
     the codes themselves                ZERO freedom.
+
+Training z rather than (s, z) is not a shortcut, it is what makes the method cheap. dL/dz is a
+UNIFORM sum over each group, so it collapses into a pooled input and costs 2N/g; dL/ds carries a
+per-element (q-z) factor that folds into neither operand and forces the full [out, in] weight-
+gradient GEMM at 2N no matter how few scale parameters exist. With s frozen, q*s is also constant,
+so the forward is a frozen GEMM plus a pooled correction and no weight is ever reconstructed. See
+the SALTQLinear docstring for the full ledger.
 
 Consequences — this is the whole point:
 
@@ -36,10 +44,11 @@ Positioning:
   * QA-LoRA is a DEGENERATE SPECIAL CASE of the non-salient segment. Its group-pooled adapter
     produces a delta that is constant within each input group, which folds exactly into the affine
     zero-point — i.e. it trains a rank-r constrained parameterization of z alone. SALT-Q trains z
-    directly per (row, group) with no rank constraint, and trains s as well.
+    directly per (row, group), full rank. The resemblance is not superficial: the z-only forward
+    here IS a pooled-input GEMM, the same structure QA-LoRA's adapter has, minus the rank bottleneck.
   * LR-QAT fake-quantizes every weight each step and still needs a BF16 low-rank term. SALT-Q
-    fake-quantizes only the 1-2% salient slice; the non-salient segment needs no fakequant at all
-    (its forward is one elementwise (q - z)*s reconstruction).
+    fake-quantizes only the 1-2% salient slice, and the non-salient segment needs no fakequant and
+    no reconstruction at all.
 
 Pipeline (driven by scripts/train.py):
 
@@ -284,12 +293,56 @@ class SALTQLinear(nn.Module):
     A linear layer whose input columns are split by saliency into two differently-trained segments.
 
         y = x @ [ LSQ_fakequant(W_S ; s_S, z_S) | (q_N - round(z_N)) * s_N ]^T   (+ bias)
-              \\__________ trainable weights ___/   \\__ frozen codes, trainable (s,z) __/
+              \\__________ trainable weights ___/   \\__ frozen codes, trainable (s, z) __/
 
-    `group_k == 0` (o_proj) degenerates to a pure frozen-codes + (s, z) layer.
+    `group_k == 0` (o_proj) degenerates to a pure frozen-codes layer.
 
-    The codes are a NON-PERSISTENT buffer: they never enter `state_dict()`, so a training
-    checkpoint holds only the ~5% of tensors that actually change (see save_saltq_trainable).
+    ------------------------------------------------------------------------------------------
+    Why the default is z-only (train_scale=False), and why that makes training CHEAP
+    ------------------------------------------------------------------------------------------
+    Write G_W = dL/dW = gy^T x. The three trainable groups cost wildly different amounts:
+
+      dL/dW_S   = gy^T x_S                       only the ~1-2% salient columns  -> 2N*k, free
+      dL/dz_o,g = -s_o,g * SUM_{j in g} G_W[o,j]
+                = -s_o,g * SUM_t gy[t,o] * (SUM_{j in g} x[t,j])
+                                                 the inner sum is UNIFORM over the group, so it
+                                                 collapses into a pooled input BEFORE the GEMM:
+                                                 [out,T] x [T, in/g] -> 2N/g, ~1.5% at g=64, free
+      dL/ds_o,g = SUM_{j in g} (q-z)[o,j] * G_W[o,j]
+                                                 the per-element factor (q-z)[o,j] depends on BOTH
+                                                 o and j, so it folds into neither x nor gy. This
+                                                 is a genuine three-way contraction and forces the
+                                                 full [out,in] weight-gradient GEMM -> 2N, and 2N
+                                                 REGARDLESS of how few scale parameters there are.
+
+    So the ledger is 6N + 2N*k + 2N/g + 2N*[train_scale], and only the scale term is irreducible.
+    Training z alone therefore costs the same as QLoRA/PSQAT while strictly containing QA-LoRA's
+    adaptation space: QA-LoRA's group-pooled adapter IS a rank-r constrained parameterization of
+    exactly this delta-z, and here it is full rank.
+
+    Dropping s from training also removes the forward-side cost. With s frozen, q*s is CONSTANT,
+    so it is precomputed ONCE into `wq` and the forward becomes
+
+        y_N = x @ wq^T  -  pool_g(x) @ (z*s)^T
+
+    a frozen GEMM plus a [T, in/g] x [in/g, out] correction. No [out, in] tensor is ever
+    reconstructed, in either direction — training touches the same amount of memory traffic as a
+    plain quantized forward. Ordinary autograd on this expression produces exactly the cheap
+    gradients derived above; no custom autograd.Function is needed.
+
+    `train_scale=True` restores the trainable scale for ablations and falls back to the
+    reconstruct-then-GEMM path, paying the full 2N.
+
+    ------------------------------------------------------------------------------------------
+    Storage
+    ------------------------------------------------------------------------------------------
+    `wq` is a non-persistent buffer (rebuilt from the frozen base at load) and the integer codes
+    live on the HOST: only export and verification need them, and keeping them off the accelerator
+    saves several GB. Neither enters `state_dict()`, so a checkpoint holds only what changes.
+
+    `effective_weight()` / `deployed_weight()` remain the fp32 REFERENCE definitions built from
+    (codes, s, z) — the merge-free guarantee is a statement about those, and the fast forward path
+    is an algebraic rearrangement of the same quantity evaluated in the compute dtype.
     """
 
     def __init__(
@@ -309,12 +362,14 @@ class SALTQLinear(nn.Module):
         z_s: Optional[torch.Tensor] = None,
         bias: Optional[torch.Tensor] = None,
         param_dtype: torch.dtype = torch.float32,
+        train_scale: bool = False,
+        wq_dtype: torch.dtype = torch.bfloat16,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
             f"group_k={group_k} must be a multiple of group_size={group_size}"
-        assert (in_features - group_k) % group_size == 0, \
-            f"non-salient width {in_features - group_k} must be a multiple of {group_size}"
+        assert in_features % group_size == 0, \
+            f"in_features={in_features} must be a multiple of group_size={group_size}"
 
         self.in_features = int(in_features)
         self.out_features = int(out_features)
@@ -322,7 +377,9 @@ class SALTQLinear(nn.Module):
         self.group_size = int(group_size)
         self.q_bits = int(q_bits)
         self.symmetric = bool(symmetric)
+        self.train_scale = bool(train_scale)
         self.n_nonsalient = self.in_features - self.group_k
+        self.ng = self.in_features // self.group_size
         self.n_nonsal_g = self.n_nonsalient // self.group_size
         self.n_sal_g = self.group_k // self.group_size
         self.Qn, self.Qp = _lsq_levels(self.q_bits, self.symmetric)
@@ -332,11 +389,28 @@ class SALTQLinear(nn.Module):
         self._s_gfactor = 1.0 / math.sqrt(self.group_size * max(self.Qp, 1))
         self._z_gfactor = 1.0 / math.sqrt(self.group_size)
 
-        # ---- non-salient segment: frozen codes + trainable affine params ----
-        self.register_buffer("codes", codes.to(torch.int8).contiguous(), persistent=False)
-        self.saltq_s = nn.Parameter(s_n.float().contiguous())
+        # ---- non-salient segment ----
+        # Codes stay on the host: export and verification read them, the training forward does not.
+        # A plain attribute (not a buffer) so .to(device) leaves them where they are.
+        self._codes_cpu = codes.to(torch.int8).contiguous().cpu()
+        if self.train_scale:
+            self.saltq_s = nn.Parameter(s_n.float().contiguous())
+        else:
+            self.register_buffer("saltq_s", s_n.float().contiguous(), persistent=False)
         if not self.symmetric:
             self.saltq_z = nn.Parameter(z_n.float().contiguous())
+
+        # Precompute the frozen part of the deployed weight. Only valid while s is frozen.
+        # Salient columns are left at zero: their contribution comes from weight_salient.
+        if not self.train_scale:
+            wq = torch.zeros(self.out_features, self.in_features, dtype=wq_dtype)
+            q = codes.float().view(self.out_features, self.n_nonsal_g, self.group_size)
+            wq[:, self.group_k:] = (
+                (q * s_n.float().unsqueeze(-1))
+                .reshape(self.out_features, self.n_nonsalient).to(wq_dtype)
+            )
+            self.register_buffer("wq", wq, persistent=False)
+            del q
 
         # ---- salient segment: trainable weights + trainable LSQ grid ----
         if self.group_k > 0:
@@ -352,7 +426,7 @@ class SALTQLinear(nn.Module):
         else:
             self.bias = None
 
-    # ------------------------------------------------------------------ core
+    # ------------------------------------------------------------------ pieces
 
     def _salient_effective(self) -> torch.Tensor:
         """LSQ fake-quantized salient weights, fp32 [out, group_k]. STE through the rounding."""
@@ -365,26 +439,40 @@ class SALTQLinear(nn.Module):
             W, self.lsq_w_scale.float(), self.lsq_w_zp.float(), self.group_size, self.q_bits
         )
 
-    def _nonsalient_effective(self) -> torch.Tensor:
+    def _z_int(self) -> torch.Tensor:
+        """Grid-valued zero-point [out, n_nonsal_g], STE-rounded so train == the exported int."""
+        z = grad_scale(self.saltq_z.float(), self._z_gfactor)
+        return round_ste(z).clamp(self.Qn, self.Qp)
+
+    def _s_eff(self) -> torch.Tensor:
+        s = self.saltq_s.float().clamp(min=1e-8)
+        return grad_scale(s, self._s_gfactor) if self.train_scale else s
+
+    def _nonsalient_effective(self, codes: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Reconstruct (q - z) * s from the FROZEN codes, fp32 [out, n_nonsalient].
 
-        Only s and z carry gradients; `codes` is an int8 buffer with no grad. z is rounded with
-        an STE and clamped to the grid so the training-time value is bit-identical to the integer
-        zero-point the export writes into the checkpoint metadata.
+        This is the REFERENCE definition (and the training path when train_scale=True). The
+        z-only forward never calls it — see the class docstring.
         """
-        q = self.codes.to(torch.float32).view(self.out_features, self.n_nonsal_g, self.group_size)
-        s = grad_scale(self.saltq_s.float().clamp(min=1e-8), self._s_gfactor).unsqueeze(-1)
+        q = (self._codes_cpu if codes is None else codes)
+        s = self._s_eff()
+        q = q.to(device=s.device, dtype=torch.float32).view(
+            self.out_features, self.n_nonsal_g, self.group_size)
+        s = s.unsqueeze(-1)
         if self.symmetric:
             W = q * s
         else:
-            z = grad_scale(self.saltq_z.float(), self._z_gfactor).unsqueeze(-1)
-            z = round_ste(z).clamp(self.Qn, self.Qp)
-            W = (q - z) * s
+            W = (q - self._z_int().unsqueeze(-1)) * s
         return W.reshape(self.out_features, self.n_nonsalient)
 
     def effective_weight(self, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
-        """The weight the forward actually uses == the weight the export deploys."""
+        """
+        fp32 reference weight: exactly what the deployed checkpoint reconstructs to.
+
+        Built on the device the PARAMETERS live on, pulling the codes over from the host, so it is
+        memory-hungry by design — it exists for verification and export, not for the hot path.
+        """
         parts: List[torch.Tensor] = []
         if self.group_k > 0:
             parts.append(self._salient_effective())
@@ -392,10 +480,30 @@ class SALTQLinear(nn.Module):
         W = parts[0] if len(parts) == 1 else torch.cat(parts, dim=1)
         return W if dtype is None else W.to(dtype)
 
+    # ---------------------------------------------------------------- forward
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        W = self.effective_weight(dtype=x.dtype)
         bias = self.bias.to(x.dtype) if self.bias is not None else None
-        return F.linear(x, W, bias)
+
+        if self.train_scale:
+            # Ablation path: s is trainable, so q*s is not constant and the weight has to be
+            # rebuilt. This is the configuration that costs the extra 2N.
+            return F.linear(x, self.effective_weight(dtype=x.dtype), bias)
+
+        # Frozen main GEMM. wq holds q*s with the salient columns zeroed.
+        out = F.linear(x, self.wq, bias)
+
+        # Zero-point correction. (q - z)*s = q*s - z*s and z*s is constant within a group, so the
+        # whole correction is one pooled-input GEMM instead of a full [out, in] reconstruction.
+        if not self.symmetric:
+            zs = (self._z_int() * self._s_eff()).to(x.dtype)            # [out, n_nonsal_g]
+            xp = x.reshape(*x.shape[:-1], self.ng, self.group_size).sum(-1)
+            out = out - F.linear(xp[..., self.n_sal_g:], zs)
+
+        if self.group_k > 0:
+            out = out + F.linear(x[..., :self.group_k],
+                                 self._salient_effective().to(x.dtype))
+        return out
 
     # -------------------------------------------------------------- deployment
 
@@ -433,7 +541,7 @@ class SALTQLinear(nn.Module):
             torch.zeros_like(s_n) if self.symmetric
             else self.saltq_z.float().round().clamp(self.Qn, self.Qp)
         )
-        codes.append(self.codes.to(torch.float32))
+        codes.append(self._codes_cpu.to(device=s_n.device, dtype=torch.float32))
         scales.append(s_n)
         zeros.append(z_n)
 
@@ -476,6 +584,7 @@ def build_saltq_model(
     param_dtype: torch.dtype = torch.float32,
     gradient_checkpointing: bool = True,
     train_layernorms: bool = False,
+    train_scale: bool = False,
     device=None,
 ):
     """
@@ -530,6 +639,8 @@ def build_saltq_model(
                 z_s=f.get_tensor(f"{name}.z_s") if f"{name}.z_s" in keys else None,
                 bias=bias,
                 param_dtype=param_dtype,
+                train_scale=train_scale,
+                wq_dtype=dtype,
             )
             setattr(parent, terminal, layer)
             del old
@@ -558,10 +669,17 @@ def build_saltq_model(
             model.enable_input_require_grads()
 
     total = sum(p.numel() for p in model.parameters())
+    n_codes = meta["param_counts"]["frozen_codes"]
+    mode = "s+z (ablation, pays the full 2N weight-gradient GEMM)" if train_scale \
+        else "z-only (default; forward is a frozen GEMM + pooled correction)"
     print(
         f"[SALT-Q] Replaced {n_replaced} linears; trainable {n_train / 1e6:.1f}M params "
-        f"({100.0 * n_train / max(total, 1):.2f}% of the fp-parameter tree), "
-        f"frozen codes {meta['param_counts']['frozen_codes'] / 1e6:.1f}M (int8 buffers)"
+        f"({100.0 * n_train / max(total, 1):.2f}% of the fp-parameter tree)\n"
+        f"[SALT-Q] affine training mode: {mode}\n"
+        f"[SALT-Q] frozen: {n_codes / 1e6:.1f}M codes (host, int8, export/verify only)"
+        + ("" if train_scale else
+           f" -> precomputed q*s on device as {dtype} "
+           f"({n_codes * torch.finfo(dtype).bits / 8 / 1e9:.1f} GB)")
     )
     if device is not None:
         model.to(device)
@@ -813,6 +931,7 @@ def export_saltq(
             saltq_base_dir,
             dtype=getattr(torch, cfg["model"]["dtype"]),
             gradient_checkpointing=False,
+            train_scale=bool((cfg["qat"].get("saltq", {}) or {}).get("train_scale", False)),
         )
         load_saltq_trainable(model, checkpoint_dir)
     else:

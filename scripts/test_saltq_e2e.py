@@ -109,7 +109,7 @@ def fake_cfg(out_dir):
     return {
         "model": {"name": "tiny", "quant_bits": Q_BITS, "dtype": "float32"},
         "qat": {"mode": "saltq", "symmetric": SYMMETRIC, "group_size": GROUP_SIZE,
-                "saltq": {"train_layernorms": False}},
+                "saltq": {"train_layernorms": False, "train_scale": False}},
         "lora": {"target_modules": TARGETS, "rank": 8, "alpha": 16},
         "training": {"output_dir": out_dir},
     }
@@ -171,8 +171,12 @@ def main():
         n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
         n_frozen_float = sum(p.numel() for p in model.parameters() if not p.requires_grad)
         check(n_train > 0, f"trainable params = {n_train}")
-        check(all(not m.codes.requires_grad for m in layers.values()),
-              f"codes carry no grad ({n_frozen_float} frozen float params remain: embed/norm/head)")
+        check(all(m._codes_cpu.device.type == "cpu" and not m._codes_cpu.requires_grad
+                  for m in layers.values()),
+              f"codes stay on the host with no grad "
+              f"({n_frozen_float} frozen float params remain: embed/norm/head)")
+        check(all(hasattr(m, "wq") and not m.wq.requires_grad for m in layers.values()),
+              "q*s precomputed as a frozen device buffer (z-only forward, no reconstruction)")
 
         # ---- stage 4: train a step ----
         print("\n[stage 4] forward / backward / optimizer step")
@@ -187,10 +191,10 @@ def main():
               f"{len(got_grad)}/{sum(1 for p in model.parameters() if p.requires_grad)} "
               f"trainable tensors received a non-zero gradient")
 
-        codes_before = {n: m.codes.clone() for n, m in layers.items()}
+        codes_before = {n: m._codes_cpu.clone() for n, m in layers.items()}
         opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=1e-3)
         opt.step()
-        check(all(torch.equal(layers[n].codes, c) for n, c in codes_before.items()),
+        check(all(torch.equal(layers[n]._codes_cpu, c) for n, c in codes_before.items()),
               "frozen codes untouched by the optimizer step")
 
         # ---- stage 5: deploy equivalence AFTER training ----
