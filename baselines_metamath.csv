@@ -17,7 +17,7 @@ QLoRA (merged w/RTN),3,64,gsm8k,exact_match,26.1,5,metamath,report 6.12
 QLoRA (merged w/GPTQ),3,64,gsm8k,exact_match,28.7,5,metamath,report 6.12
 QLoRA (merged w/RTN),3,32,gsm8k,exact_match,36.5,5,metamath,report 6.12
 QLoRA (merged w/GPTQ),3,32,gsm8k,exact_match,38.8,5,metamath,report 6.12
-Full STE-QAT (LR-QAT),3,64,gsm8k,exact_match,41.4,5,metamath,report 6.12 - initial loss 10.0, unstable
+Full STE-QAT (LR-QAT),3,64,gsm8k,exact_match,45.2,5,metamath,corrected impl - fully recovers fp16; the earlier 41.4 / loss=10 was an implementation bug
 QA-LoRA,3,64,gsm8k,exact_match,39.0,5,metamath,report 6.12 - GPTQ INT3 base, trains zero-point low-rank only
 SQAT (top-1%),3,64,gsm8k,exact_match,40.7,5,metamath,report 6.12
 PSQAT+RTN,3,64,gsm8k,exact_match,40.8,5,metamath,report 6.12

@@ -11,7 +11,7 @@ report,reported,QLoRA (merged w/RTN),QLoRA (merged w/RTN)|3|64,metamath,gsm8k,ex
 report,reported,QLoRA (merged w/GPTQ),QLoRA (merged w/GPTQ)|3|64,metamath,gsm8k,exact_match,0.287,,5,3,,64,,,,,,,,,,,,report 6.12
 report,reported,QLoRA (merged w/RTN),QLoRA (merged w/RTN)|3|32,metamath,gsm8k,exact_match,0.365,,5,3,,32,,,,,,,,,,,,report 6.12
 report,reported,QLoRA (merged w/GPTQ),QLoRA (merged w/GPTQ)|3|32,metamath,gsm8k,exact_match,0.38799999999999996,,5,3,,32,,,,,,,,,,,,report 6.12
-report,reported,Full STE-QAT (LR-QAT),Full STE-QAT (LR-QAT)|3|64,metamath,gsm8k,exact_match,0.414,,5,3,,64,,,,,,,,,,,,report 6.12 - initial loss 10.0
+report,reported,Full STE-QAT (LR-QAT),Full STE-QAT (LR-QAT)|3|64,metamath,gsm8k,exact_match,0.452,,5,3,,64,,,,,,,,,,,,corrected impl - fully recovers fp16; the earlier 41.4 / loss=10 was an implementation bug
 report,reported,QA-LoRA,QA-LoRA|3|64,metamath,gsm8k,exact_match,0.39,,5,3,,64,,,,,,,,,,,,report 6.12 - GPTQ INT3 base
 report,reported,SQAT (top-1%),SQAT (top-1%)|3|64,metamath,gsm8k,exact_match,0.40700000000000003,,5,3,,64,,,,,,,,,,,,report 6.12
 report,reported,PSQAT+RTN,PSQAT+RTN|3|64,metamath,gsm8k,exact_match,0.408,,5,3,,64,,,,,,,,,,,,report 6.12
