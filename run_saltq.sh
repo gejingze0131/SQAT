@@ -62,6 +62,10 @@ SCALES_LR=""
 # Train the RMSNorm weights too (they stay fp16 at deploy, so it is free extra freedom).
 TRAIN_LAYERNORMS=false
 
+# Every eval run is folded into this one long-format table (one row per run/task/metric).
+RESULTS_CSV="results_saltq.csv"
+RESULTS_NOTE=""
+
 SKIP_TRAIN=false
 SKIP_EVAL=false
 CHECKPOINT_DIR=""
@@ -88,6 +92,8 @@ while [[ $# -gt 0 ]]; do
         --salient_lr)       SALIENT_LR="$2";        shift 2 ;;
         --scales_lr)        SCALES_LR="$2";         shift 2 ;;
         --train_layernorms) TRAIN_LAYERNORMS="$2";  shift 2 ;;
+        --results_csv)      RESULTS_CSV="$2";       shift 2 ;;
+        --note)             RESULTS_NOTE="$2";      shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -204,6 +210,17 @@ if [ "$SKIP_EVAL" = false ]; then
     done
     shopt -u nullglob
     [ "$found" = true ] || echo "  (no exported eval dirs found under ${OUTPUT_ROOT}-${BITS}bit-saltq-deploy-eval)"
+
+    # Fold the timestamped lm-eval JSONs into one long-format table. Idempotent, so re-running
+    # the pipeline never duplicates rows. Run-level context (bits / group_size / group_k / lrs /
+    # the freedom split) is recovered from the artifacts next to the evaluated model.
+    echo -e "\n>>> Collecting results into $RESULTS_CSV"
+    python scripts/collect_saltq_results.py \
+        --results_dir results \
+        --csv         "$RESULTS_CSV" \
+        --config      "$CONFIG" \
+        --filter      saltq \
+        --note        "${RESULTS_NOTE}"
 fi
 
 echo -e "\n============================================================"
