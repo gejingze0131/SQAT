@@ -1,0 +1,156 @@
+# =============================================================================
+# SALT-Q — Saliency-Allocated Low-bit Trainability   (MetaMathQA, Llama-2-7B, INT2)
+#
+# The method is defined by HOW TRAINABLE FREEDOM IS ALLOCATED across each weight matrix,
+# after the shared offline permutation has moved the salient input channels to the front:
+#
+#   cols [0 : group_k)    ~1-2%    FULL weight freedom   -> nn.Parameter weights + LSQ fakequant
+#   cols [group_k : in)  ~98-99%   AFFINE freedom only   -> FROZEN GPTQ codes, trainable (s, z)
+#   the integer codes                                     -> ZERO freedom
+#
+# Nothing in this pipeline is a BF16 side-car that has to be merged: the salient weights land on
+# the quantization grid by construction, and (s, z) are written straight into the metadata slots a
+# normal GPTQ checkpoint already has. export_saltq asserts deployed == trained with max|Δ| == 0.
+#
+# Hardware assumption for the batch settings below: 3 x RTX 6000 Ada (46 GB).
+# =============================================================================
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 2
+  # double_quant / quant_type are NF4 knobs and are UNUSED by SALT-Q (there is no bitsandbytes in
+  # this path at all — the base is real INT-b GPTQ codes, so there is no double quantization).
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64                  # UNUSED by SALT-Q (no adapter). Kept so shared config readers/loggers
+  alpha: 16                 # and the r=64 parameter-budget comparison stay meaningful.
+  dropout: 0.0
+  # target_modules selects which linears become SALTQLinear.
+  #   q/k/v/gate/up_proj : residual-stream P_k permute  -> salient slice [0:layer_group_k)
+  #   down_proj          : block-internal P4_l permute  -> its own per-layer group_k
+  #   o_proj             : per-head Hadamard only, group_k = 0
+  #                        -> in SALT-Q it is NOT untrainable any more: it becomes pure
+  #                           frozen-codes + trainable (s, z) over ALL its columns.
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "saltq"
+  # MUST be asymmetric. At 2 bit the symmetric grid has 3 usable levels {-1,0,1} while the affine
+  # grid has 4; and the affine (q - z) * s convention is exactly what GPTQ/AWQ checkpoints store,
+  # so the trained (s, z) drop into the existing metadata slots with no format change.
+  symmetric: false
+  group_size: 32            # group_k is always a multiple of this, so the salient columns occupy
+                            # COMPLETE quantization groups starting at column 0.
+
+  # NOTE: qat.lsq is the *sqat_permute / full* switch. SALT-Q's salient segment is ALWAYS LSQ
+  # (that is what makes its trained weights land on the grid), so this flag does not gate it.
+  # Only lsq.scales_lr is read, as the fallback for saltq.scales_lr.
+  lsq:
+    enabled: true
+    scales_lr: 1.0e-5
+
+  # Calibration data for BOTH offline stages (E[x^2] for saliency, and the GPTQ Hessian).
+  # Read by src/data.load_calibration_data via cfg["qat"]["sqat"].
+  sqat:
+    calibration_samples: 256
+    calibration_seq_len: 2048
+
+  saltq:
+    # ---- learning rates for the three tiers of freedom ------------------------------------
+    # salient_lr trains REAL WEIGHTS, not an adapter. A LoRA lr (2e-4) will destroy them.
+    # This is the single most important new hyper-parameter; sweep it first.
+    salient_lr: 2.0e-5
+    # (s, z) of BOTH segments. The non-salient segment's entire task adaptation lives here.
+    scales_lr: 1.0e-5
+    # RMSNorm weights stay fp16 at deploy, so training them is free extra freedom. Off = the
+    # clean "only the two segments are trained" ablation.
+    train_layernorms: false
+
+    # ---- permutation / saliency (identical semantics to qat.sqat_permute) -------------------
+    # Mode switch:
+    #   omit boundary_sizes and group_k  -> auto segments + auto per-segment group_k
+    #   boundary_sizes only              -> manual segments + auto group_k
+    #   group_k only                     -> auto segments + fixed group_k
+    #   boundary_sizes + group_k + top_k_ratio -> legacy manual/fixed mode (used here, so the
+    #                                             SALT-Q vs Permuted-SQAT comparison is
+    #                                             single-variable: same permutation, same slice)
+    boundary_sizes: [2, 30]
+    group_k: 128
+    top_k_ratio: 0.01
+
+    # Log-space z-score threshold for residual q/k/v/gate/up segment outlier detection.
+    outlier_log_sigma: 2.5
+    # Separate threshold for per-layer down_proj group_k selection.
+    down_outlier_log_sigma: 3
+
+    # ---- frozen-code initialization ---------------------------------------------------------
+    # GPTQ/OBS on the permuted fp16 base produces the integer codes that are then FROZEN FOREVER,
+    # plus the initial (s, z). Run once, sequentially per decoder layer, in the permuted basis
+    # with the boundary gathers active. Quality here matters more than in sqat_permute: (s, z)
+    # cannot repair a badly chosen code.
+    gptq:
+      nsamples: 128          # calibration sequences for the Hessian
+      percdamp: 0.01         # Hessian diagonal damping (fraction of mean diag)
+      blocksize: 64          # GPTQ lazy-batch compute block; must be a multiple of group_size
+      batch_size: 2          # calibration micro-batch
+
+    # --- offline stages (run automatically by scripts/train.py on rank 0) --------------------
+    #   1. <output_dir>/permuted_fp16_base   (~13 GB)  permute-before-quantize, shared with
+    #                                                  sqat_permute; keep it for export-only
+    #   2. <output_dir>/saltq_base           (~7 GB)   frozen int8 codes + (s0, z0) + salient init
+    # BOTH must be reused on resume and on export: the codes are a discrete one-shot choice, so a
+    # regenerated base makes every trained (s, z) and salient weight meaningless.
+
+data:
+  train_dataset: "metamath"
+  train_split: "train"
+  val_split: null
+  prompt_template: "metamath"
+
+training:
+  output_dir: "outputs/saltq"
+  num_epochs: 1
+  # 3 x RTX 6000 Ada (46 GB). At group_size=32 / group_k=128 on Llama-2-7B the resident cost per
+  # GPU is roughly:
+  #   frozen int8 codes            6.3 GB   (buffers; DDP broadcast is disabled for them)
+  #   157M salient weights
+  #   + 405M (s, z)  = 562M fp32   9.0 GB   (params + grads + AdamW moments)
+  #   fp16 embed/norm/head         0.5 GB
+  #   -> ~16 GB before activations.
+  # Each forward also rebuilds one [out, in] fp32 weight per projection; gradient checkpointing
+  # bounds that to one decoder layer at a time. Peak observed headroom is comfortable at bs=4.
+  # 4 x 5 x 3 GPUs = effective batch 60 (the 4-GPU sqat_permute math baseline used 64).
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 5
+  group_by_length: true
+  # Base lr — only applies to the "other" param group (LayerNorms when train_layernorms=true).
+  # The two segments use qat.saltq.salient_lr / qat.saltq.scales_lr.
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true

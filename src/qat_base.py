@@ -40,6 +40,7 @@ class QATMode(Enum):
     SQAT = "sqat"
     QALORA = "qalora"
     SQAT_PERMUTE = "sqat_permute"
+    SALTQ = "saltq"
 
 
 # ============================================================================
@@ -187,9 +188,32 @@ def groupwise_asymmetric_fakequant(
 # Initialization is `current_minmax` so that with enable_lsq the initial grid
 # equals the original min-max grid (no scale jump at step 0).
 
+class _GradScale(torch.autograd.Function):
+    """forward = x (BIT-EXACT) ; backward: grad *= g."""
+
+    @staticmethod
+    def forward(ctx, x: torch.Tensor, g: float):
+        ctx.gscale = float(g)
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        return grad_out * ctx.gscale, None
+
+
 def grad_scale(x: torch.Tensor, g: float) -> torch.Tensor:
-    """forward = x ; backward: grad *= g (LSQ scale-gradient damping)."""
-    return (x - x * g).detach() + x * g
+    """
+    forward = x ; backward: grad *= g (LSQ scale-gradient damping).
+
+    Implemented as an autograd.Function rather than the usual `(x - x*g).detach() + x*g` trick
+    because that expression is only ALGEBRAICALLY the identity: in fp32 it round-trips through
+    `x*g` and comes back off by up to an ulp. The training fakequant applies grad_scale to the
+    scale/zero-point while the export quantizer uses the raw parameter, so that ulp shows up as a
+    non-zero train-vs-deploy difference (and, on a rounding boundary, as an actually different
+    integer). Forward-exact identity removes the discrepancy at its source, which is what lets
+    SALT-Q assert deployed == trained with max|Δ| == 0 rather than an epsilon.
+    """
+    return _GradScale.apply(x, g)
 
 
 def _group_reshape(W: torch.Tensor, group_size: int) -> torch.Tensor:
@@ -636,5 +660,8 @@ def get_qat_handler(cfg: dict) -> QATHandler:
     elif mode == QATMode.SQAT_PERMUTE:
         from .qat_permute_sqat import SegmentPermutedSelectiveQAT
         return SegmentPermutedSelectiveQAT()
+    elif mode == QATMode.SALTQ:
+        from .qat_saltq import SALTQ
+        return SALTQ()
     else:
         raise ValueError(f"Unknown QAT mode: {mode_str}")

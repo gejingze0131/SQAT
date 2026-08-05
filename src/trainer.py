@@ -50,6 +50,7 @@ def build_trainer(
     eval_dataset,
     cfg: dict,
     qat_handler: QATHandler,
+    saltq_base_dir: str = None,
 ) -> Trainer:
     """
     Construct a HuggingFace Trainer with all config wired up.
@@ -60,8 +61,9 @@ def build_trainer(
         train_dataset: Tokenized training dataset
         eval_dataset:  Tokenized eval dataset (or None)
         cfg:           Full experiment config dict
-        qat_handler:   QAT handler (NoQAT, FullQAT, or SQAT)
-    
+        qat_handler:   QAT handler (NoQAT, FullQAT, SQAT, SegmentPermutedSelectiveQAT, SALTQ)
+        saltq_base_dir: SALT-Q only — the frozen-code base a checkpoint points back to
+
     Returns:
         Configured Trainer ready for .train()
     """
@@ -114,6 +116,10 @@ def build_trainer(
         remove_unused_columns=False,
         # Distributed
         ddp_find_unused_parameters=False,
+        # SALT-Q registers its FROZEN integer codes as module buffers — several GB per rank, and
+        # bit-identical on every rank because they are read from the same frozen-code base file.
+        # DDP's default broadcast_buffers=True would re-broadcast all of them on every forward.
+        ddp_broadcast_buffers=(False if qat_mode == "saltq" else None),
         # Gradient checkpointing is already set in model_loader
         # Fix B: length-grouping (see _length_kwargs above; version-dependent key).
         **_length_kwargs,
@@ -128,7 +134,20 @@ def build_trainer(
 
     trainer_cls = Trainer
     enable_lsq = bool(cfg["qat"].get("lsq", {}).get("enabled", False))
-    if enable_lsq:
+    if qat_mode == "saltq":
+        # SALT-Q allocates trainable freedom in three tiers, and they cannot share an lr:
+        #   salient WEIGHTS (real weights, not an adapter) — a LoRA-sized lr blows them up;
+        #   quantization params (s, z) — a grid, needs a small lr and no weight decay;
+        #   anything else opted in (e.g. LayerNorms) — base lr.
+        # It also must NOT let HF write a full state_dict: the frozen int8 codes are multiple GB
+        # and never change, so checkpoints hold only the trainable tensors.
+        sq_cfg = cfg["qat"].get("saltq", {}) or {}
+        trainer_cls = _make_saltq_trainer_cls(
+            salient_lr=float(sq_cfg.get("salient_lr", train_cfg["learning_rate"])),
+            scales_lr=float(sq_cfg.get("scales_lr", cfg["qat"].get("lsq", {}).get("scales_lr", 1e-5))),
+            saltq_base_dir=saltq_base_dir,
+        )
+    elif enable_lsq:
         # LSQ scale[/zp] are self-registered nn.Parameters. They MUST get their own optimizer
         # group (small lr, no weight decay) — the weight LR (2e-4) blows up a scale, and weight
         # decay would shrink it toward 0. HF's default create_optimizer groups by decay/no-decay
@@ -202,3 +221,83 @@ def _make_lsq_trainer_cls(scales_lr: float):
             return self.optimizer
 
     return _LSQTrainer
+
+
+def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, saltq_base_dir: str = None):
+    """
+    Trainer subclass for SALT-Q.
+
+    create_optimizer — three param groups matching the method's three tiers of freedom:
+      1. `weight_salient`  real weights, `salient_lr` (must be far below a LoRA lr)
+      2. `lsq_w_scale` / `lsq_w_zp` / `saltq_s` / `saltq_z`  the quant grid, `scales_lr`, no decay
+      3. everything else trainable (e.g. LayerNorms if opted in), base lr
+
+    _save — writes ONLY the trainable tensors. The frozen int8 codes are several GB, never change,
+    and live in the saltq_base dir; a checkpoint records a pointer to it instead of a copy.
+    """
+    from src.qat_saltq import (
+        QUANT_PARAM_FRAGMENTS,
+        SALIENT_WEIGHT_PARAM,
+        load_saltq_trainable,
+        save_saltq_trainable,
+    )
+
+    class _SALTQTrainer(Trainer):
+        def create_optimizer(self):
+            if self.optimizer is not None:
+                return self.optimizer
+
+            opt_model = self.model
+            named = {n: p for n, p in opt_model.named_parameters() if p.requires_grad}
+
+            def is_quant(n):
+                return any(frag in n for frag in QUANT_PARAM_FRAGMENTS)
+
+            def is_salient(n):
+                return SALIENT_WEIGHT_PARAM in n
+
+            salient = [p for n, p in named.items() if is_salient(n)]
+            quant = [p for n, p in named.items() if is_quant(n)]
+            other = [p for n, p in named.items() if not is_salient(n) and not is_quant(n)]
+
+            param_groups = [
+                {"params": salient, "weight_decay": self.args.weight_decay, "lr": salient_lr},
+                {"params": quant, "weight_decay": 0.0, "lr": scales_lr},
+                {"params": other, "weight_decay": 0.0},
+            ]
+            param_groups = [g for g in param_groups if g["params"]]
+
+            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+                self.args, opt_model)
+            self.optimizer = optimizer_cls(param_groups, **optimizer_kwargs)
+            print(
+                f"[Trainer][SALT-Q] optimizer groups: "
+                f"salient_weights={sum(p.numel() for p in salient) / 1e6:.1f}M (lr={salient_lr:g}), "
+                f"quant_params={sum(p.numel() for p in quant) / 1e6:.1f}M (lr={scales_lr:g}, wd=0), "
+                f"other={sum(p.numel() for p in other) / 1e6:.1f}M (lr={self.args.learning_rate:g})"
+            )
+            if not salient:
+                print("[Trainer][SALT-Q] WARNING: no salient weight params found!")
+            if not quant:
+                print("[Trainer][SALT-Q] WARNING: no (s, z) params found!")
+            return self.optimizer
+
+        def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
+            # Mirror of _save: a SALT-Q checkpoint holds only the trainable tensors, so HF's
+            # standard weight-file discovery would not find anything to load.
+            load_saltq_trainable(
+                self.accelerator.unwrap_model(self.model if model is None else model),
+                resume_from_checkpoint,
+            )
+
+        def _save(self, output_dir: str = None, state_dict=None):
+            output_dir = output_dir if output_dir is not None else self.args.output_dir
+            os.makedirs(output_dir, exist_ok=True)
+            model = self.accelerator.unwrap_model(self.model)
+            save_saltq_trainable(model, output_dir, saltq_base_dir=saltq_base_dir)
+            proc = getattr(self, "processing_class", None) or getattr(self, "tokenizer", None)
+            if proc is not None and hasattr(proc, "save_pretrained"):
+                proc.save_pretrained(output_dir)
+            torch.save(self.args, os.path.join(output_dir, "training_args.bin"))
+
+    return _SALTQTrainer

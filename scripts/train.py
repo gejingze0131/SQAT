@@ -86,6 +86,12 @@ def load_config(config_path: str, overrides: dict) -> dict:
             overrides["gptq_nonsalient"]
     if overrides.get("enable_lsq") is not None:
         cfg["qat"].setdefault("lsq", {})["enabled"] = overrides["enable_lsq"]
+    if overrides.get("salient_lr") is not None:
+        cfg["qat"].setdefault("saltq", {})["salient_lr"] = overrides["salient_lr"]
+    if overrides.get("saltq_scales_lr") is not None:
+        cfg["qat"].setdefault("saltq", {})["scales_lr"] = overrides["saltq_scales_lr"]
+    if overrides.get("train_layernorms") is not None:
+        cfg["qat"].setdefault("saltq", {})["train_layernorms"] = overrides["train_layernorms"]
     if overrides.get("report_to"):
         cfg["training"]["report_to"] = overrides["report_to"]
 
@@ -119,7 +125,7 @@ def main():
     parser.add_argument(
         "--qat_mode",
         type=str,
-        choices=["none", "full", "sqat", "qalora", "sqat_permute"],
+        choices=["none", "full", "sqat", "qalora", "sqat_permute", "saltq"],
         default=None,
     )
     parser.add_argument("--bits", type=int, choices=[2, 3, 4], default=None)
@@ -165,6 +171,17 @@ def main():
     parser.add_argument("--no_enable_lsq", dest="enable_lsq",
                         action="store_false",
                         help="Disable LSQ (use the original per-step min-max scale).")
+    parser.add_argument("--salient_lr", type=float, default=None,
+                        help="saltq: lr for the salient WEIGHT parameters (real weights, not an "
+                             "adapter — must be well below a LoRA lr). Default = training.lr.")
+    parser.add_argument("--saltq_scales_lr", type=float, default=None,
+                        help="saltq: lr for the quantization params (s, z) of BOTH segments.")
+    parser.add_argument("--train_layernorms", dest="train_layernorms",
+                        action="store_true", default=None,
+                        help="saltq: also train the RMSNorm weights (they stay fp16 at deploy, so "
+                             "this is free extra task-adaptation freedom).")
+    parser.add_argument("--no_train_layernorms", dest="train_layernorms", action="store_false",
+                        help="saltq: keep the RMSNorm weights frozen (default).")
     parser.add_argument("--report_to", type=str, default=None)
 
     # Data overrides
@@ -188,8 +205,11 @@ def main():
     parser.add_argument("--resume_from_checkpoint", type=str, default=None,
                         help="Path to a Trainer checkpoint dir to resume training from.")
     parser.add_argument("--permuted_base_dir", type=str, default=None,
-                        help="sqat_permute: explicit permuted fp16 base dir to reuse on resume "
-                             "(defaults to <output_dir>/permuted_fp16_base).")
+                        help="sqat_permute / saltq: explicit permuted fp16 base dir to reuse on "
+                             "resume (defaults to <output_dir>/permuted_fp16_base).")
+    parser.add_argument("--saltq_base_dir", type=str, default=None,
+                        help="saltq: explicit frozen-code base dir (defaults to "
+                             "<output_dir>/saltq_base). Must be reused on resume/export.")
 
     # Export mode
     parser.add_argument("--export_only", action="store_true")
@@ -282,6 +302,26 @@ def main():
                 cfg["model"]["name"] = intb_base_dir
                 print(f"[Export] QA-LoRA: GPTQ INT-b base {intb_base_dir}")
 
+        if qat_mode == "saltq":
+            # SALT-Q has no adapter and no merge: the deployed weight is read straight out of the
+            # trained parameters. A checkpoint only stores the trainable tensors plus a pointer
+            # back to the frozen-code base, so that base is REQUIRED here.
+            from src.qat_saltq import export_saltq, saltq_base_dir_from_checkpoint
+
+            saltq_base = args.saltq_base_dir or saltq_base_dir_from_checkpoint(args.checkpoint_dir)
+            if not (saltq_base and os.path.isdir(saltq_base)):
+                raise FileNotFoundError(
+                    f"[Export] SALT-Q frozen-code base not found ({saltq_base!r}). The checkpoint "
+                    f"stores only trainable tensors; pass --saltq_base_dir explicitly or check "
+                    f"saltq_ckpt_meta.pt in {args.checkpoint_dir}."
+                )
+            tokenizer = AutoTokenizer.from_pretrained(args.checkpoint_dir)
+            export_saltq(
+                cfg=cfg, tokenizer=tokenizer, saltq_base_dir=saltq_base,
+                checkpoint_dir=args.checkpoint_dir, output_dir=args.merge_output_dir,
+            )
+            return
+
         # Don't need to load quantized model — export loads FP16 base separately
         tokenizer = AutoTokenizer.from_pretrained(args.checkpoint_dir)
         if args.export_merged_only:
@@ -309,12 +349,19 @@ def main():
     # through the standard NF4 path so NF4 quantizes the permuted weights exactly once.
     # The boundary gather is a runtime residual reorder (cannot be folded): it is re-registered
     # in prepare_model for training and on the exported model for inference (eval scripts).
+    #
+    # SALT-Q shares this entire pre-step: it needs exactly the same permuted fp16 base (the
+    # salient channels must sit in the leading group_k columns before anything is quantized).
+    # It then adds one more offline stage (build_saltq_base) that GPTQ-quantizes that base into
+    # the frozen integer codes it trains (s, z) on top of.
     perm_meta = None
-    if qat_mode == "sqat_permute":
+    saltq_meta = None
+    saltq_base_dir = None
+    if qat_mode in ("sqat_permute", "saltq"):
         from src.qat_permute_sqat import build_permuted_fp16_checkpoint, load_perm_meta
         from transformers import DataCollatorForSeq2Seq
 
-        sp_cfg       = cfg["qat"]["sqat_permute"]
+        sp_cfg       = cfg["qat"]["saltq" if qat_mode == "saltq" else "sqat_permute"]
         permuted_dir = args.permuted_base_dir or os.path.join(
             cfg["training"]["output_dir"], "permuted_fp16_base")
 
@@ -374,6 +421,64 @@ def main():
         perm_meta = load_perm_meta(permuted_dir)
         print(f"[SQAT-Permute] Using permuted base {permuted_dir} "
               f"(num_runtime_permutes={len(perm_meta['boundary_perms'])})")
+
+    # --- SALT-Q: GPTQ the permuted base into the FROZEN codes + initial (s, z) -----------------
+    # This is the only extra offline stage vs sqat_permute. It is what makes the non-salient 98%
+    # trainable-in-deployment-form: after this the codes never change again, and training only
+    # moves the affine (s, z) that a GPTQ checkpoint already carries in its metadata slots.
+    if qat_mode == "saltq":
+        from src.qat_saltq import SALTQ_META_FILENAME, build_saltq_base
+        from transformers import DataCollatorForSeq2Seq
+
+        sq_cfg = cfg["qat"]["saltq"]
+        sq_gptq = sq_cfg.get("gptq", {}) or {}
+        saltq_base_dir = args.saltq_base_dir or os.path.join(
+            cfg["training"]["output_dir"], "saltq_base")
+        _sq_meta_pt = os.path.join(saltq_base_dir, SALTQ_META_FILENAME)
+
+        if args.resume_from_checkpoint:
+            if not os.path.exists(_sq_meta_pt):
+                raise FileNotFoundError(
+                    f"[SALT-Q][Resume] 找不到原训练的 frozen-code base: {saltq_base_dir}。恢复训练"
+                    f"必须复用同一份 codes —— 重新 GPTQ 会给出不同的离散码字，checkpoint 里训好的 "
+                    f"(s, z) 与 salient 权重会全部错位。用 --saltq_base_dir 显式指定。"
+                )
+            if accelerator.is_main_process:
+                print(f"\n[SALT-Q][Resume] 复用已有 frozen-code base（不重新 GPTQ）: {saltq_base_dir}")
+        elif accelerator.is_main_process:
+            print("\n[SALT-Q] Building frozen-code base (GPTQ on the permuted fp16 base)...")
+            sq_tok = AutoTokenizer.from_pretrained(
+                permuted_dir, use_fast=True, trust_remote_code=True
+            )
+            if sq_tok.pad_token is None:
+                sq_tok.pad_token    = sq_tok.eos_token
+                sq_tok.pad_token_id = sq_tok.eos_token_id
+            cal_dataset  = load_calibration_data(cfg, sq_tok)
+            cal_loader   = DataLoader(
+                cal_dataset,
+                batch_size=int(sq_gptq.get("batch_size", 2)),
+                collate_fn=DataCollatorForSeq2Seq(
+                    tokenizer=sq_tok, padding=True, return_tensors="pt"),
+                shuffle=False,
+            )
+            build_saltq_base(
+                permuted_base_dir=permuted_dir,
+                perm_meta=perm_meta,
+                tokenizer=sq_tok,
+                calibration_dataloader=cal_loader,
+                target_terminals=cfg["lora"]["target_modules"],
+                group_size=cfg["qat"].get("group_size", 128),
+                q_bits=cfg["model"]["quant_bits"],
+                symmetric=cfg["qat"].get("symmetric", False),
+                save_dir=saltq_base_dir,
+                device=accelerator.device,
+                percdamp=float(sq_gptq.get("percdamp", 0.01)),
+                blocksize=int(sq_gptq.get("blocksize", 128)),
+                nsamples=int(sq_gptq.get("nsamples", 128)),
+                dtype=getattr(torch, cfg["model"]["dtype"]),
+            )
+        accelerator.wait_for_everyone()
+        print(f"[SALT-Q] Using frozen-code base {saltq_base_dir}")
 
     # --- QA-LoRA: build the GPTQ INT-b frozen base BEFORE loading (faithful, no NF4 double-quant) --
     # The official QA-LoRA trains on a REAL GPTQ INT-b base (no NF4). Rank 0 quantizes the fp16 base
@@ -437,7 +542,27 @@ def main():
 
     # --- Load model ---
     print("\n[1/5] Loading model and tokenizer...")
-    model, tokenizer, base_model_ref = load_model_and_tokenizer(cfg)
+    if qat_mode == "saltq":
+        # No bitsandbytes, no PEFT: SALT-Q's layers ARE the quantized layers (frozen int8 codes
+        # + trainable salient weights + trainable (s, z)). Nothing here is a BF16 side-car that
+        # would later have to be merged.
+        from src.qat_saltq import build_saltq_model
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            saltq_base_dir, use_fast=True, trust_remote_code=True)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token    = tokenizer.eos_token
+            tokenizer.pad_token_id = tokenizer.eos_token_id
+        model, saltq_meta = build_saltq_model(
+            saltq_base_dir,
+            dtype=getattr(torch, cfg["model"]["dtype"]),
+            param_dtype=torch.float32,
+            gradient_checkpointing=True,
+            train_layernorms=bool(cfg["qat"]["saltq"].get("train_layernorms", False)),
+        )
+        base_model_ref = model
+    else:
+        model, tokenizer, base_model_ref = load_model_and_tokenizer(cfg)
 
     # --- Load data ---
     print("\n[2/5] Loading datasets...")
@@ -473,6 +598,10 @@ def main():
     elif qat_mode == "sqat_permute":
         qat_kwargs["perm_meta"] = perm_meta
         qat_kwargs["tokenizer"] = tokenizer
+    elif qat_mode == "saltq":
+        qat_kwargs["saltq_meta"] = saltq_meta
+        qat_kwargs["saltq_base_dir"] = saltq_base_dir
+        qat_kwargs["tokenizer"] = tokenizer
 
     model = qat_handler.prepare_model(model, cfg, **qat_kwargs)
 
@@ -485,12 +614,17 @@ def main():
         eval_dataset=eval_dataset,
         cfg=cfg,
         qat_handler=qat_handler,
+        saltq_base_dir=saltq_base_dir,
     )
 
     # --- Train ---
     print("\n[5/5] Starting training...")
     if args.resume_from_checkpoint:
         print(f"  Resuming from checkpoint: {args.resume_from_checkpoint}")
+        if qat_mode == "saltq":
+            print(f"  [一致性提醒] SALT-Q 恢复训练复用 frozen-code base {saltq_base_dir}。"
+                  f"codes 是离散的、一次性 GPTQ 决定的——只要 base 一致，(s,z) 与 salient 权重"
+                  f"就能接着训；base 不一致则 checkpoint 完全无效。")
         if qat_mode == "sqat_permute":
             _awq = bool((cfg["qat"]["sqat_permute"].get("awq_scale", {}) or {}).get("enabled", False))
             print(f"  [一致性提醒] 本次 awq_scale={_awq}, group_size={perm_meta['group_size']} "
@@ -545,6 +679,21 @@ def main():
 
     # --- Export ---
     if accelerator.is_main_process:
+        if qat_mode == "saltq":
+            # No merge, no re-quantization: export_saltq reads the deployed weight straight out of
+            # the trained parameters and asserts it equals the training-time weight exactly.
+            if cfg.get("export", {}).get("merge_and_save", False):
+                from src.qat_saltq import export_saltq
+
+                print("\n[SALT-Q] Exporting deployed model (merge-free)...")
+                export_saltq(
+                    cfg=cfg, tokenizer=tokenizer, saltq_base_dir=saltq_base_dir,
+                    model=accelerator.unwrap_model(model),
+                    output_dir=args.merge_output_dir,
+                )
+            print("\nDone!")
+            return
+
         if cfg.get("export", {}).get("merge_and_save", False):
             print("\nExporting for vLLM (INT4 GPTQ)...")
 
