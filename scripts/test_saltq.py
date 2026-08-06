@@ -46,7 +46,8 @@ def check(cond, msg):
         print(f"  [FAIL] {msg}")
 
 
-def build_layer(out_f, in_f, gk, gs, bits, symmetric, seed=0, hess=None, train_scale=False):
+def build_layer(out_f, in_f, gk, gs, bits, symmetric, seed=0, hess=None, train_scale=False,
+                continuous_z=True):
     """Build a SALTQLinear the way build_saltq_base does: GPTQ codes + fp32 salient init."""
     torch.manual_seed(seed)
     W = torch.randn(out_f, in_f) * 0.02
@@ -67,7 +68,7 @@ def build_layer(out_f, in_f, gk, gs, bits, symmetric, seed=0, hess=None, train_s
         q_bits=bits, symmetric=symmetric,
         codes=W_int[:, gk:], s_n=scale[:, n_sal_g:], z_n=zp[:, n_sal_g:],
         w_s=w_s, s_s=s_s, z_s=z_s,
-        train_scale=train_scale, wq_dtype=torch.float32,
+        train_scale=train_scale, continuous_z=continuous_z, wq_dtype=torch.float32,
     )
     return layer, W, (W_int, scale, zp)
 
@@ -226,6 +227,59 @@ def test_train_scale_ablation():
         check(err == 0.0, f"{label:34s} deployed == effective still exact, max|Δ|={err:.3e}")
 
 
+def test_zero_point_can_actually_move():
+    """
+    The failure that produced 32.9 instead of 42.6 on the first real run.
+
+    z is measured in quantization LEVELS, where the meaningful step is 1.0. Rounding it puts a
+    dead zone in front of the parameter: gradients flow, but the effective weight does not change
+    until z crosses half a level. Combined with a scale-sized lr, round(z) changed for 0 of 1.63M
+    parameters over a full training run and the entire non-salient segment was inert.
+
+    Continuous z has no dead zone: ANY update to z changes the weight. This test asserts that
+    directly, so the regression cannot come back silently.
+    """
+    print("\ntest_zero_point_can_actually_move  (the dead-zone regression)")
+    for out_f, in_f, gk, gs, bits, sym, label in CASES:
+        if sym:
+            continue
+        # continuous: a sub-half-level nudge MUST change the weight
+        layer, _, _ = build_layer(out_f, in_f, gk, gs, bits, sym, seed=11, continuous_z=True)
+        before = layer.effective_weight().clone()
+        with torch.no_grad():
+            layer.saltq_z.add_(0.01)
+        moved = (layer.effective_weight() - before).abs().max().item()
+        check(moved > 0, f"{label:34s} continuous z: a 0.01-level nudge moves W (|Δ|={moved:.2e})")
+
+        # integer: the same nudge must be swallowed, which is exactly why it is not the default
+        layer_i, _, _ = build_layer(out_f, in_f, gk, gs, bits, sym, seed=11, continuous_z=False)
+        before_i = layer_i.effective_weight().clone()
+        with torch.no_grad():
+            layer_i.saltq_z.add_(0.01)
+        moved_i = (layer_i.effective_weight() - before_i).abs().max().item()
+        check(moved_i == 0.0,
+              f"{label:34s} integer z: same nudge is swallowed by the dead zone (as expected)")
+
+        # and the deploy gate must hold in BOTH parameterizations
+        for lay, tag in ((layer, "continuous"), (layer_i, "integer")):
+            err = (lay.deployed_weight() - lay.effective_weight()).abs().max().item()
+            check(err == 0.0, f"{label:34s} {tag:10s} z: deployed == effective, max|Δ|={err:.3e}")
+
+
+def test_optimizer_group_units():
+    """Scales and zero-points must land in DIFFERENT optimizer groups — they have different units."""
+    print("\ntest_optimizer_group_units")
+    from src.qat_saltq import SCALE_PARAM_FRAGMENTS, ZEROPOINT_PARAM_FRAGMENTS
+    check(not (set(SCALE_PARAM_FRAGMENTS) & set(ZEROPOINT_PARAM_FRAGMENTS)),
+          "scale and zero-point name fragments are disjoint")
+    layer, _, _ = build_layer(64, 256, 64, 32, 3, False, seed=12)
+    names = [n for n, p in layer.named_parameters() if p.requires_grad]
+    scales = [n for n in names if any(f in n for f in SCALE_PARAM_FRAGMENTS)]
+    zps = [n for n in names if any(f in n for f in ZEROPOINT_PARAM_FRAGMENTS)]
+    check(zps and not (set(scales) & set(zps)),
+          f"zero-points {zps} classified apart from scales {scales}")
+
+
 def main():
     print("=" * 68)
     print("  SALT-Q — Saliency-Allocated Low-bit Trainability")
@@ -238,6 +292,8 @@ def main():
     test_forward_matches_linear()
     test_z_only_freedom()
     test_train_scale_ablation()
+    test_zero_point_can_actually_move()
+    test_optimizer_group_units()
     print("\n" + "=" * 68)
     print(f"  SALT-Q: {PASSED} passed, {FAILED} failed")
     print("=" * 68)

@@ -90,6 +90,8 @@ def load_config(config_path: str, overrides: dict) -> dict:
         cfg["qat"].setdefault("saltq", {})["salient_lr"] = overrides["salient_lr"]
     if overrides.get("saltq_scales_lr") is not None:
         cfg["qat"].setdefault("saltq", {})["scales_lr"] = overrides["saltq_scales_lr"]
+    if overrides.get("zp_lr") is not None:
+        cfg["qat"].setdefault("saltq", {})["zp_lr"] = overrides["zp_lr"]
     if overrides.get("train_layernorms") is not None:
         cfg["qat"].setdefault("saltq", {})["train_layernorms"] = overrides["train_layernorms"]
     if overrides.get("report_to"):
@@ -175,7 +177,11 @@ def main():
                         help="saltq: lr for the salient WEIGHT parameters (real weights, not an "
                              "adapter — must be well below a LoRA lr). Default = training.lr.")
     parser.add_argument("--saltq_scales_lr", type=float, default=None,
-                        help="saltq: lr for the quantization params (s, z) of BOTH segments.")
+                        help="saltq: lr for the SCALES (weight units).")
+    parser.add_argument("--zp_lr", type=float, default=None,
+                        help="saltq: lr for the ZERO-POINTS. They live in quantization-level "
+                             "units (meaningful step 1.0), so this must be 2-3 orders of "
+                             "magnitude above the scale lr or they never move.")
     parser.add_argument("--train_layernorms", dest="train_layernorms",
                         action="store_true", default=None,
                         help="saltq: also train the RMSNorm weights (they stay fp16 at deploy, so "
@@ -560,6 +566,7 @@ def main():
             gradient_checkpointing=True,
             train_layernorms=bool(cfg["qat"]["saltq"].get("train_layernorms", False)),
             train_scale=bool(cfg["qat"]["saltq"].get("train_scale", False)),
+            continuous_z=bool(cfg["qat"]["saltq"].get("continuous_z", True)),
         )
         base_model_ref = model
     else:

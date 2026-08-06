@@ -85,13 +85,34 @@ qat:
     #   reconstruct-then-GEMM forward. Run this ONLY as the "is s worth it" ablation.
     train_scale: false
 
-    # ---- learning rates for the tiers of freedom --------------------------------------------
-    # salient_lr trains REAL WEIGHTS, not an adapter. A LoRA lr (2e-4) will destroy them.
-    # This is the single most important new hyper-parameter; sweep it first.
-    salient_lr: 2.0e-5
-    # The quantization params: the non-salient z (and s when train_scale=true), plus the salient
-    # slice's own LSQ grid. The non-salient segment's entire task adaptation lives in z.
+    # ---- how the zero-point is parameterized -------------------------------------------------
+    # true (default) = FRACTIONAL zero-point. An integer-constrained z cannot be trained: z is
+    #   measured in quantization LEVELS, so rounding puts a dead zone in front of it and the
+    #   effective weight does not move until z crosses half a level. Measured on the first INT3
+    #   g64 run, round(z) changed for 0 of 1.63M parameters and the non-salient segment
+    #   contributed exactly nothing (32.9 GSM8k vs a 28.7 starting point, all of it from the
+    #   salient segment). It is also what QA-LoRA actually deploys — its group-pooled delta folds
+    #   in as z - c/s, which is not an integer — so integer z is strictly WEAKER than the baseline
+    #   this segment is meant to generalize.
+    #   Cost: the zero-point ships as fp16 metadata instead of packed int4, +16 bits per group
+    #   (~0.25 bit/weight at g=64). The dense-dequant eval path is unaffected.
+    # false = integer z, for the ablation. Needs zp_lr around 5e-3 to move at all.
+    continuous_z: true
+
+    # ---- learning rates, grouped by the UNITS a parameter lives in ---------------------------
+    # This grouping is the point. Adam moves a parameter by about lr per step, so what matters is
+    # lr relative to the parameter's own meaningful step size. Mixing units in one group is how
+    # the first run silently trained nothing outside the salient segment.
+    #
+    # salient_lr: weight units (|W| ~ 2e-2, quantization step ~1e-2). At 2e-5 the measured random
+    #   walk moved W_S by only 0.03-0.14 of a quantization step, so most salient codes never
+    #   flipped either. 2e-4 puts the movement on the order of the step size.
+    salient_lr: 2.0e-4
+    # scales_lr: also weight units (s ~ 1e-2). 1e-5 is appropriate here.
     scales_lr: 1.0e-5
+    # zp_lr: QUANTIZATION-LEVEL units, where the meaningful step is 1.0, not 1e-2. This has to be
+    #   two to three orders of magnitude above scales_lr or the zero-points never move.
+    zp_lr: 1.0e-3
     # RMSNorm weights stay fp16 at deploy, so training them is free extra freedom. Off = the
     # clean "only the two segments are trained" ablation.
     train_layernorms: false

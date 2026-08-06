@@ -145,6 +145,7 @@ def build_trainer(
         trainer_cls = _make_saltq_trainer_cls(
             salient_lr=float(sq_cfg.get("salient_lr", train_cfg["learning_rate"])),
             scales_lr=float(sq_cfg.get("scales_lr", cfg["qat"].get("lsq", {}).get("scales_lr", 1e-5))),
+            zp_lr=float(sq_cfg.get("zp_lr", 1e-3)),
             saltq_base_dir=saltq_base_dir,
         )
     elif enable_lsq:
@@ -223,21 +224,29 @@ def _make_lsq_trainer_cls(scales_lr: float):
     return _LSQTrainer
 
 
-def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, saltq_base_dir: str = None):
+def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
+                            saltq_base_dir: str = None):
     """
     Trainer subclass for SALT-Q.
 
     create_optimizer — three param groups matching the method's three tiers of freedom:
-      1. `weight_salient`  real weights, `salient_lr` (must be far below a LoRA lr)
-      2. `lsq_w_scale` / `lsq_w_zp` / `saltq_s` / `saltq_z`  the quant grid, `scales_lr`, no decay
-      3. everything else trainable (e.g. LayerNorms if opted in), base lr
+      1. `weight_salient`                   real weights, weight units, `salient_lr`
+      2. `lsq_w_scale` / `saltq_s`          scales, weight units (~1e-2), `scales_lr`, no decay
+      3. `lsq_w_zp` / `saltq_z`             zero-points, QUANTIZATION LEVEL units (step 1.0),
+                                            `zp_lr`, no decay
+      4. everything else trainable (e.g. LayerNorms if opted in), base lr
+
+    Groups 2 and 3 used to share one lr. They must not: a zero-point measured in levels needs an
+    lr two to three orders of magnitude larger than a scale measured in weight units, and sharing
+    the scale's lr left every zero-point in the model at 0.0000% change over a full run.
 
     _save — writes ONLY the trainable tensors. The frozen int8 codes are several GB, never change,
     and live in the saltq_base dir; a checkpoint records a pointer to it instead of a copy.
     """
     from src.qat_saltq import (
-        QUANT_PARAM_FRAGMENTS,
         SALIENT_WEIGHT_PARAM,
+        SCALE_PARAM_FRAGMENTS,
+        ZEROPOINT_PARAM_FRAGMENTS,
         load_saltq_trainable,
         save_saltq_trainable,
     )
@@ -250,19 +259,25 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, saltq_base_dir:
             opt_model = self.model
             named = {n: p for n, p in opt_model.named_parameters() if p.requires_grad}
 
-            def is_quant(n):
-                return any(frag in n for frag in QUANT_PARAM_FRAGMENTS)
+            def is_scale(n):
+                return any(frag in n for frag in SCALE_PARAM_FRAGMENTS)
+
+            def is_zp(n):
+                return any(frag in n for frag in ZEROPOINT_PARAM_FRAGMENTS)
 
             def is_salient(n):
                 return SALIENT_WEIGHT_PARAM in n
 
             salient = [p for n, p in named.items() if is_salient(n)]
-            quant = [p for n, p in named.items() if is_quant(n)]
-            other = [p for n, p in named.items() if not is_salient(n) and not is_quant(n)]
+            scales = [p for n, p in named.items() if is_scale(n)]
+            zps = [p for n, p in named.items() if is_zp(n)]
+            other = [p for n, p in named.items()
+                     if not is_salient(n) and not is_scale(n) and not is_zp(n)]
 
             param_groups = [
                 {"params": salient, "weight_decay": self.args.weight_decay, "lr": salient_lr},
-                {"params": quant, "weight_decay": 0.0, "lr": scales_lr},
+                {"params": scales, "weight_decay": 0.0, "lr": scales_lr},
+                {"params": zps, "weight_decay": 0.0, "lr": zp_lr},
                 {"params": other, "weight_decay": 0.0},
             ]
             param_groups = [g for g in param_groups if g["params"]]
@@ -271,15 +286,20 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, saltq_base_dir:
                 self.args, opt_model)
             self.optimizer = optimizer_cls(param_groups, **optimizer_kwargs)
             print(
-                f"[Trainer][SALT-Q] optimizer groups: "
-                f"salient_weights={sum(p.numel() for p in salient) / 1e6:.1f}M (lr={salient_lr:g}), "
-                f"quant_params={sum(p.numel() for p in quant) / 1e6:.1f}M (lr={scales_lr:g}, wd=0), "
-                f"other={sum(p.numel() for p in other) / 1e6:.1f}M (lr={self.args.learning_rate:g})"
+                f"[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):\n"
+                f"  salient weights  {sum(p.numel() for p in salient) / 1e6:7.1f}M  lr={salient_lr:g}"
+                f"   (weight units)\n"
+                f"  scales           {sum(p.numel() for p in scales) / 1e6:7.1f}M  lr={scales_lr:g}"
+                f"   (weight units, wd=0)\n"
+                f"  zero-points      {sum(p.numel() for p in zps) / 1e6:7.1f}M  lr={zp_lr:g}"
+                f"   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)\n"
+                f"  other            {sum(p.numel() for p in other) / 1e6:7.1f}M  "
+                f"lr={self.args.learning_rate:g}"
             )
             if not salient:
                 print("[Trainer][SALT-Q] WARNING: no salient weight params found!")
-            if not quant:
-                print("[Trainer][SALT-Q] WARNING: no (s, z) params found!")
+            if not zps:
+                print("[Trainer][SALT-Q] WARNING: no zero-point params found!")
             return self.optimizer
 
         def _load_from_checkpoint(self, resume_from_checkpoint, model=None):

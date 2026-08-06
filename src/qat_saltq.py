@@ -99,8 +99,14 @@ SALTQ_TRAINABLE_FILENAME = "saltq_trainable.safetensors"
 SALTQ_CKPT_META_FILENAME = "saltq_ckpt_meta.pt"
 
 # Parameter-name fragments used by the optimizer grouping in src/trainer.py.
+# Optimizer grouping is by the UNITS a parameter lives in, not by whether it is a "quant param".
+# Mixing them was a real bug: lsq_w_zp and saltq_z are measured in quantization LEVELS (meaningful
+# step 1.0) while lsq_w_scale and saltq_s are in weight units (meaningful step ~1e-2). Sharing one
+# lr left both zero-points at 0.0000% change over a full training run.
 SALIENT_WEIGHT_PARAM = "weight_salient"
-QUANT_PARAM_FRAGMENTS = ("lsq_w_scale", "lsq_w_zp", "saltq_s", "saltq_z")
+SCALE_PARAM_FRAGMENTS = ("lsq_w_scale", "saltq_s")
+ZEROPOINT_PARAM_FRAGMENTS = ("lsq_w_zp", "saltq_z")
+QUANT_PARAM_FRAGMENTS = SCALE_PARAM_FRAGMENTS + ZEROPOINT_PARAM_FRAGMENTS
 
 
 def _lsq_levels(q_bits: int, symmetric: bool) -> Tuple[int, int]:
@@ -363,6 +369,7 @@ class SALTQLinear(nn.Module):
         bias: Optional[torch.Tensor] = None,
         param_dtype: torch.dtype = torch.float32,
         train_scale: bool = False,
+        continuous_z: bool = True,
         wq_dtype: torch.dtype = torch.bfloat16,
     ):
         super().__init__()
@@ -378,6 +385,7 @@ class SALTQLinear(nn.Module):
         self.q_bits = int(q_bits)
         self.symmetric = bool(symmetric)
         self.train_scale = bool(train_scale)
+        self.continuous_z = bool(continuous_z)
         self.n_nonsalient = self.in_features - self.group_k
         self.ng = self.in_features // self.group_size
         self.n_nonsal_g = self.n_nonsalient // self.group_size
@@ -439,10 +447,30 @@ class SALTQLinear(nn.Module):
             W, self.lsq_w_scale.float(), self.lsq_w_zp.float(), self.group_size, self.q_bits
         )
 
-    def _z_int(self) -> torch.Tensor:
-        """Grid-valued zero-point [out, n_nonsal_g], STE-rounded so train == the exported int."""
-        z = grad_scale(self.saltq_z.float(), self._z_gfactor)
-        return round_ste(z).clamp(self.Qn, self.Qp)
+    def _z_eff(self) -> torch.Tensor:
+        """
+        The zero-point actually used, [out, n_nonsal_g].
+
+        continuous_z=True (default): a FRACTIONAL zero-point, no rounding.
+
+        An integer-constrained z cannot be trained. z lives in units of quantization LEVELS, where
+        the meaningful step is 1.0, so an STE round puts a dead zone in front of it: gradients flow
+        but the effective weight does not move until z crosses a half level. Measured on the first
+        INT3 g64 run, |dz| reached 4.4e-3 against a 0.5 threshold and round(z) changed for 0 of
+        1.63M parameters — the entire non-salient segment contributed exactly nothing.
+
+        A fractional zero-point is also what QA-LoRA actually deploys: its group-pooled delta c
+        folds in as z_eff = z - c/s, which is not an integer. Integer z is therefore STRICTLY
+        WEAKER than the baseline it is meant to generalize. The cost is that the zero-point ships
+        as fp16 metadata rather than packed int4 (+16 bits per group, ~0.25 bit/weight at g=64).
+
+        continuous_z=False keeps the integer grid for the ablation; it needs a much larger lr to
+        move at all, and adapts only in whole quantization steps.
+        """
+        z = self.saltq_z.float()
+        if not self.continuous_z:
+            z = round_ste(grad_scale(z, self._z_gfactor))
+        return z.clamp(self.Qn, self.Qp)
 
     def _s_eff(self) -> torch.Tensor:
         s = self.saltq_s.float().clamp(min=1e-8)
@@ -463,7 +491,7 @@ class SALTQLinear(nn.Module):
         if self.symmetric:
             W = q * s
         else:
-            W = (q - self._z_int().unsqueeze(-1)) * s
+            W = (q - self._z_eff().unsqueeze(-1)) * s
         return W.reshape(self.out_features, self.n_nonsalient)
 
     def effective_weight(self, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
@@ -496,7 +524,7 @@ class SALTQLinear(nn.Module):
         # Zero-point correction. (q - z)*s = q*s - z*s and z*s is constant within a group, so the
         # whole correction is one pooled-input GEMM instead of a full [out, in] reconstruction.
         if not self.symmetric:
-            zs = (self._z_int() * self._s_eff()).to(x.dtype)            # [out, n_nonsal_g]
+            zs = (self._z_eff() * self._s_eff()).to(x.dtype)            # [out, n_nonsal_g]
             xp = x.reshape(*x.shape[:-1], self.ng, self.group_size).sum(-1)
             out = out - F.linear(xp[..., self.n_sal_g:], zs)
 
@@ -537,10 +565,13 @@ class SALTQLinear(nn.Module):
             zeros.append(z_s)
 
         s_n = self.saltq_s.float().clamp(min=1e-8)
-        z_n = (
-            torch.zeros_like(s_n) if self.symmetric
-            else self.saltq_z.float().round().clamp(self.Qn, self.Qp)
-        )
+        if self.symmetric:
+            z_n = torch.zeros_like(s_n)
+        else:
+            z_n = self.saltq_z.float()
+            if not self.continuous_z:
+                z_n = z_n.round()
+            z_n = z_n.clamp(self.Qn, self.Qp)
         codes.append(self._codes_cpu.to(device=s_n.device, dtype=torch.float32))
         scales.append(s_n)
         zeros.append(z_n)
@@ -585,6 +616,7 @@ def build_saltq_model(
     gradient_checkpointing: bool = True,
     train_layernorms: bool = False,
     train_scale: bool = False,
+    continuous_z: bool = True,
     device=None,
 ):
     """
@@ -640,6 +672,7 @@ def build_saltq_model(
                 bias=bias,
                 param_dtype=param_dtype,
                 train_scale=train_scale,
+                continuous_z=continuous_z,
                 wq_dtype=dtype,
             )
             setattr(parent, terminal, layer)
@@ -672,6 +705,7 @@ def build_saltq_model(
     n_codes = meta["param_counts"]["frozen_codes"]
     mode = "s+z (ablation, pays the full 2N weight-gradient GEMM)" if train_scale \
         else "z-only (default; forward is a frozen GEMM + pooled correction)"
+    mode += ", continuous z (fractional zero-point)" if continuous_z else ", INTEGER z (ablation)"
     print(
         f"[SALT-Q] Replaced {n_replaced} linears; trainable {n_train / 1e6:.1f}M params "
         f"({100.0 * n_train / max(total, 1):.2f}% of the fp-parameter tree)\n"
@@ -932,6 +966,7 @@ def export_saltq(
             dtype=getattr(torch, cfg["model"]["dtype"]),
             gradient_checkpointing=False,
             train_scale=bool((cfg["qat"].get("saltq", {}) or {}).get("train_scale", False)),
+            continuous_z=bool((cfg["qat"].get("saltq", {}) or {}).get("continuous_z", True)),
         )
         load_saltq_trainable(model, checkpoint_dir)
     else:
