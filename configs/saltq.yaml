@@ -17,9 +17,10 @@
 
 model:
   name: "meta-llama/Llama-2-7b-hf"
-  # INT3 first: there is an existing Permuted-SQAT 3-bit MetaMath baseline to compare against,
-  # and a run that lands on a regime the old method already handles is the cleaner first signal
-  # that the machinery is sound. INT2 (where GPTQ-only non-salient collapses) comes after.
+  # Overridden by `run_saltq.sh --bits N` / `--bits`. INT3 g64 ran first because that cell has a
+  # full external baseline (PSQAT+GPTQ 42.6, LR-QAT/fp16 45.2) — it came back at 44.8, so the
+  # machinery is sound. INT2 (where GPTQ-only non-salient collapses, and the method's actual
+  # target regime) runs with EVERY other field below unchanged, so it is single-variable.
   quant_bits: 3
   # double_quant / quant_type are NF4 knobs and are UNUSED by SALT-Q (there is no bitsandbytes in
   # this path at all — the base is real INT-b GPTQ codes, so there is no double quantization).

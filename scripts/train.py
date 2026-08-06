@@ -48,6 +48,93 @@ from src.qat_base import get_qat_handler
 from src.export import export_merged_only, merge_and_export, export_adapter_only
 
 
+def _permuted_base_reusable(permuted_dir: str, cfg: dict, sp_cfg: dict):
+    """Return the reason a permuted fp16 base can be reused as-is, or None if it must be rebuilt.
+
+    The permuted base depends ONLY on the saliency/segmentation config — it is built BEFORE any
+    quantization and carries no bit-width. So across a bit sweep (3bit -> 2bit) rebuilding it is
+    not just an hour of calibration plus a 13 GB write: the calibration pass would be re-run, and
+    any drift in the chosen segmentation would silently make the two runs differ by more than the
+    one variable under test. Reuse it whenever every field that shaped it matches.
+    """
+    meta_pt = os.path.join(permuted_dir, "sqat_permute_meta.pt")
+    if not (os.path.isdir(permuted_dir) and os.path.exists(meta_pt)):
+        return None
+    try:
+        meta = torch.load(meta_pt, map_location="cpu", weights_only=False)
+    except Exception:
+        return None
+
+    awq = (sp_cfg.get("awq_scale", {}) or {})
+    want = {
+        "boundary_sizes":         sp_cfg.get("boundary_sizes"),
+        "fixed_group_k":          sp_cfg.get("group_k"),
+        "group_size":             cfg["qat"].get("group_size", 128),
+        "top_k_ratio":            sp_cfg.get("top_k_ratio", 0.01),
+        "outlier_log_sigma":      sp_cfg.get("outlier_log_sigma", 3.0),
+        "down_outlier_log_sigma": sp_cfg.get(
+            "down_outlier_log_sigma", sp_cfg.get("outlier_log_sigma", 3.0)),
+        "awq_alpha":              awq.get("alpha", 0.5),
+        "awq_max":                awq.get("max", 2.0),
+    }
+    for key, wanted in want.items():
+        have = meta.get(key)
+        if isinstance(wanted, (list, tuple)) or isinstance(have, (list, tuple)):
+            if list(have or []) != list(wanted or []):
+                return None
+        elif wanted is None or have is None:
+            if wanted is not have:
+                return None
+        elif float(have) != float(wanted):
+            return None
+    return (f"group_k={meta.get('group_k')} boundary_sizes={meta.get('boundary_sizes')} "
+            f"group_size={meta.get('group_size')}")
+
+
+def _saltq_base_dir_for(cfg: dict, explicit: str | None) -> str:
+    """Where this run's FROZEN GPTQ codes live.
+
+    The codes ARE bit-width- and group-size-specific, so the path has to be too: the original
+    default (<output_dir>/saltq_base) meant that starting a 2-bit run would silently overwrite
+    the 3-bit codes that the already-trained 3-bit checkpoint points at, making that checkpoint
+    unexportable. New default: <output_dir>/saltq_base_{bits}bit_g{group_size}, falling back to
+    the legacy un-suffixed dir when it exists AND matches this config (so the 3-bit run keeps
+    finding its own base).
+    """
+    if explicit:
+        return explicit
+    out = cfg["training"]["output_dir"]
+    bits = int(cfg["model"]["quant_bits"])
+    gs = int(cfg["qat"].get("group_size", 128))
+    legacy = os.path.join(out, "saltq_base")
+    if _saltq_base_matches(legacy, cfg) is not None:
+        return legacy
+    return os.path.join(out, f"saltq_base_{bits}bit_g{gs}")
+
+
+def _saltq_base_matches(base_dir: str, cfg: dict):
+    """Return a description of an existing frozen-code base if it matches cfg, else None.
+
+    A mismatch here is not recoverable at runtime — the codes are a one-shot discrete choice, so
+    reusing 3-bit codes under a 2-bit config would produce a model whose (s, z) address a grid
+    that does not exist.
+    """
+    from src.qat_saltq import SALTQ_META_FILENAME
+    meta_pt = os.path.join(base_dir, SALTQ_META_FILENAME)
+    if not (os.path.isdir(base_dir) and os.path.exists(meta_pt)):
+        return None
+    try:
+        meta = torch.load(meta_pt, map_location="cpu", weights_only=False)
+    except Exception:
+        return None
+    if (int(meta.get("q_bits", -1)) != int(cfg["model"]["quant_bits"])
+            or int(meta.get("group_size", -1)) != int(cfg["qat"].get("group_size", 128))
+            or bool(meta.get("symmetric", False)) != bool(cfg["qat"].get("symmetric", False))):
+        return None
+    return (f"INT{meta.get('q_bits')} g{meta.get('group_size')} "
+            f"{'sym' if meta.get('symmetric') else 'asym'}")
+
+
 def load_config(config_path: str, overrides: dict) -> dict:
     """Load YAML config and apply CLI overrides."""
     with open(config_path, "r") as f:
@@ -370,6 +457,7 @@ def main():
         sp_cfg       = cfg["qat"]["saltq" if qat_mode == "saltq" else "sqat_permute"]
         permuted_dir = args.permuted_base_dir or os.path.join(
             cfg["training"]["output_dir"], "permuted_fp16_base")
+        _perm_reuse = _permuted_base_reusable(permuted_dir, cfg, sp_cfg)
 
         if args.resume_from_checkpoint:
             # 恢复训练：必须复用原训练的 permuted base，绝不重新生成 —— 新的 saliency/permute
@@ -383,6 +471,12 @@ def main():
                 )
             if accelerator.is_main_process:
                 print(f"\n[SQAT-Permute][Resume] 复用已有 permuted base（不重新生成）: {permuted_dir}")
+        elif _perm_reuse is not None:
+            # Bit-independent artifact: reuse it across the bit sweep so 3-bit and 2-bit differ by
+            # exactly one variable (and skip the calibration pass + 13 GB rewrite).
+            if accelerator.is_main_process:
+                print(f"\n[SQAT-Permute] 复用已有 permuted base（配置一致，不重建）: {permuted_dir}\n"
+                      f"[SQAT-Permute]   {_perm_reuse}")
         elif accelerator.is_main_process:
             print("\n[SQAT-Permute] Building permuted fp16 base (permute BEFORE NF4)...")
             sp_tok = AutoTokenizer.from_pretrained(
@@ -438,9 +532,9 @@ def main():
 
         sq_cfg = cfg["qat"]["saltq"]
         sq_gptq = sq_cfg.get("gptq", {}) or {}
-        saltq_base_dir = args.saltq_base_dir or os.path.join(
-            cfg["training"]["output_dir"], "saltq_base")
+        saltq_base_dir = _saltq_base_dir_for(cfg, args.saltq_base_dir)
         _sq_meta_pt = os.path.join(saltq_base_dir, SALTQ_META_FILENAME)
+        _sq_match = _saltq_base_matches(saltq_base_dir, cfg)
 
         if args.resume_from_checkpoint:
             if not os.path.exists(_sq_meta_pt):
@@ -451,6 +545,18 @@ def main():
                 )
             if accelerator.is_main_process:
                 print(f"\n[SALT-Q][Resume] 复用已有 frozen-code base（不重新 GPTQ）: {saltq_base_dir}")
+        elif os.path.exists(_sq_meta_pt) and _sq_match is None:
+            # An existing base under this path was built for a DIFFERENT grid. Never overwrite it
+            # silently: some checkpoint elsewhere still points at those codes.
+            raise RuntimeError(
+                f"[SALT-Q] {saltq_base_dir} 里已有一份 frozen-code base，但它的 (bits, group_size, "
+                f"symmetric) 与本次配置不一致。codes 是一次性的离散选择，覆盖它会让指向它的 "
+                f"checkpoint 永久失效。请换一个 --saltq_base_dir，或先把旧的移开。"
+            )
+        elif _sq_match is not None:
+            if accelerator.is_main_process:
+                print(f"\n[SALT-Q] 复用已有 frozen-code base（{_sq_match}，配置一致，不重新 GPTQ）: "
+                      f"{saltq_base_dir}")
         elif accelerator.is_main_process:
             print("\n[SALT-Q] Building frozen-code base (GPTQ on the permuted fp16 base)...")
             sq_tok = AutoTokenizer.from_pretrained(

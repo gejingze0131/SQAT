@@ -93,6 +93,12 @@ Eval  lm_eval_model_kwargs() 自动构建带 boundary gather 的 HFLM
 | PSQAT+RTN | 43.6 | 40.8 | — |
 | **PSQAT+GPTQ** | **45.2** | **42.6** | **44.8** |
 | SalientFP16+GPTQ（salient 存 fp16） | — | 42.3 | 44.8 |
+| **SALT-Q（本机 lm-eval）** | — | **44.8** | — |
+
+> SALT-Q 的 44.8 是**实测**（strict-match 44.81 / flexible 45.11，`results_saltq.csv`
+> `source=lm-eval`，2026-08-06 run2：INT3 g64、连续 z、z-only、salient_lr 2e-4、zp_lr 1e-3）。
+> 它把 PSQAT+GPTQ 的 42.6 抬了 **+2.2 分**，与 LR-QAT / fp16 的 45.2 差 0.4 分（在 ±1.37 的
+> 标准误内），也就是 §4 那个"2.6 分缺口"基本被吃掉，且成本仍在 PSQAT 量级。
 
 三个必须记住的事实：
 
@@ -301,29 +307,44 @@ checkpoint 本来就要存这些 metadata。
 ## 14. 怎么跑
 
 ```bash
-bash run_saltq.sh                      # train + export + eval（MetaMathQA, INT2, 3 GPU）
+bash run_saltq.sh                      # train + export + eval（MetaMathQA, INT3 g64, 3 GPU）
+bash run_saltq.sh --bits 2             # INT2 g64（run3）
 bash run_saltq.sh --salient_lr 1e-5    # 扫首要超参
 bash run_saltq.sh --skip_train --checkpoint_dir outputs/saltq-2bit-saltq/final
 bash run_saltq.sh --resume_from outputs/saltq-2bit-saltq/checkpoint-500
 ```
 
-两个离线基座（`outputs/saltq/permuted_fp16_base` ~13 GB、`outputs/saltq/saltq_base` ~7 GB）在 resume 和
-export 时**必须复用**，不要手工删除。
+两个离线基座（`outputs/saltq/permuted_fp16_base` ~13 GB、`outputs/saltq/saltq_base*` ~7 GB/bit）在
+resume 和 export 时**必须复用**，不要手工删除。
 
 结果表：`results_saltq.csv`（长表）。reported baseline 来自 `baselines_metamath.csv`（`source=report`），
 本机跑出来的走 lm-eval（`source=lm-eval`）——**这一列必须保持诚实**，不要把没测过的数字标成 lm-eval。
 
-### 首个 run 的预期与诊断
+### run 记录
 
-第一个 run 是 **INT3 g64**，这一格有完整的三点对照：
+| run | 配置 | GSM8k (strict) | 结论 |
+|---|---|---|---|
+| run1 | INT3 g64，**整数 z + scale 量级 lr** | 32.9 | **作废**：z 完全没动（round(z) 在 1.63M 个参数上零变化），非显著段贡献为 0 |
+| run2 | INT3 g64，连续 z，z-only，salient_lr 2e-4 / zp_lr 1e-3 | **44.8** | 超过 PSQAT+GPTQ 42.6 **+2.2**，逼平 LR-QAT/fp16 45.2 |
+| run3 | **INT2 g64**，其余与 run2 完全一致 | 进行中 | PSQAT 崩溃区；无 6.12 报告对照，是方法真正的目标格 |
+
+run2 的三点对照（这一格是唯一有完整外部 baseline 的）：
 
 | 参照 | GSM8k | 对 SALT-Q 的含义 |
 |---|---|---|
 | LR-QAT / fp16 | 45.2 | 精度天花板，成本 +175% |
-| **PSQAT+GPTQ** | **42.6** | **必须打过的下限**（同量级成本） |
+| **PSQAT+GPTQ** | **42.6** | **必须打过的下限**（同量级成本）→ 已打过 |
 | SalientFP16+GPTQ | 42.3 | 说明高精度通道不是必需品 |
 
-要证明的是"低成本吃掉那 2.6 分缺口"，所以 **42.6 是及格线，45.2 才是目标**。
+### 跑 bit 扫描时的基座纪律
+
+- `permuted_fp16_base` **与比特无关**（它在任何量化之前就建好了），所以 3bit→2bit **必须复用同一份**：
+  重建会重跑校准、可能给出不同的分段，那样两个 run 就不止差一个变量了。`scripts/train.py` 里
+  `_permuted_base_reusable()` 会在分段配置一致时自动复用。
+- `saltq_base`（冻结 codes）**与比特强相关**。默认路径已改成
+  `<output_dir>/saltq_base_{bits}bit_g{gs}`（旧的无后缀目录在配置匹配时仍然复用，所以 3bit 的
+  checkpoint 指针不会失效）。若某个路径下已有一份 **配置不符** 的 base，训练会直接报错而不是覆盖
+  ——codes 是一次性的离散选择，覆盖它会让指向它的 checkpoint 永久无法 export。
 
 **不要用 loss 值判断"量化有没有生效"。** 我最初写的是"初始 loss 应落在 1.8–2.5，≈1.0 则可疑"，
 实测首个 INT3 g64 run 是 **1.219**，一度看着像量化没生效。**是这个阈值错了，不是训练错了**：
