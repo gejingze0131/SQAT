@@ -17,6 +17,32 @@ from peft import PeftModel
 from .qat_base import QATHandler
 
 
+def saltq_lr(cfg: dict, key: str, fallback: float) -> float:
+    """Resolve one SALT-Q learning rate for the bit width actually being trained.
+
+    Every SALT-Q lr is set against the unit its parameter lives in, and two of those units are
+    the quantization step s(b) = range / (2^b - 1) — so the right lr is a function of the bit
+    width, not a constant (see the derivation in configs/saltq.yaml). Without this, `--bits 2`
+    would silently keep the INT3 rates: the salient weights would move 0.25 of a step instead of
+    0.5 and half the tier's freedom would go unused, which is a quiet version of exactly the bug
+    that cost run1 its non-salient segment.
+
+    Order: `<key>_by_bits[bits]`  >  `<key>`  >  fallback. A CLI override writes the scalar and
+    clears the map (scripts/train.py), so it still wins.
+    """
+    sq = cfg.get("qat", {}).get("saltq", {}) or {}
+    by_bits = sq.get(f"{key}_by_bits") or {}
+    bits = int(cfg["model"]["quant_bits"])
+    if bits in by_bits:
+        return float(by_bits[bits])
+    if str(bits) in by_bits:                     # YAML keys can arrive as strings
+        return float(by_bits[str(bits)])
+    if by_bits:
+        print(f"[Trainer][SALT-Q] {key}_by_bits has no entry for INT{bits}; "
+              f"falling back to the scalar {key}.")
+    return float(sq.get(key, fallback))
+
+
 # ============================================================================
 # QAT Callback (bridges QATHandler into HF Trainer lifecycle)
 # ============================================================================
@@ -143,9 +169,10 @@ def build_trainer(
         # and never change, so checkpoints hold only the trainable tensors.
         sq_cfg = cfg["qat"].get("saltq", {}) or {}
         trainer_cls = _make_saltq_trainer_cls(
-            salient_lr=float(sq_cfg.get("salient_lr", train_cfg["learning_rate"])),
-            scales_lr=float(sq_cfg.get("scales_lr", cfg["qat"].get("lsq", {}).get("scales_lr", 1e-5))),
-            zp_lr=float(sq_cfg.get("zp_lr", 1e-3)),
+            salient_lr=saltq_lr(cfg, "salient_lr", train_cfg["learning_rate"]),
+            scales_lr=saltq_lr(cfg, "scales_lr",
+                               cfg["qat"].get("lsq", {}).get("scales_lr", 1e-5)),
+            zp_lr=saltq_lr(cfg, "zp_lr", 1e-3),
             saltq_base_dir=saltq_base_dir,
         )
     elif enable_lsq:
@@ -314,7 +341,11 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
             output_dir = output_dir if output_dir is not None else self.args.output_dir
             os.makedirs(output_dir, exist_ok=True)
             model = self.accelerator.unwrap_model(self.model)
-            save_saltq_trainable(model, output_dir, saltq_base_dir=saltq_base_dir)
+            save_saltq_trainable(
+                model, output_dir, saltq_base_dir=saltq_base_dir,
+                learning_rates={"salient_lr": salient_lr, "scales_lr": scales_lr,
+                                "zp_lr": zp_lr},
+            )
             proc = getattr(self, "processing_class", None) or getattr(self, "tokenizer", None)
             if proc is not None and hasattr(proc, "save_pretrained"):
                 proc.save_pretrained(output_dir)

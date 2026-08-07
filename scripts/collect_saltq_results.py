@@ -112,12 +112,25 @@ def _run_context(model_dir: str, cfg: Optional[dict]) -> Dict[str, object]:
 
     # The SALT-Q base carries the authoritative bit width and the freedom split. It is referenced
     # from the training checkpoint, which we do not have here, so try the conventional location.
-    for cand in (
-        os.path.join(os.path.dirname(model_dir.rstrip("/")), "saltq", "saltq_base"),
-        os.path.join(model_dir, "saltq_base"),
-    ):
+    # The frozen-code base is now per-(bits, group_size) — saltq_base_2bit_g64 alongside the
+    # legacy un-suffixed saltq_base — so glob rather than naming one path, and take the one whose
+    # bit width matches the dir being evaluated when there is more than one.
+    _want_bits = None
+    _m = re.search(r"(\d+)bit", os.path.basename(model_dir.rstrip("/")))
+    if _m:
+        _want_bits = int(_m.group(1))
+    _cands = sorted(glob.glob(os.path.join(
+        os.path.dirname(model_dir.rstrip("/")), "saltq", "saltq_base*")))
+    _cands += sorted(glob.glob(os.path.join(model_dir, "saltq_base*")))
+    if _want_bits is not None:
+        _cands.sort(key=lambda p: 0 if f"{_want_bits}bit" in os.path.basename(p) else 1)
+    for cand in _cands:
         sq = _load_torch_meta(os.path.join(cand, "saltq_meta.pt"))
         if sq:
+            # Never let a base built for another bit width describe this run — a wrong freedom
+            # split in the table is worse than an empty cell.
+            if _want_bits is not None and int(sq.get("q_bits", _want_bits)) != _want_bits:
+                continue
             ctx["bits"] = sq.get("q_bits", "")
             ctx["symmetric"] = sq.get("symmetric", "")
             pc = sq.get("param_counts", {})
@@ -133,11 +146,29 @@ def _run_context(model_dir: str, cfg: Optional[dict]) -> Dict[str, object]:
         if m:
             ctx["bits"] = int(m.group(1))
 
+    # Learning rates: prefer what the RUN recorded. The yaml carries a per-bit table plus whatever
+    # the command line overrode, so it describes a run only when its own quant_bits matches the
+    # one that was evaluated — otherwise the honest cell is empty, not a plausible-looking guess.
+    # (Checkpoints written before saltq_ckpt_meta.pt carried learning_rates have no record; their
+    # lrs live in the note column.)
+    ckpt_lrs = {}
+    for cand in (os.path.join(os.path.dirname(model_dir.rstrip("/")),
+                              os.path.basename(model_dir.rstrip("/")).replace(
+                                  "-deploy-eval", ""), "final"),):
+        cm = _load_torch_meta(os.path.join(cand, "saltq_ckpt_meta.pt"))
+        if cm and cm.get("learning_rates"):
+            ckpt_lrs = cm["learning_rates"]
+            break
+
     if cfg:
         sq_cfg = (cfg.get("qat", {}) or {}).get("saltq", {}) or {}
         tr = cfg.get("training", {}) or {}
-        ctx["salient_lr"] = sq_cfg.get("salient_lr", "")
-        ctx["scales_lr"] = sq_cfg.get("scales_lr", "")
+        cfg_bits = (cfg.get("model", {}) or {}).get("quant_bits", "")
+        cfg_describes_run = (not ctx["bits"]) or str(cfg_bits) == str(ctx["bits"])
+        ctx["salient_lr"] = ckpt_lrs.get(
+            "salient_lr", sq_cfg.get("salient_lr", "") if cfg_describes_run else "")
+        ctx["scales_lr"] = ckpt_lrs.get(
+            "scales_lr", sq_cfg.get("scales_lr", "") if cfg_describes_run else "")
         ctx["base_lr"] = tr.get("learning_rate", "")
         ctx["epochs"] = tr.get("num_epochs", "")
         ctx["dataset"] = (cfg.get("data", {}) or {}).get("train_dataset", "")

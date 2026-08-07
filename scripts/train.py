@@ -173,12 +173,16 @@ def load_config(config_path: str, overrides: dict) -> dict:
             overrides["gptq_nonsalient"]
     if overrides.get("enable_lsq") is not None:
         cfg["qat"].setdefault("lsq", {})["enabled"] = overrides["enable_lsq"]
-    if overrides.get("salient_lr") is not None:
-        cfg["qat"].setdefault("saltq", {})["salient_lr"] = overrides["salient_lr"]
-    if overrides.get("saltq_scales_lr") is not None:
-        cfg["qat"].setdefault("saltq", {})["scales_lr"] = overrides["saltq_scales_lr"]
-    if overrides.get("zp_lr") is not None:
-        cfg["qat"].setdefault("saltq", {})["zp_lr"] = overrides["zp_lr"]
+    # An explicit lr on the command line has to beat the per-bit table in the yaml, so it clears
+    # the corresponding *_by_bits map — otherwise the map would silently win and a sweep would
+    # measure the config's value instead of the one that was asked for.
+    for _ov, _key in (("salient_lr", "salient_lr"),
+                      ("saltq_scales_lr", "scales_lr"),
+                      ("zp_lr", "zp_lr")):
+        if overrides.get(_ov) is not None:
+            _sq = cfg["qat"].setdefault("saltq", {})
+            _sq[_key] = overrides[_ov]
+            _sq.pop(f"{_key}_by_bits", None)
     if overrides.get("train_layernorms") is not None:
         cfg["qat"].setdefault("saltq", {})["train_layernorms"] = overrides["train_layernorms"]
     if overrides.get("report_to"):

@@ -58,11 +58,15 @@ qat:
   # group_k is always a multiple of this, so the salient columns occupy COMPLETE quantization
   # groups starting at column 0. group_size also sets the DENSITY of the non-salient segment's
   # affine freedom: (s, z) count = 2 * weights / group_size, i.e. 202M at 64 vs 405M at 32.
-  group_size: 64
+  group_size: 32
 
   # NOTE: qat.lsq is the *sqat_permute / full* switch. SALT-Q's salient segment is ALWAYS LSQ
   # (that is what makes its trained weights land on the grid), so this flag does not gate it.
-  # Only lsq.scales_lr is read, as the fallback for saltq.scales_lr.
+  #
+  # lsq.scales_lr is NOT a fourth independent knob in saltq mode: it is read only when
+  # qat.saltq.scales_lr is absent (src/trainer.py). Keep it EQUAL to qat.saltq.scales_lr — a
+  # different value here is dead config that silently becomes live the day someone deletes the
+  # saltq key. Same per-bit law: 2e-5 / 1e-5 / 5e-6 at INT2 / INT3 / INT4.
   lsq:
     enabled: true
     scales_lr: 1.0e-5
@@ -100,20 +104,73 @@ qat:
     # false = integer z, for the ablation. Needs zp_lr around 5e-3 to move at all.
     continuous_z: true
 
-    # ---- learning rates, grouped by the UNITS a parameter lives in ---------------------------
-    # This grouping is the point. Adam moves a parameter by about lr per step, so what matters is
-    # lr relative to the parameter's own meaningful step size. Mixing units in one group is how
-    # the first run silently trained nothing outside the salient segment.
+    # =========================================================================================
+    # LEARNING RATES — derived, not guessed. Grouped by the UNITS each parameter lives in.
+    # =========================================================================================
+    # Under Adam the update is lr * m̂/(√v̂+ε), so a constant factor on the gradient CANCELS. That
+    # means LSQ's 1/√(N·Qp) gradient scaling does NOT set the step size — only lr does. So the
+    # only thing that matters is lr measured against the parameter's own natural unit. Mixing
+    # units in one optimizer group is exactly how run1 trained nothing outside the salient
+    # segment (round(z) changed for 0 of 1.63M params) and scored 32.9 instead of 44.8.
     #
-    # salient_lr: weight units (|W| ~ 2e-2, quantization step ~1e-2). At 2e-5 the measured random
-    #   walk moved W_S by only 0.03-0.14 of a quantization step, so most salient codes never
-    #   flipped either. 2e-4 puts the movement on the order of the step size.
+    # ---- the two measured constants ---------------------------------------------------------
+    # (1) DISPLACEMENT. Over one MetaMath epoch (T = 6584 optimizer steps, cosine + 3% warmup,
+    #     max_grad_norm 0.3) the realized |Δparam| of the validated INT3 run was, in each group's
+    #     own unit, lr * c with
+    #             c ≈ 38   (median; p10 6, p90 100)   ≈ 0.47 * √T
+    #     and c came out the SAME for all three groups — 35.5 for the salient weights, 40.1 for
+    #     the LSQ scales, 38.8 for the zero-points — which is the empirical proof of the Adam
+    #     argument above. c grows as √T, so a 2-epoch run wants every lr below multiplied by
+    #     1/√2. (Measured off outputs/saltq-3bit-saltq/final vs the frozen base.)
+    #
+    # (2) GRID STEP. The min-max init makes the step exactly s(b) = range / (2^b − 1), so it is
+    #     an exact 1/(2^b − 1) law — measured s2/s3 = 2.333 = 7/3 to four significant figures,
+    #     for the salient and non-salient segments alike:
+    #             median s   INT2 2.84e-2   INT3 1.22e-2   INT4 5.68e-3 (= INT3 * 7/15)
+    #     |W_S| RMS is 1.9e-2, i.e. at INT2 one quantization step is larger than a typical weight.
+    #
+    # ---- what each group should move, and therefore its lr -----------------------------------
+    # salient_lr  [WEIGHT units].  Target: |ΔW_S| ≈ 0.5 * s(b). Below ~0.1 s the codes never flip
+    #   and the "full weight freedom" tier is fictitious (at 2e-5 the measured movement was
+    #   0.03-0.14 s — that was run1's second bug); much above 1 s and the salient columns stop
+    #   being a fine-tune of the pretrained weights. The validated run measured 0.58 s (p90 1.53).
+    #       salient_lr = 0.5 * s(b) / c   ->   PROPORTIONAL TO 1/(2^b − 1)
+    # scales_lr   [WEIGHT units].  The LSQ scale of the SALIENT segment only — with train_scale
+    #   false the non-salient s is a frozen buffer, so this group is 2.5M params, not 202M.
+    #   Target: a few percent of relative range movement (validated run: 3.3%, p90 9.6%).
+    #       scales_lr = 0.03 * s(b) / c   ->   also PROPORTIONAL TO 1/(2^b − 1), = salient_lr/20
+    # zp_lr       [QUANTIZATION-LEVEL units, where the meaningful step is 1.0, not 1e-2]. This is
+    #   the entire freedom of the non-salient 98%. It does two jobs that scale OPPOSITELY:
+    #     (a) re-centering the frozen grid against a quantization error of ±0.5 level — a
+    #         LEVEL-units target, so bit-INDEPENDENT;
+    #     (b) task adaptation of a fixed weight-units delta d, which needs |Δz| = d/s(b) levels,
+    #         so it GROWS as (2^b − 1): at INT4 each level is worth 2.1x less weight than at INT3.
+    #   Hence zp_lr = max(1e-3 floor from (a), 1e-3 * (2^b − 1)/7 from (b)) — flat at low bit,
+    #   rising at INT4. Useful band for |Δz| is ~0.1-0.3 levels; past ~0.5 the shift stops being
+    #   an error correction and just moves the group mean by half a step.
+    #
+    # ---- the resulting table (bold = measured, the rest is the law transported) ---------------
+    #     bits | salient_lr | scales_lr |  zp_lr  | realized |ΔW_S| / |Δz|
+    #     -----+------------+-----------+---------+---------------------------
+    #       2  |   5.0e-4   |  2.0e-5   | 1.0e-3  | predicted 0.5 s / 0.04 lvl
+    #       3  | **2.0e-4** | **1.0e-5**| **1e-3**| MEASURED 0.58 s / 0.039 lvl  -> 44.8 GSM8k
+    #       4  |   1.0e-4   |  5.0e-6   | 2.0e-3  | predicted 0.5 s / 0.08 lvl
+    #
+    # KNOWN HEADROOM: zp_lr is the one knob the derivation says is under-driven. 1e-3 realized
+    # only 0.039 levels, against a useful band of 0.1-0.3, i.e. z is currently correcting ~8% of
+    # the ±0.5-level code error. zp_lr = 3e-3 (-> ~0.11 levels) is the highest-value sweep,
+    # especially at INT2 where job (a) dominates. It is deliberately NOT applied to the first INT2
+    # run so that run differs from the 44.8 INT3 run by the bit width alone.
+    #
+    # The *_by_bits maps below are what the code actually reads (resolved against
+    # model.quant_bits); the scalar is the fallback and must stay equal to the INT3 entry. An
+    # explicit --salient_lr / --saltq_scales_lr / --zp_lr on the command line beats both.
     salient_lr: 2.0e-4
-    # scales_lr: also weight units (s ~ 1e-2). 1e-5 is appropriate here.
+    salient_lr_by_bits: {2: 5.0e-4, 3: 2.0e-4, 4: 1.0e-4}
     scales_lr: 1.0e-5
-    # zp_lr: QUANTIZATION-LEVEL units, where the meaningful step is 1.0, not 1e-2. This has to be
-    #   two to three orders of magnitude above scales_lr or the zero-points never move.
+    scales_lr_by_bits: {2: 2.0e-5, 3: 1.0e-5, 4: 5.0e-6}
     zp_lr: 1.0e-3
+    zp_lr_by_bits:      {2: 1.0e-3, 3: 1.0e-3, 4: 2.0e-3}
     # RMSNorm weights stay fp16 at deploy, so training them is free extra freedom. Off = the
     # clean "only the two segments are trained" ablation.
     train_layernorms: false

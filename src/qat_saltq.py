@@ -736,10 +736,15 @@ def saltq_trainable_state_dict(model: nn.Module) -> Dict[str, torch.Tensor]:
     }
 
 
-def save_saltq_trainable(model: nn.Module, output_dir: str, saltq_base_dir: Optional[str] = None):
+def save_saltq_trainable(model: nn.Module, output_dir: str, saltq_base_dir: Optional[str] = None,
+                         learning_rates: Optional[dict] = None):
     """
     Persist ONLY the trainable tensors (salient weights + all (s, z)) plus a pointer to the frozen
     base. A full state_dict would contain multiple GB of int8 codes that never change.
+
+    `learning_rates` records the three RESOLVED per-group lrs. They belong in the artifact rather
+    than being re-read from the yaml at collection time: the yaml holds a per-bit table plus CLI
+    overrides, so it is not a record of what any particular run used.
     """
     from safetensors.torch import save_file
 
@@ -753,6 +758,7 @@ def save_saltq_trainable(model: nn.Module, output_dir: str, saltq_base_dir: Opti
             else (meta or {}).get("saltq_base_dir"),
             "num_tensors": len(sd),
             "num_params": int(sum(v.numel() for v in sd.values())),
+            "learning_rates": dict(learning_rates or {}),
         },
         os.path.join(output_dir, SALTQ_CKPT_META_FILENAME),
     )
