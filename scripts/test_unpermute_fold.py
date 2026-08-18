@@ -15,6 +15,9 @@ Three assertions, on a tiny random Llama (seconds, CPU, fp32):
   2. permuted weights, hooks REMOVED    !=  the original model   (proves the hooks are load
      bearing, so that test 3 cannot pass vacuously)
   3. folded weights, no hooks           ==  the original model
+  4. folding a model that still carries quantization state RAISES. The fold moves columns
+     across quantization-group boundaries, which is harmless once the grid has been collapsed
+     into fp16 values and destructive while it has not.
 
 Run: python scripts/test_unpermute_fold.py
 """
@@ -108,6 +111,25 @@ def main() -> int:
     err_folded = (logits(model, input_ids) - reference).abs().max().item()
     print(f"[3] folded weights, no hooks       max|Δlogits| = {err_folded:.3e}")
     assert err_folded < 1e-4, f"fold is not equivalence-preserving ({err_folded:.3e})"
+
+    # --- 4. a still-quantized model is refused -------------------------------------------
+    class FakeQuantLinear(torch.nn.Linear):
+        """Stand-in for any module that still owns a grid its (s, z) address positionally."""
+
+    guarded = copy.deepcopy(reference_model)
+    q0 = guarded.model.layers[0].self_attn.q_proj
+    replacement = FakeQuantLinear(q0.in_features, q0.out_features, bias=False)
+    replacement.weight.data = q0.weight.data.clone()
+    guarded.model.layers[0].self_attn.q_proj = replacement
+    try:
+        fold_boundary_gathers_into_weights(guarded, meta)
+    except TypeError as exc:
+        print(f"[4] non-dense model refused: {str(exc).splitlines()[0]}")
+    else:
+        raise AssertionError(
+            "the fold accepted a model still carrying quantization state — it would have "
+            "moved columns across group boundaries and silently corrupted the checkpoint"
+        )
 
     print("\nPASS — the folded model needs no runtime hook and matches the hooked model.")
     return 0

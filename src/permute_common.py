@@ -1349,6 +1349,34 @@ class BoundaryGatherHook:
             self._handle.remove(); self._handle = None
 
 
+def _assert_dense_for_fold(model: nn.Module) -> None:
+    """Refuse to fold anything but plain dense Linears (see fold_boundary_gathers_into_weights).
+
+    Undoing the permutation moves columns across quantization-group boundaries, which is
+    harmless once the grid has been collapsed into values and destructive while it has not.
+    A packed / fake-quant module reaching here is a bug that would otherwise produce a
+    plausible-looking checkpoint scoring several points low, so it is a hard error.
+    """
+    offenders = []
+    for name, module in _resolve_llama_model(model).named_modules():
+        terminal = name.split(".")[-1]
+        if terminal not in ("q_proj", "k_proj", "v_proj", "o_proj",
+                            "gate_proj", "up_proj", "down_proj"):
+            continue
+        if type(module) is not nn.Linear:
+            offenders.append(f"{name}: {type(module).__name__}")
+    if offenders:
+        raise TypeError(
+            "fold_boundary_gathers_into_weights is only valid on a DENSE export, where the "
+            "quantization grid has already been collapsed into fp16 values. These modules "
+            "still carry their own quantization state, and folding would move columns across "
+            "group boundaries that their (s, z) address positionally:\n  "
+            + "\n  ".join(offenders[:5])
+            + (f"\n  ... and {len(offenders) - 5} more" if len(offenders) > 5 else "")
+            + "\nExport with export_saltq / save_dequantized_model first."
+        )
+
+
 @torch.no_grad()
 def fold_boundary_gathers_into_weights(model: nn.Module, meta) -> int:
     """Undo the residual-stream permutation in the weights so the model needs NO runtime hook.
@@ -1365,6 +1393,25 @@ def fold_boundary_gathers_into_weights(model: nn.Module, meta) -> int:
     the identity and are no longer needed. It is exact — a reindex, not an approximation —
     and it does not undo the quantization: the VALUES are the trained/deployed ones, only
     their position in the channel axis moves back.
+
+    DENSE EXPORTS ONLY — the quantization groups WOULD be destroyed otherwise. Groups run
+    along the INPUT axis (deployed_weight reshapes [out, in] -> [out, n_groups, group_size]),
+    which is exactly the axis this permutes for q/k/v/gate/up, and the salient slice is
+    defined POSITIONALLY as columns [0, group_k). On a packed INT-b checkpoint, undoing the
+    permutation would scatter each group's members across the row: a new group would hold
+    values from up to `group_size` different original groups, each carrying its own (s, z),
+    and at INT2 that is up to 4x more distinct levels than one (s, z) can address. The
+    checkpoint would no longer be representable at its own bit width.
+
+    It is safe here because export_saltq runs FIRST and collapses the grid into values —
+    materialize_dense_model writes (q - z) * s into plain nn.Linear weights, so the exported
+    checkpoint is 291 dense fp16 tensors with no q / s / z and no group structure left to
+    scramble. Nothing downstream re-derives the grid; vLLM just multiplies fp16 numbers. The
+    assertion below enforces that precondition rather than trusting the caller.
+
+    So: fold for EVALUATION of a dequantized export. If a packed INT-b export is ever added
+    for real low-bit deployment, it must keep the permutation and carry the boundary gathers
+    into whatever runtime loads it.
 
     The block-internal (P4) permutation and the Hadamard rotation are deliberately left alone.
     Both are confined inside a block (gate/up rows <-> down cols; v rows <-> o cols) and never
@@ -1394,6 +1441,8 @@ def fold_boundary_gathers_into_weights(model: nn.Module, meta) -> int:
     missing = [k for k in range(num_segments) if k not in inv]
     if missing:
         raise ValueError(f"perm meta has no segment_perms entry for segment(s) {missing}.")
+
+    _assert_dense_for_fold(model)
 
     inner = _resolve_llama_model(model)
     inner.embed_tokens.weight.data = _perm_tensor(
