@@ -44,7 +44,9 @@ NUM_GPUS=2
 BITS=3
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
-EVAL_GPU=0                # single GPU used for export + evaluation
+EVAL_GPU=0                # single GPU used for EXPORT (one dense fp16 model per card)
+EVAL_GPUS="0,1,2,3"       # GPUs used for EVALUATION; >1 id => data-parallel, matching
+                          # run_saltq.sh so the suites are run identically across methods
 
 # Dedicated output dir so a plain-QLoRA run never clobbers a real sqat_permute run.
 OUTPUT_DIR="outputs/qlora-none-${DATASET_NAME}"
@@ -67,9 +69,19 @@ while [[ $# -gt 0 ]]; do
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --output_dir)     OUTPUT_DIR="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
+        --eval_gpus)      EVAL_GPUS="$2";     shift 2 ;;
+        --dataset)        DATASET_NAME="$2"; CONFIG="configs/sqat_permute_${2}.yaml"; shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+EVAL_NUM_GPUS=$(awk -F',' '{print NF}' <<< "$EVAL_GPUS")
+if [ "$EVAL_NUM_GPUS" -gt 1 ]; then
+    EVAL_LAUNCH="accelerate launch --num_processes $EVAL_NUM_GPUS --num_machines 1 \
+        --gpu_ids $EVAL_GPUS --mixed_precision no --main_process_port ${EVAL_PORT:-29600}"
+else
+    EVAL_LAUNCH="env CUDA_VISIBLE_DEVICES=$EVAL_GPUS python"
+fi
 
 DEQUANT_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-none-dequant-eval"
 MERGED_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-none-merged-eval"
@@ -153,15 +165,15 @@ eval_one() {
     [ -d "$eval_dir" ] || { echo "  (skip) $eval_dir not found"; return; }
     echo "  Evaluating $eval_dir"
     if [ "$DATASET_NAME" = "commonsense" ]; then
-        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_benchmarks.py eval \
+        $EVAL_LAUNCH scripts/eval_benchmarks.py eval \
             --model_path "$eval_dir" \
-            --output_dir results/benchmarks
-        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_mmlu.py \
+            --output_dir results/commonsense_170k
+        $EVAL_LAUNCH scripts/eval_mmlu.py \
             --model_path  "$eval_dir" \
             --num_fewshot 0 \
-            --output_dir  results/mmlu
+            --output_dir  results/commonsense_170k
     elif [ "$DATASET_NAME" = "math" ]; then
-        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_math.py \
+        $EVAL_LAUNCH scripts/eval_math.py \
             --model_path  "$eval_dir" \
             --num_fewshot 5 \
             --output_dir  results/math

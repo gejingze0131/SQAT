@@ -51,9 +51,19 @@ def eval_with_lm_eval_harness(
     adapter_path: str = None,
     apply_chat_template: bool = False,
     fewshot_as_multiturn: bool = False,
+    log_samples: bool = False,
+    limit: int = None,
 ):
     """
     Run evaluation using lm-eval-harness with HuggingFace backend.
+
+    log_samples/limit exist for DIAGNOSIS, not for reporting. gsm8k is scored two ways and they
+    normally agree to within ~0.3 points, because flexible-extract (take the last number) is a
+    superset of strict-match (require the literal "#### <n>" format). When flexible comes in
+    BELOW strict the model is answering in the right format and then continuing to generate,
+    so the last number is no longer the answer — a decoding-style artifact rather than a
+    capability difference. Distinguishing the two requires reading generations, which is what
+    log_samples dumps. Anything reported from a `limit`ed run is not comparable to a full run.
     """
     import lm_eval
 
@@ -94,6 +104,8 @@ def eval_with_lm_eval_harness(
         batch_size=batch_size,
         apply_chat_template=apply_chat_template,
         fewshot_as_multiturn=fewshot_as_multiturn,
+        log_samples=log_samples,
+        **({"limit": limit} if limit else {}),
     )
 
     # Under data-parallel eval (accelerate launch --num_processes N), simple_evaluate
@@ -139,6 +151,17 @@ def eval_with_lm_eval_harness(
         json.dump(serializable, f, indent=2, ensure_ascii=False, default=str)
 
     print(f"\n[Eval] Results saved to {result_file}")
+
+    # Per-sample generations go to a SEPARATE file on purpose: collect_saltq_results.py parses the
+    # results JSON above, and burying megabytes of generations in it would both slow that down and
+    # risk changing the shape it expects.
+    if log_samples and results.get("samples"):
+        samples_file = result_file.replace(".json", "_samples.json")
+        with open(samples_file, "w", encoding="utf-8") as f:
+            json.dump(results["samples"], f, indent=1, ensure_ascii=False, default=str)
+        n = sum(len(v) for v in results["samples"].values())
+        print(f"[Eval] {n} per-sample records saved to {samples_file}")
+
     return results
 
 
@@ -156,6 +179,11 @@ def main():
     parser.add_argument("--apply_chat_template", action="store_true",
                         help="Apply tokenizer chat template during eval. "
                              "Useful for instruct/chat models when the task prompt format matches.")
+    parser.add_argument("--log_samples", action="store_true",
+                        help="Dump per-sample generations alongside the scores (diagnosis only).")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Evaluate only the first N docs (diagnosis only; NOT comparable to "
+                             "a full run).")
     parser.add_argument("--fewshot_as_multiturn", action="store_true",
                         help="Format few-shot examples as multi-turn chat when chat template is enabled.")
 
@@ -170,6 +198,8 @@ def main():
         adapter_path=args.adapter_path,
         apply_chat_template=args.apply_chat_template,
         fewshot_as_multiturn=args.fewshot_as_multiturn,
+        log_samples=args.log_samples,
+        limit=args.limit,
     )
 
 

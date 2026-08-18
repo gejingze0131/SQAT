@@ -44,15 +44,24 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # Config
 # ---------------------------------------------------------------------------
 CONFIG="configs/saltq.yaml"
+# Which benchmark suite Stage 3 runs. "math" -> gsm8k via eval_math.py into results/math and the
+# long-format results_saltq.csv. "commonsense" -> the 8-task commonsense suite + MMLU via
+# eval_benchmarks.py / eval_mmlu.py into results/commonsense_170k. The CSV collector parses gsm8k
+# specifically, so it only runs for math.
+DATASET_NAME="math"
+# Optional explicit lm-eval task list for the commonsense path. Empty => the 8-task suite in
+# eval_benchmarks.DEFAULT_TASKS plus MMLU. Set it (e.g. "commonsense_qa") to score exactly one
+# task and skip MMLU — useful when the fine-tuning target IS that task.
+EVAL_TASKS=""
 ACCEL_CONFIG="accelerate_config.yaml"
-NUM_GPUS=3                # 3 x RTX 6000 Ada (46 GB)
-BITS=3                    # first run: INT3 g64, where a Permuted-SQAT MetaMath baseline exists.
+NUM_GPUS=4                # 3 x RTX 6000 Ada (46 GB)
+BITS=2                    # first run: INT3 g64, where a Permuted-SQAT MetaMath baseline exists.
                           # INT2 (where GPTQ-only non-salient collapses) is the target regime next.
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 OUTPUT_ROOT="outputs/saltq"     # must match training.output_dir in the yaml
 EVAL_GPU=0                # single GPU used for export
-EVAL_GPUS="0,1,2"         # GPUs used for evaluation; >1 id => data-parallel eval
+EVAL_GPUS="0,1,2,3"         # GPUs used for evaluation; >1 id => data-parallel eval
 
 # The single most important new hyper-parameter: these are REAL WEIGHTS, not an adapter, so a
 # LoRA-scale lr (2e-4) destroys them. Empty = take the value from the yaml.
@@ -72,6 +81,9 @@ SKIP_EVAL=false
 CHECKPOINT_DIR=""
 RESUME_FROM=""
 SALTQ_BASE_DIR=""         # explicit frozen-code base; defaults to <output_dir>/saltq_base
+PERMUTED_BASE_DIR=""      # explicit permuted fp16 base; defaults to <output_dir>/permuted_fp16_base
+                          # (pass this to REUSE another run's permutation when output_dir differs,
+                          # e.g. an ablation that must keep the permute step single-variable)
 
 # ---------------------------------------------------------------------------
 # Parse arguments
@@ -83,6 +95,7 @@ while [[ $# -gt 0 ]]; do
         --checkpoint_dir)   CHECKPOINT_DIR="$2"; SKIP_TRAIN=true; shift 2 ;;
         --resume_from)      RESUME_FROM="$2";       shift 2 ;;
         --saltq_base_dir)   SALTQ_BASE_DIR="$2";    shift 2 ;;
+        --permuted_base_dir) PERMUTED_BASE_DIR="$2"; shift 2 ;;
         --num_gpus)         NUM_GPUS="$2";          shift 2 ;;
         --bits)             BITS="$2";              shift 2 ;;
         --config)           CONFIG="$2";            shift 2 ;;
@@ -94,6 +107,8 @@ while [[ $# -gt 0 ]]; do
         --scales_lr)        SCALES_LR="$2";         shift 2 ;;
         --train_layernorms) TRAIN_LAYERNORMS="$2";  shift 2 ;;
         --results_csv)      RESULTS_CSV="$2";       shift 2 ;;
+        --dataset)          DATASET_NAME="$2";      shift 2 ;;
+        --eval_tasks)       EVAL_TASKS="$2";        shift 2 ;;
         --note)             RESULTS_NOTE="$2";      shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
@@ -110,6 +125,8 @@ fi
 
 SALTQ_BASE_FLAG=""
 [ -n "$SALTQ_BASE_DIR" ] && SALTQ_BASE_FLAG="--saltq_base_dir $SALTQ_BASE_DIR"
+PERMUTED_BASE_FLAG=""
+[ -n "$PERMUTED_BASE_DIR" ] && PERMUTED_BASE_FLAG="--permuted_base_dir $PERMUTED_BASE_DIR"
 
 # Build the eval launch prefix. >1 GPU id => data-parallel eval via `accelerate launch`
 # (plain DDP data sharding); a single id => one-GPU `python`.
@@ -142,6 +159,7 @@ echo "  scales_lr:     ${SCALES_LR:-<from yaml>}   ((s, z) of both segments)"
 echo "  train_LN:      $TRAIN_LAYERNORMS"
 [ -n "$RESUME_FROM" ]    && echo "  Resume from:   $RESUME_FROM"
 [ -n "$SALTQ_BASE_DIR" ] && echo "  Frozen codes:  $SALTQ_BASE_DIR"
+[ -n "$PERMUTED_BASE_DIR" ] && echo "  Permuted base: $PERMUTED_BASE_DIR"
 echo "============================================================"
 
 # ---------------------------------------------------------------------------
@@ -159,6 +177,7 @@ if [ "$SKIP_TRAIN" = false ]; then
         --asymmetric \
         $EXTRA_FLAGS \
         $SALTQ_BASE_FLAG \
+        $PERMUTED_BASE_FLAG \
         $RESUME_FLAG \
         --report_to wandb
 
@@ -186,6 +205,7 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
         --bits           "$BITS" \
         --asymmetric \
         $SALTQ_BASE_FLAG \
+        $PERMUTED_BASE_FLAG \
         --export_only \
         --checkpoint_dir "$CHECKPOINT_DIR"
 fi
@@ -203,11 +223,32 @@ if [ "$SKIP_EVAL" = false ]; then
     for eval_dir in ${OUTPUT_ROOT}-${BITS}bit-saltq-deploy-eval; do
         [ -d "$eval_dir" ] || continue
         found=true
-        echo "  Evaluating $eval_dir"
-        $EVAL_LAUNCH scripts/eval_math.py \
-            --model_path  "$eval_dir" \
-            --num_fewshot 5 \
-            --output_dir  results/math
+        EVAL_OUT="results/commonsense_170k"
+        [ -n "$EVAL_TASKS" ] && EVAL_OUT="results/${EVAL_TASKS%% *}"
+        echo "  Evaluating $eval_dir  (suite: $DATASET_NAME, tasks: ${EVAL_TASKS:-<default+mmlu>}, out: $EVAL_OUT)"
+        if [ "$DATASET_NAME" = "commonsense" ]; then
+            # Same 4-way data-parallel launcher as the math path — the exported model ships
+            # sqat_permute_meta.pt and both eval scripts register the boundary gathers from it.
+            if [ -n "$EVAL_TASKS" ]; then
+                $EVAL_LAUNCH scripts/eval_benchmarks.py eval \
+                    --model_path  "$eval_dir" \
+                    --tasks       $EVAL_TASKS \
+                    --output_dir  "$EVAL_OUT"
+            else
+                $EVAL_LAUNCH scripts/eval_benchmarks.py eval \
+                    --model_path  "$eval_dir" \
+                    --output_dir  "$EVAL_OUT"
+                $EVAL_LAUNCH scripts/eval_mmlu.py \
+                    --model_path  "$eval_dir" \
+                    --num_fewshot 0 \
+                    --output_dir  "$EVAL_OUT"
+            fi
+        else
+            $EVAL_LAUNCH scripts/eval_math.py \
+                --model_path  "$eval_dir" \
+                --num_fewshot 5 \
+                --output_dir  results/math
+        fi
     done
     shopt -u nullglob
     [ "$found" = true ] || echo "  (no exported eval dirs found under ${OUTPUT_ROOT}-${BITS}bit-saltq-deploy-eval)"
@@ -215,6 +256,15 @@ if [ "$SKIP_EVAL" = false ]; then
     # Fold the timestamped lm-eval JSONs into one long-format table. Idempotent, so re-running
     # the pipeline never duplicates rows. Run-level context (bits / group_size / group_k / lrs /
     # the freedom split) is recovered from the artifacts next to the evaluated model.
+    if [ "$DATASET_NAME" != "math" ]; then
+        echo -e "\n>>> Skipping $RESULTS_CSV: the collector parses gsm8k, and this run evaluated"
+        echo "    the $DATASET_NAME suite. Raw JSONs are under results/commonsense_170k/."
+        echo -e "\n============================================================"
+        echo "  SALT-Q pipeline complete!"
+        echo "============================================================"
+        exit 0
+    fi
+
     echo -e "\n>>> Collecting results into $RESULTS_CSV"
     # --seed merges the reported MetaMath baselines (source=report) so the new SALT-Q row lands
     # next to what it has to beat. --filter saltq keeps the lm-eval side to SALT-Q only: the older

@@ -55,6 +55,10 @@
 #   bash run_qalora.sh --skip_train             # export + eval from latest checkpoint
 #   bash run_qalora.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
 #   bash run_qalora.sh --num_gpus 2 --config configs/sqat_permute_math.yaml --bits 2
+#   bash run_qalora.sh --eval_gpus 0 --note "..."   # 1-GPU eval; stamp a note on the CSV rows
+#
+# Results are appended to results_saltq.csv (--results_csv) via scripts/collect_saltq_results.py,
+# the same table SALT-Q writes to, so a QA-LoRA control row sits next to the run it controls for.
 # =============================================================================
 
 set -euo pipefail
@@ -69,13 +73,22 @@ DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
 CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=4
-BITS=3            # 2 / 3 / 4 (must match configs/*.yaml model.quant_bits; base stays NF4)
+BITS=2            # 2 / 3 / 4 (must match configs/*.yaml model.quant_bits; base stays NF4)
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
-EVAL_GPU=0                # single GPU used for export + evaluation
+EVAL_GPU=0                # single GPU used for EXPORT (one dense fp16 model must fit on one card)
+EVAL_GPUS="0,1,2,3"       # GPUs used for EVALUATION; >1 id => data-parallel eval, same as
+                          # run_saltq.sh. Evaluating on 1 GPU while SALT-Q evaluates on 4 does not
+                          # change the score, only the wall clock — but keeping them identical
+                          # removes one more thing that has to be argued about.
 
 # Dedicated output dir so a QA-LoRA run never clobbers a permuted/full/none run.
 OUTPUT_DIR="outputs/qlora-qalora-${DATASET_NAME}"
+
+# Every eval run is folded into the same long-format table SALT-Q writes to, so the QA-LoRA row
+# lands next to the SALT-Q row it is the control for.
+RESULTS_CSV="results_saltq.csv"
+RESULTS_NOTE=""
 
 SKIP_TRAIN=false
 SKIP_EVAL=false
@@ -95,6 +108,9 @@ while [[ $# -gt 0 ]]; do
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --output_dir)     OUTPUT_DIR="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
+        --eval_gpus)      EVAL_GPUS="$2";     shift 2 ;;
+        --results_csv)    RESULTS_CSV="$2";   shift 2 ;;
+        --note)           RESULTS_NOTE="$2";  shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -102,11 +118,21 @@ done
 DEQUANT_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-qalora-dequant-eval"
 MERGED_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-qalora-merged-eval"
 
+# Build the eval launch prefix. >1 GPU id => data-parallel eval via `accelerate launch` (plain DDP
+# data sharding); a single id => one-GPU `python`. Identical to run_saltq.sh.
+EVAL_NUM_GPUS=$(awk -F',' '{print NF}' <<< "$EVAL_GPUS")
+if [ "$EVAL_NUM_GPUS" -gt 1 ]; then
+    EVAL_LAUNCH="accelerate launch --num_processes $EVAL_NUM_GPUS --num_machines 1 \
+        --gpu_ids $EVAL_GPUS --mixed_precision no --main_process_port ${EVAL_PORT:-29600}"
+else
+    EVAL_LAUNCH="env CUDA_VISIBLE_DEVICES=$EVAL_GPUS python"
+fi
+
 echo "============================================================"
 echo "  QA-LoRA (qat_mode=qalora) Pipeline"
 echo "  Config:      $CONFIG"
 echo "  Model:       $MODEL_NAME"
-echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (eval)"
+echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (export) / [$EVAL_GPUS] (eval, ${EVAL_NUM_GPUS}-way DP)"
 echo "  Bits:        $BITS  (affine asymmetric, group-wise)"
 echo "  Output dir:  $OUTPUT_DIR"
 echo "============================================================"
@@ -164,15 +190,15 @@ eval_one() {
     [ -d "$eval_dir" ] || { echo "  (skip) $eval_dir not found"; return; }
     echo "  Evaluating $eval_dir"
     if [ "$DATASET_NAME" = "commonsense" ]; then
-        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_benchmarks.py eval \
+        $EVAL_LAUNCH scripts/eval_benchmarks.py eval \
             --model_path "$eval_dir" \
             --output_dir results/benchmarks
-        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_mmlu.py \
+        $EVAL_LAUNCH scripts/eval_mmlu.py \
             --model_path  "$eval_dir" \
             --num_fewshot 0 \
             --output_dir  results/mmlu
     elif [ "$DATASET_NAME" = "math" ]; then
-        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/eval_math.py \
+        $EVAL_LAUNCH scripts/eval_math.py \
             --model_path  "$eval_dir" \
             --num_fewshot 5 \
             --output_dir  results/math
@@ -186,6 +212,19 @@ if [ "$SKIP_EVAL" = false ]; then
     echo -e "\n>>> Stage 3: Evaluating exported models"
     eval_one "$DEQUANT_EVAL_DIR"   # INT quant->dequant (QA-LoRA deployed accuracy)
     eval_one "$MERGED_EVAL_DIR"    # FP16 merged (no quant error)
+
+    # Fold the timestamped lm-eval JSONs into the SAME long-format table SALT-Q writes to, so the
+    # QA-LoRA control sits next to the run it controls for. Idempotent — re-running never
+    # duplicates rows. --filter qalora keeps this invocation from re-ingesting the SALT-Q JSONs
+    # (they are already in the table with their own run context); _infer_method maps the
+    # "...-qalora-dequant-eval" dir name to the "QA-LoRA" label.
+    echo -e "\n>>> Collecting results into $RESULTS_CSV"
+    python scripts/collect_saltq_results.py \
+        --results_dir results \
+        --csv         "$RESULTS_CSV" \
+        --config      "$CONFIG" \
+        --filter      qalora \
+        --note        "${RESULTS_NOTE}"
 fi
 
 echo -e "\n============================================================"
