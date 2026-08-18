@@ -137,6 +137,7 @@ def build_saltq_base(
     blocksize: int = 128,
     nsamples: int = 128,
     dtype: torch.dtype = torch.float16,
+    train_salient: bool = True,
 ) -> dict:
     """
     Turn a permuted fp16 base into SALT-Q's starting point.
@@ -146,6 +147,17 @@ def build_saltq_base(
         `current_minmax` LSQ scale[, zp]. They are NOT frozen and NOT stored as codes.
       * non-salient columns [group_k:) -> GPTQ integer codes (FROZEN forever) + the GPTQ grid
         (s, z) as the trainable init.
+
+    `train_salient=False` is the "z-only everywhere" ablation (AGENTS.md §12 item 1: full SALT-Q /
+    only-salient / only-z / Permuted SQAT). The permutation and the GPTQ pinning of the salient
+    slice to the canonical grid are UNCHANGED (single-variable vs. the default run) — GPTQ still
+    fixes [0:group_k) to the canonical grid and OBS-compensates [group_k:) exactly as before. The
+    only difference is what gets PERSISTED: the salient slice's already-computed (W_int, scale, zp)
+    from that same GPTQ sweep is folded into the frozen-codes + trainable-(s,z) pool instead of
+    being kept as a trainable fp32 weight, and the layer is recorded with `group_k=0` so
+    `SALTQLinear` routes 100% of its columns through the already-exercised (o_proj-style)
+    frozen-codes-only branch. No weight in the model gets fake-quant weight-space training; every
+    trainable degree of freedom is a (row, group) zero-point.
 
     The GPTQ sweep is the standard one from `gptq.gptq_quantize_model_sequential`: sequential
     across decoder layers (each layer sees the already-quantized previous layers' activations),
@@ -188,10 +200,15 @@ def build_saltq_base(
         if gk >= in_f:
             raise ValueError(f"[SALT-Q] {name}: group_k={gk} must be < in_features={in_f}")
         shapes[name] = (out_f, in_f, int(gk))
-        if gk > 0:
+        if gk > 0 and train_salient:
             salient_fp[name] = mod.weight.data[:, :gk].detach().float().cpu().clone()
-    print(f"[SALT-Q] Captured salient init for {len(salient_fp)} projections "
-          f"({sum(v.numel() for v in salient_fp.values()) / 1e6:.1f}M trainable weights)")
+    if train_salient:
+        print(f"[SALT-Q] Captured salient init for {len(salient_fp)} projections "
+              f"({sum(v.numel() for v in salient_fp.values()) / 1e6:.1f}M trainable weights)")
+    else:
+        print("[SALT-Q] train_salient=False: salient slice will NOT be captured as a trainable "
+              "weight — it is folded into the frozen-codes + trainable-(s,z) pool (z-only "
+              "ablation).")
 
     # --- GPTQ the permuted base (this is the frozen-code initialization) ---
     quantized = gptq_quantize_model_sequential(
@@ -231,6 +248,28 @@ def build_saltq_base(
     for name in list(quantized.keys()):
         W_int, scale, zp = quantized.pop(name)
         out_f, in_f, gk = shapes[name]
+
+        if not train_salient:
+            # z-only-everywhere ablation: keep the SAME GPTQ init (salient columns were pinned to
+            # the canonical grid, non-salient OBS-compensated, exactly as in the default run) but
+            # persist the FULL width as frozen codes + trainable (s, z) — nothing is kept as a
+            # trainable fp32 weight. Recording group_k=0 makes SALTQLinear route the whole layer
+            # through its existing frozen-codes-only branch (the one o_proj already exercises).
+            codes = W_int.round().to(torch.int8).contiguous()
+            tensors[f"{name}.codes"] = codes
+            tensors[f"{name}.s_n"] = scale.float().contiguous()
+            tensors[f"{name}.z_n"] = zp.float().contiguous()
+            n_codes += codes.numel()
+            n_qparams += 2 * tensors[f"{name}.s_n"].numel()
+
+            layers_meta[name] = {
+                "out_features": out_f, "in_features": in_f, "group_k": 0,
+                "n_nonsalient": in_f,
+            }
+            salient_fp.pop(name, None)
+            del W_int, scale, zp
+            continue
+
         n_sal_g = gk // group_size
 
         codes = W_int[:, gk:].round().to(torch.int8).contiguous()
@@ -270,6 +309,7 @@ def build_saltq_base(
         "group_size": int(group_size),
         "symmetric": bool(symmetric),
         "target_terminals": target_terminals,
+        "train_salient": bool(train_salient),
         "layers": layers_meta,
         "perm_meta": perm_meta,
         "param_counts": {
@@ -552,7 +592,13 @@ class SALTQLinear(nn.Module):
 
         if self.group_k > 0:
             W = self.weight_salient.float()
-            s_s = self.lsq_w_scale.float()
+            # SAME clamp the training fakequant applies (qat_base.groupwise_lsq_asym_fakequant does
+            # `scale.clamp(min=eps)`). Without it, a salient scale that the optimizer has driven to
+            # <= 0 makes the export quantizer and the training forward disagree, and the
+            # merge-free guarantee breaks. Invisible at scales_lr 2e-5 (the scale moves ~3% and
+            # never approaches 0); a 10x scales_lr walks entries across zero and every layer with
+            # a salient slice then fails deploy equivalence, while o_proj (group_k=0) still passes.
+            s_s = self.lsq_w_scale.float().clamp(min=1e-8)
             if self.symmetric:
                 q_s = lsq_quantize_export_sym(W, s_s, self.group_size, self.q_bits)
                 z_s = torch.zeros_like(s_s)
@@ -859,7 +905,23 @@ class SALTQ(QATHandler):
         pass
 
     def on_step_end(self, model: nn.Module, step: int):
-        pass
+        # Project every learnable scale back to the positive half-line.
+        #
+        # A quantization scale is a magnitude: s <= 0 has no meaning, it mirrors the grid and makes
+        # (q - z) * s reconstruct garbage. Nothing in the optimizer knows that, so with a large
+        # enough scales_lr an entry can simply step across zero. The training forward hid this
+        # because groupwise_lsq_asym_fakequant clamps internally (min=eps) — the PARAMETER stayed
+        # negative while the forward silently used eps, so the loss looked fine and only the export
+        # noticed. Clamping at export too (see deployed_tensors) keeps the two consistent, but the
+        # real fix is to not carry a meaningless value in the first place: clamp the parameter.
+        #
+        # Cheap: one clamp_ per salient scale tensor, [out, n_sal_g] each, no sync, no allocation.
+        with torch.no_grad():
+            for layer in saltq_layers(model).values():
+                if layer.group_k > 0:
+                    layer.lsq_w_scale.clamp_(min=1e-8)
+                if layer.train_scale and isinstance(layer.saltq_s, nn.Parameter):
+                    layer.saltq_s.clamp_(min=1e-8)
 
     def on_train_end(self, model: nn.Module, output_dir: Optional[str] = None):
         pass
