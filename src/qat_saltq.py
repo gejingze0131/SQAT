@@ -654,6 +654,34 @@ def _split_parent(name: str) -> Tuple[str, str]:
     return parent, terminal
 
 
+# How many layers to measure. The failure this guards against is systemic (every layer or
+# none), so a handful is as informative as all 224 and costs a fraction of a second.
+_RECON_CHECK_LAYERS = 8
+
+
+def _assert_codes_reconstruct(errors, saltq_base_dir: str, permuted_base_dir: str) -> None:
+    """Refuse to build a model whose frozen codes do not reconstruct the base they sit on."""
+    if not errors:
+        return
+    worst_name, worst = max(errors, key=lambda kv: kv[1])
+    median = sorted(e for _, e in errors)[len(errors) // 2]
+    print(f"[SALT-Q] frozen-code reconstruction error over the first {len(errors)} layers: "
+          f"median {100 * median:.1f}%, worst {100 * worst:.1f}% ({worst_name})")
+    if median < 1.0:
+        return
+    raise RuntimeError(
+        f"[SALT-Q] the frozen codes in {saltq_base_dir} do not reconstruct the weights in "
+        f"{permuted_base_dir}: median relative error {100 * median:.1f}% over "
+        f"{len(errors)} layers.\n"
+        f"  Above 100% means the dequantized weight is further from the target than zero is, "
+        f"which no bit width produces — a real INT2/INT3 base measures 50-70%. The codes and "
+        f"the permuted base come from different permutations.\n"
+        f"  Rebuild the frozen codes against the base actually on disk (delete "
+        f"{saltq_base_dir}), or point --permuted_base_dir at the permutation these codes were "
+        f"built from."
+    )
+
+
 def build_saltq_model(
     saltq_base_dir: str,
     *,
@@ -692,6 +720,7 @@ def build_saltq_model(
 
     path = os.path.join(saltq_base_dir, SALTQ_BASE_FILENAME)
     n_replaced = 0
+    recon_errors: List[Tuple[str, float]] = []
     with safe_open(path, framework="pt", device="cpu") as f:
         keys = set(f.keys())
         for name, info in meta["layers"].items():
@@ -721,12 +750,28 @@ def build_saltq_model(
                 continuous_z=continuous_z,
                 wq_dtype=dtype,
             )
+            # BACKSTOP. The codes are integers at fixed column positions of the permuted
+            # weight; nothing in the file format says which permutation produced those
+            # positions. Load them against a base that was permuted differently and every
+            # quantization group holds columns that never belonged together — the relative
+            # error goes ABOVE 100% (worse than emitting zeros) while the code histograms stay
+            # perfectly healthy and training still converges, just from noise. Measured once,
+            # cheaply, on the first few layers: a real INT2/INT3 base sits at 50-70%.
+            if n_replaced < _RECON_CHECK_LAYERS:
+                gk = int(info["group_k"])
+                ref = old.weight.data[:, gk:].float()
+                rec = layer.deployed_weight()[:, gk:].float()
+                rel = (rec - ref).norm().item() / max(ref.norm().item(), 1e-12)
+                recon_errors.append((name, rel))
+
             setattr(parent, terminal, layer)
             del old
             n_replaced += 1
             if n_replaced % 64 == 0:
                 gc.collect()
     gc.collect()
+
+    _assert_codes_reconstruct(recon_errors, saltq_base_dir, meta["permuted_base_dir"])
 
     # ---- freedom allocation: everything frozen except the SALT-Q parameters ----
     model.requires_grad_(False)

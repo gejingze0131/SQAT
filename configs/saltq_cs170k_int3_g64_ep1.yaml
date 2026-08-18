@@ -26,9 +26,15 @@
 # AFTER THIS RUN: measure |dW_S| and |dz| with scripts/measure_saltq_displacement.py BEFORE
 # reading the score. Near 0.5 grid steps / 0.1-0.3 levels means the rescale landed.
 #
-# The permuted fp16 base and the frozen GPTQ codes are REUSED from the 3-epoch run
-# (outputs/saltq_cs170k_int3_g64): neither depends on the number of epochs, only on the
-# saliency/segmentation config and on (bits, group_size), all unchanged here.
+# NOTHING IS REUSED. Both offline artifacts are built fresh under this config's own output_dir.
+# The first attempt reused the 3-epoch run's frozen GPTQ codes on the argument that they depend
+# only on (saliency config, bits, group_size) -- true as far as it goes, and it silently omits
+# the permutation itself. The permuted base got rebuilt (the calibration data had changed under
+# the new prompt pipeline) and the stale codes were loaded against it: the codes are integers at
+# FIXED COLUMN POSITIONS, so a different permutation scatters every quantization group.
+# Reconstruction error 114%, untrained loss 10.6 vs ln(32000) = 10.37, and no symptom anywhere
+# except the score. scripts/train.py now refuses that pairing and build_saltq_model measures the
+# reconstruction error before training starts.
 #
 # (Header of the parent config follows.)
 # =============================================================================

@@ -31,6 +31,7 @@ Usage:
 import os
 import sys
 import argparse
+import hashlib
 import yaml
 
 # Add project root to path
@@ -125,6 +126,56 @@ def _saltq_base_dir_for(cfg: dict, explicit: str | None) -> str:
     if _saltq_base_matches(legacy, cfg) is not None:
         return legacy
     return os.path.join(out, f"saltq_base_{bits}bit_g{gs}")
+
+
+def _permutation_fingerprint(perm_meta: dict) -> str:
+    """Stable hash of every index array the frozen GPTQ codes are addressed by.
+
+    The codes are integers at FIXED COLUMN POSITIONS of the permuted weight. They mean nothing
+    except relative to the permutation that produced those positions, and nothing in the file
+    format says which one that was. Reusing a frozen-code base across a REBUILT permutation is
+    therefore not a degradation, it is a scramble — and a silent one: the histograms stay
+    healthy, training converges, and only the score is wrong.
+
+    That is not hypothetical. The INT3 g64 commonsense run rebuilt the permuted base (the
+    calibration data had changed) while `--saltq_base_dir` pointed at codes from the previous
+    permutation. Reconstruction error came out at 114% (worse than emitting zeros), the untrained
+    model sat at loss 10.6 against ln(32000) = 10.37, and the whole run was training its way back
+    out of uniform noise.
+    """
+    def _norm(v):
+        # A tensor and the list it round-trips to MUST hash the same: perm_meta stores
+        # boundary_perms as tensors and segment_perms as lists, and an export/reload can turn one
+        # into the other. Note `v or []` is unusable here — bool() of a multi-element tensor
+        # raises, which is what the first version of this function did.
+        if isinstance(v, torch.Tensor):
+            return v.detach().cpu().flatten().tolist()
+        if v is None:
+            return []
+        return list(v) if isinstance(v, (list, tuple)) else v
+
+    h = hashlib.sha256()
+    for key in ("boundary_sizes", "layer_group_ks", "down_layer_group_ks", "segment_group_ks"):
+        h.update(f"{key}={_norm(perm_meta.get(key))}".encode())
+    for key in ("segment_perms", "block_internal_perms"):
+        for name, perm in sorted((perm_meta.get(key) or {}).items(), key=lambda kv: str(kv[0])):
+            h.update(f"{key}[{name}]={_norm(perm)}".encode())
+    return h.hexdigest()[:16]
+
+
+def _saltq_base_permutation_matches(base_dir: str, perm_meta: dict) -> bool:
+    """True if base_dir's codes were GPTQ'd against exactly this permutation."""
+    from src.qat_saltq import SALTQ_META_FILENAME
+    meta_pt = os.path.join(base_dir, SALTQ_META_FILENAME)
+    if not os.path.exists(meta_pt):
+        return False
+    try:
+        stored = torch.load(meta_pt, map_location="cpu", weights_only=False).get("perm_meta")
+    except Exception:
+        return False
+    if not stored:
+        return False
+    return _permutation_fingerprint(stored) == _permutation_fingerprint(perm_meta)
 
 
 def _saltq_base_matches(base_dir: str, cfg: dict):
@@ -557,6 +608,21 @@ def main():
         saltq_base_dir = _saltq_base_dir_for(cfg, args.saltq_base_dir)
         _sq_meta_pt = os.path.join(saltq_base_dir, SALTQ_META_FILENAME)
         _sq_match = _saltq_base_matches(saltq_base_dir, cfg)
+        # (bits, group_size, symmetric) is NOT enough to license reuse. The codes also address a
+        # specific permutation, and `permuted_dir` above may have just been rebuilt underneath
+        # them. See _permutation_fingerprint for what that costs.
+        _sq_perm_ok = (_sq_match is None
+                       or _saltq_base_permutation_matches(saltq_base_dir, perm_meta))
+        if not _sq_perm_ok:
+            raise RuntimeError(
+                f"[SALT-Q] {saltq_base_dir} 的 frozen codes 是针对另一份 permutation 做的 GPTQ，"
+                f"与 {permuted_dir} 当前的 permutation 不一致。\n"
+                f"  codes 记录的是 permuted 权重里 FIXED 列位置上的整数，换一份 permutation 就等于"
+                f"把每个量化组的成员打散——重构误差会超过 100%（比直接输出 0 还差），而直方图、"
+                f"loss 曲线全都看不出来。\n"
+                f"  修法二选一：删掉 {saltq_base_dir} 让它跟着新 permutation 重跑 GPTQ；或者用 "
+                f"--permuted_base_dir 指向当初生成这批 codes 的那份 permuted base。"
+            )
 
         if args.resume_from_checkpoint:
             if not os.path.exists(_sq_meta_pt):

@@ -11,36 +11,41 @@ source ~/miniforge3/etc/profile.d/conda.sh
 conda activate saltq
 nvidia-smi | head -12
 
-# SALT-Q on Commonsense-170k, INT3 g64, ONE epoch.
+# SALT-Q on Commonsense-170k, INT3 g64, ONE epoch. Auto segmentation at fixed group_k=128.
 #
-# The first run of the repo on the new footing: PiSSA-style data (datasets/commonsense, prompt
-# masked, response-only loss, explicit EOS) and generative evaluation through vLLM instead of
-# lm-eval. So it is NOT comparable to the earlier lm-eval numbers in results_saltq.csv — those
-# rank answer options under teacher forcing, this scores the model's own generations. The CSV
-# keeps them apart with source=lm-eval vs source=vllm-generative; do not average across that
-# column.
+# EVERYTHING IS REBUILT FROM SCRATCH. No --permuted_base_dir, no --saltq_base_dir. That is the
+# whole point of this submission: the previous attempt passed both, and the permuted base was
+# regenerated anyway (the calibration data had changed under the new prompt pipeline, so
+# _permuted_base_reusable declined it) while the frozen GPTQ codes were reused. The codes are
+# integers at FIXED COLUMN POSITIONS of the permuted weight, so a different permutation scatters
+# every quantization group: reconstruction error came out at 114% -- worse than emitting zeros --
+# the untrained model sat at loss 10.6 against ln(32000) = 10.37, and the run spent its epoch
+# climbing back out of uniform noise. Nothing in the histograms or the loss curve showed it.
+# scripts/train.py now refuses that combination outright, and build_saltq_model measures the
+# reconstruction error of the first 8 layers before training can start.
+#
+# Segmentation is unchanged and is what the config already specified: boundary_sizes ABSENT +
+# group_k=128 -> permute_common.auto_segment_with_fixed_group_k, max_segments=4. The DP picks
+# only WHERE to cut, at the legacy budget of 32 * 128 = 4096.
 #
 # LEARNING RATES ARE x sqrt(3). One epoch is T = 147580 / 80 = 1845 optimizer steps against the
 # 5534 of the 3-epoch cell, and SALT-Q's rates are set against a target DISPLACEMENT under
 # |dparam| ~ lr * 0.47 * sqrt(T). Unscaled they would realize 0.34 grid steps of |dW_S| against
 # a 0.5 target. See the config header for the full derivation.
 #
-# THE OFFLINE BASES ARE REUSED from the 3-epoch run. Neither the permutation (13 GB) nor the
-# frozen GPTQ codes (7.3 GB) depends on the number of epochs -- only on the saliency /
-# segmentation config and on (bits, group_size), all identical here. That skips ~2 GPU-hours of
-# calibration plus a 20 GB rewrite. The one caveat worth recording: those bases were calibrated
-# under the OLD prompt formatting, which for this dataset differs from the new one by the
-# template tail alone, so the second-moment statistics that chose the salient channels are
-# unchanged for practical purposes. If a strictly single-provenance base is ever wanted, drop
-# the two --*_base_dir flags and it rebuilds.
+# Data and metric are the new footing: PiSSA-style records from datasets/commonsense (prompt
+# masked, response-only loss, explicit EOS) and generative eval through vLLM. NOT comparable to
+# the lm-eval rows already in results_saltq.csv -- the CSV separates them by the `source` column.
 #
 # Results are recorded automatically by stage 3: generations to
 # results/commonsense_vllm/<tag>.jsonl, per-task accuracy to <tag>.json, and one row per task
 # folded into results_saltq.csv by scripts/collect_saltq_results.py.
 #
-# AFTER THIS RUN: measure |dW_S| and |dz| with scripts/measure_saltq_displacement.py BEFORE
-# trusting the score. Near 0.5 grid steps / 0.1-0.3 levels means the sqrt(3) rescale landed;
-# much lower and the number is a floor on the method, not a measurement of it.
+# AFTER THIS RUN: the opening loss is the first thing to read. ~2.9 is a healthy INT3 start
+# (fp16 response-only is 2.84, and the quantization gap should be small at 3 bits); anything
+# near 8 means the base is broken again, whatever the score says. Then measure |dW_S| and |dz|
+# with scripts/measure_saltq_displacement.py -- near 0.5 grid steps / 0.1-0.3 levels means the
+# sqrt(3) rescale landed.
 
 # Stage 3 runs in a DIFFERENT conda env. Check it is importable now rather than discovering it
 # is missing after several hours of training.
@@ -58,9 +63,7 @@ bash runs/saltq/run_saltq_commonsense.sh \
     --config configs/saltq_cs170k_int3_g64_ep1.yaml \
     --bits 3 \
     --output_root outputs/saltq_cs170k_int3_g64_ep1 \
-    --permuted_base_dir outputs/saltq_cs170k_int3_g64/permuted_fp16_base \
-    --saltq_base_dir    outputs/saltq_cs170k_int3_g64/saltq_base_3bit_g64 \
-    --note "1 epoch (T=1845), lrs x sqrt(3); first run on the PiSSA data pipeline + vLLM generative eval" \
+    --note "1 epoch (T=1845), lrs x sqrt(3); autoseg k=128; permutation AND GPTQ codes rebuilt together" \
     > logs/commonsense_170k/saltq_cs170k_int3_g64_ep1.log 2>&1
 
 echo "End time: $(date)"
