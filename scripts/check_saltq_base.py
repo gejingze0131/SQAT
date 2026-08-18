@@ -114,6 +114,17 @@ def main():
                 rel = (rec - W).norm() / W.norm() * 100
                 print(f"  reconstruction: relative Frobenius error {rel:.2f}%  "
                       f"(INT{qb} should be tens of percent)")
+                # >= 100% means the dequantized weight is further from the target than ZERO is,
+                # i.e. the codes carry no usable signal. Observed on working bases: INT2 g32
+                # sits at 49-69%. An INT3 g64 base measured 114% on every layer but the first,
+                # and its untrained model scored a 10.6 LM loss — uniform noise over a 32k
+                # vocab is 10.37 — so the run that used it was recovering from a destroyed
+                # model rather than fine-tuning. That base passed this script's earlier
+                # "looks sane" verdict, which only flagged a suspiciously LOW error.
+                if rel >= 100.0:
+                    print(f"  ^ PROBLEM: {rel:.1f}% >= 100% — reconstruction is worse than "
+                          f"predicting zero. Do NOT train on this base; rebuild it.")
+                    ok = False
                 if rel < 1.0:
                     print("  ^ PROBLEM: error is near zero — these weights are effectively fp")
                     ok = False

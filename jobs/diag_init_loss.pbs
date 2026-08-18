@@ -1,0 +1,25 @@
+#!/bin/bash
+#PBS -N diag_init_loss
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+
+# Is the 8.14 opening loss the response-only masking, or a damaged starting model?
+# See scripts/diagnose_init_loss.py.
+mkdir -p logs/commonsense_170k
+
+python scripts/diagnose_init_loss.py \
+    --config             configs/saltq_cs170k_int3_g64_ep1.yaml \
+    --saltq_base_dir     outputs/saltq_cs170k_int3_g64/saltq_base_3bit_g64 \
+    --permuted_base_dir  outputs/saltq_cs170k_int3_g64/permuted_fp16_base \
+    --n_samples 64 --batch_size 4 \
+    > logs/commonsense_170k/diag_init_loss2.log 2>&1
+
+echo "rc=$?"
+echo "End time: $(date)"
