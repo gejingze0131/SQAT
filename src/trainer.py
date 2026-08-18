@@ -9,11 +9,11 @@ import torch
 from transformers import (
     Trainer,
     TrainingArguments,
-    DataCollatorForSeq2Seq,
     TrainerCallback,
 )
 from peft import PeftModel
 
+from .data import build_data_collator
 from .qat_base import QATHandler
 
 
@@ -151,12 +151,9 @@ def build_trainer(
         **_length_kwargs,
     )
 
-    # Data collator with left-padding for causal LM
-    data_collator = DataCollatorForSeq2Seq(
-        tokenizer=tokenizer,
-        padding=True,
-        return_tensors="pt",
-    )
+    # Right-padding collator: input_ids padded with pad_token_id, labels with IGNORE_INDEX so
+    # the prompt span src/data.preprocess masked stays out of the loss after collation.
+    data_collator = build_data_collator(tokenizer)
 
     trainer_cls = Trainer
     enable_lsq = bool(cfg["qat"].get("lsq", {}).get("enabled", False))

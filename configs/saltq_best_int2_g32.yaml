@@ -282,10 +282,19 @@ qat:
     # regenerated base makes every trained (s, z) and salient weight meaningless.
 
 data:
-  train_dataset: "metamath"
+  # Local pissa-dataset JSON: datasets/metamath/{train,test}.json (MetaMathQA 395k train,
+  # GSM8K + MATH test), records of instruction / input / output / type. Rendered through
+  # src/data.PROMPT with the loss on the RESPONSE ONLY, so the model learns the chain of
+  # thought and the "The answer is: X" ending scripts/test_acc.py parses.
+  train_dataset: "datasets/metamath"
   train_split: "train"
+  # No in-loop eval: the test split is scored GENERATIVELY (vLLM + exact-match) by
+  # run_eval_vllm.sh, and a teacher-forced loss on it would not predict that score.
   val_split: null
-  prompt_template: "metamath"
+  dataset_field: ["instruction", "output"]
+  sub_task: null            # null = GSM_* and MATH_* together; e.g. ["GSM_AnsAug"]
+  shuffle_dataset: true
+  num_proc: 32
 
 training:
   output_dir: "outputs/saltq_best"

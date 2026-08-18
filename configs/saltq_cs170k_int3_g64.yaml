@@ -299,10 +299,19 @@ qat:
     # regenerated base makes every trained (s, z) and salient weight meaningless.
 
 data:
-  train_dataset: "commonsense_170k"
+  # Local pissa-dataset JSON: datasets/commonsense/{train,test}.json, records of
+  # instruction / input / output / type covering BoolQ, PIQA, SIQA, ARC-e/c, HellaSwag,
+  # WinoGrande and OBQA. Rendered through src/data.PROMPT with the loss on the RESPONSE
+  # ONLY, which is what makes the trained model's output parseable by scripts/test_acc.py.
+  train_dataset: "datasets/commonsense"
   train_split: "train"
+  # No in-loop eval: the test split is scored GENERATIVELY (vLLM + exact-match) by
+  # run_eval_vllm.sh, and a teacher-forced loss on it would not predict that score.
   val_split: null
-  prompt_template: "commonsense_170k"
+  dataset_field: ["instruction", "output"]
+  sub_task: null            # null = all 8 tasks; e.g. ["boolq", "piqa:2000"] to restrict
+  shuffle_dataset: true
+  num_proc: 32
 
 
 training:

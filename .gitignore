@@ -9,3 +9,4 @@ scripts/__pycache__/
 # PBS writes <jobname>.o<jobid> into the submit directory; they are archived under
 # logs/job_outputs/ (itself ignored) rather than tracked.
 *.o[0-9]*
+datasets

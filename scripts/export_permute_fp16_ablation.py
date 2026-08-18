@@ -58,11 +58,10 @@ from torch.utils.data import DataLoader
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    DataCollatorForSeq2Seq,
     set_seed,
 )
 
-from src.data import load_calibration_data
+from src.data import build_data_collator, load_calibration_data
 from src.export import (
     _load_adapter_for_export,
     _merge_lora_into_dense,
@@ -119,11 +118,10 @@ def load_cfg(config_path: str, bits, symmetric) -> dict:
 def build_calibration_loader(cfg: dict, tokenizer) -> DataLoader:
     """Same calibration data + collator + batching as build_permuted_fp16_checkpoint (train.py)."""
     cal_dataset = load_calibration_data(cfg, tokenizer)
-    collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, return_tensors="pt")
     return DataLoader(
         cal_dataset,
         batch_size=cfg["training"]["per_device_eval_batch_size"],
-        collate_fn=collator,
+        collate_fn=build_data_collator(tokenizer),
         shuffle=False,
     )
 

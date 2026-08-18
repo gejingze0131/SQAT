@@ -319,10 +319,15 @@ qat:
     # regenerated base makes every trained (s, z) and salient weight meaningless.
 
 data:
+  # tau/commonsense_qa from the hub — the one dataset here whose raw schema is not
+  # (instruction, output); src/data.RECORD_ADAPTERS["commonsense_qa"] renders the choices
+  # into an instruction before the shared PROMPT + response-only-loss path.
   train_dataset: "commonsense_qa"
   train_split: "train"
   val_split: null
   prompt_template: "commonsense_qa"
+  shuffle_dataset: true
+  num_proc: 32
 
 
 

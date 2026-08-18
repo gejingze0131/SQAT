@@ -58,6 +58,30 @@ def _get_lora_config(cfg: dict) -> LoraConfig:
     )
 
 
+def load_tokenizer(cfg: dict, name: str = None):
+    """The one place a tokenizer is configured.
+
+    `name` overrides cfg["model"]["name"] for the offline pre-steps that read the tokenizer
+    back out of a derived checkpoint dir (the permuted fp16 base).
+
+    model_max_length is what src/data._tokenize_fn truncates against, so it has to be set
+    here rather than passed at call time — the tokenizer is the only carrier of the cap.
+    padding_side="right" is required by DataCollatorForSupervisedDataset: labels are padded
+    positionally against input_ids, and left padding would shift the two apart.
+    """
+    tokenizer = AutoTokenizer.from_pretrained(
+        name or cfg["model"]["name"],
+        model_max_length=cfg["model"]["max_seq_len"],
+        padding_side="right",
+        trust_remote_code=True,
+        use_fast=True,
+    )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+    return tokenizer
+
+
 def load_model_and_tokenizer(cfg: dict):
     """
     Load quantized model with LoRA adapters.
@@ -70,14 +94,7 @@ def load_model_and_tokenizer(cfg: dict):
     model_name = cfg["model"]["name"]
 
     # --- Tokenizer ---
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name,
-        trust_remote_code=True,
-        use_fast=True,
-    )
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer = load_tokenizer(cfg)
 
     # --- QA-LoRA: fp16 frozen base (GPTQ INT-b grid pre-baked into the weights) -----------------
     # QA-LoRA trains on the ACTUAL quantized base (the official repo uses a GPTQ INT-b model, no

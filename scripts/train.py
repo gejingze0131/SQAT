@@ -41,8 +41,12 @@ from torch.utils.data import DataLoader
 from transformers import set_seed, AutoTokenizer
 from accelerate import Accelerator
 
-from src.model_loader import load_model_and_tokenizer
-from src.data import load_dataset_for_training, load_calibration_data
+from src.model_loader import load_model_and_tokenizer, load_tokenizer
+from src.data import (
+    build_data_collator,
+    load_calibration_data,
+    load_dataset_for_training,
+)
 from src.trainer import build_trainer
 from src.qat_base import get_qat_handler
 from src.export import export_merged_only, merge_and_export, export_adapter_only
@@ -222,6 +226,8 @@ def load_config(config_path: str, overrides: dict) -> dict:
         cfg["data"]["validation_size"] = overrides["validation_size"]
     if overrides.get("num_proc") is not None:
         cfg["data"]["num_proc"] = overrides["num_proc"]
+    if overrides.get("sub_task"):
+        cfg["data"]["sub_task"] = overrides["sub_task"]
 
     return cfg
 
@@ -309,6 +315,9 @@ def main():
                         help="If dataset has no validation split, carve one out from train "
                              "(e.g. 0.01 or 1000 if using datasets train_test_split semantics).")
     parser.add_argument("--num_proc", type=int, default=None)
+    parser.add_argument("--sub_task", nargs="+", default=None,
+                        help="Restrict training to these `type` values, optionally capped as "
+                             "name:N (e.g. --sub_task boolq piqa:2000). Default: every task.")
 
     # Resume training from a Trainer checkpoint (e.g. .../checkpoint-6000). For sqat_permute this
     # REUSES the existing permuted fp16 base (it must NOT be regenerated — a fresh permute would
@@ -349,9 +358,9 @@ def main():
     print(f"  QLoRA Training — {bits}-bit | QAT mode: {qat_mode} | symmetric={symmetric}")
     print("=" * 70)
     print(f"  Train dataset:   {cfg['data']['train_dataset']}")
-    print(f"  Prompt template: {cfg['data'].get('prompt_template', cfg['data']['train_dataset'])}")
     print(f"  Train split:     {cfg['data'].get('train_split', 'train')}")
-    print(f"  Val split:       {cfg['data'].get('val_split', 'validation')}")
+    print(f"  Val split:       {cfg['data'].get('val_split')}")
+    print(f"  Sub-tasks:       {cfg['data'].get('sub_task') or 'all'}")
     if qat_mode == "qalora":
         print("  QA-LoRA:         asymmetric affine quantization only")
 
@@ -470,7 +479,6 @@ def main():
     saltq_base_dir = None
     if qat_mode in ("sqat_permute", "saltq"):
         from src.qat_permute_sqat import build_permuted_fp16_checkpoint, load_perm_meta
-        from transformers import DataCollatorForSeq2Seq
 
         sp_cfg       = cfg["qat"]["saltq" if qat_mode == "saltq" else "sqat_permute"]
         permuted_dir = args.permuted_base_dir or os.path.join(
@@ -497,20 +505,12 @@ def main():
                       f"[SQAT-Permute]   {_perm_reuse}")
         elif accelerator.is_main_process:
             print("\n[SQAT-Permute] Building permuted fp16 base (permute BEFORE NF4)...")
-            sp_tok = AutoTokenizer.from_pretrained(
-                cfg["model"]["name"], use_fast=True, trust_remote_code=True
-            )
-            if sp_tok.pad_token is None:
-                sp_tok.pad_token    = sp_tok.eos_token
-                sp_tok.pad_token_id = sp_tok.eos_token_id
+            sp_tok = load_tokenizer(cfg)
             cal_dataset  = load_calibration_data(cfg, sp_tok)
-            cal_collator = DataCollatorForSeq2Seq(
-                tokenizer=sp_tok, padding=True, return_tensors="pt",
-            )
             cal_dataloader = DataLoader(
                 cal_dataset,
                 batch_size=cfg["training"]["per_device_eval_batch_size"],
-                collate_fn=cal_collator, shuffle=False,
+                collate_fn=build_data_collator(sp_tok), shuffle=False,
             )
             build_permuted_fp16_checkpoint(
                 model_name=cfg["model"]["name"],
@@ -551,7 +551,6 @@ def main():
     # moves the affine (s, z) that a GPTQ checkpoint already carries in its metadata slots.
     if qat_mode == "saltq":
         from src.qat_saltq import SALTQ_META_FILENAME, build_saltq_base
-        from transformers import DataCollatorForSeq2Seq
 
         sq_cfg = cfg["qat"]["saltq"]
         sq_gptq = sq_cfg.get("gptq", {}) or {}
@@ -582,18 +581,12 @@ def main():
                       f"{saltq_base_dir}")
         elif accelerator.is_main_process:
             print("\n[SALT-Q] Building frozen-code base (GPTQ on the permuted fp16 base)...")
-            sq_tok = AutoTokenizer.from_pretrained(
-                permuted_dir, use_fast=True, trust_remote_code=True
-            )
-            if sq_tok.pad_token is None:
-                sq_tok.pad_token    = sq_tok.eos_token
-                sq_tok.pad_token_id = sq_tok.eos_token_id
+            sq_tok = load_tokenizer(cfg, name=permuted_dir)
             cal_dataset  = load_calibration_data(cfg, sq_tok)
             cal_loader   = DataLoader(
                 cal_dataset,
                 batch_size=int(sq_gptq.get("batch_size", 2)),
-                collate_fn=DataCollatorForSeq2Seq(
-                    tokenizer=sq_tok, padding=True, return_tensors="pt"),
+                collate_fn=build_data_collator(sq_tok),
                 shuffle=False,
             )
             build_saltq_base(
@@ -624,7 +617,6 @@ def main():
     # it sits next to the final/ checkpoint regardless of the un-suffixed cfg output_dir.
     if qat_mode == "qalora":
         from src.qalora import build_qalora_intb_base
-        from transformers import DataCollatorForSeq2Seq
 
         _suffixed_out = f"{cfg['training']['output_dir']}-{bits}bit-{qat_mode}"
         qa_base_dir = os.path.join(_suffixed_out, "qalora_intb_base")
@@ -641,20 +633,12 @@ def main():
                 print(f"\n[QA-LoRA][Resume] reusing existing GPTQ base: {qa_base_dir}")
         elif accelerator.is_main_process:
             print("\n[QA-LoRA] Building GPTQ INT-b base (quantize BEFORE training, no NF4)...")
-            qa_tok = AutoTokenizer.from_pretrained(
-                cfg["model"]["name"], use_fast=True, trust_remote_code=True
-            )
-            if qa_tok.pad_token is None:
-                qa_tok.pad_token    = qa_tok.eos_token
-                qa_tok.pad_token_id = qa_tok.eos_token_id
+            qa_tok = load_tokenizer(cfg)
             cal_dataset  = load_calibration_data(cfg, qa_tok)
-            cal_collator = DataCollatorForSeq2Seq(
-                tokenizer=qa_tok, padding=True, return_tensors="pt",
-            )
             cal_dataloader = DataLoader(
                 cal_dataset,
                 batch_size=int(qa_gptq.get("batch_size", 2)),
-                collate_fn=cal_collator, shuffle=False,
+                collate_fn=build_data_collator(qa_tok), shuffle=False,
             )
             build_qalora_intb_base(
                 model_name=cfg["model"]["name"],
@@ -684,11 +668,7 @@ def main():
         # would later have to be merged.
         from src.qat_saltq import build_saltq_model
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            saltq_base_dir, use_fast=True, trust_remote_code=True)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token    = tokenizer.eos_token
-            tokenizer.pad_token_id = tokenizer.eos_token_id
+        tokenizer = load_tokenizer(cfg, name=saltq_base_dir)
         model, saltq_meta = build_saltq_model(
             saltq_base_dir,
             dtype=getattr(torch, cfg["model"]["dtype"]),
@@ -733,14 +713,10 @@ def main():
     if qat_mode == "sqat":
         print("  Loading calibration data for SQAT...")
         cal_dataset = load_calibration_data(cfg, tokenizer)
-        from transformers import DataCollatorForSeq2Seq
-        cal_collator = DataCollatorForSeq2Seq(
-            tokenizer=tokenizer, padding=True, return_tensors="pt",
-        )
         cal_dataloader = DataLoader(
             cal_dataset,
             batch_size=cfg["training"]["per_device_eval_batch_size"],
-            collate_fn=cal_collator,
+            collate_fn=build_data_collator(tokenizer),
             shuffle=False,
         )
         qat_kwargs["calibration_dataloader"] = cal_dataloader

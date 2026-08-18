@@ -1616,8 +1616,7 @@ def merge_and_export(
         print("[Export] Applying GPTQ to non-salient columns (salient slice kept on canonical grid)...")
         from .qat_permute_sqat import gptq_quantize_model_sequential
         from torch.utils.data import DataLoader
-        from transformers import DataCollatorForSeq2Seq
-        from .data import load_calibration_data
+        from .data import build_data_collator, load_calibration_data
 
         # Capture the ORIGINAL (pre-GPTQ) weights for the salient-grid verifier (GPTQ mutates W).
         quant_targets = {
@@ -1632,7 +1631,7 @@ def merge_and_export(
         cal_loader = DataLoader(
             cal_ds,
             batch_size=int(sp_state.gptq_cfg.get("batch_size", 2)),
-            collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, return_tensors="pt"),
+            collate_fn=build_data_collator(tokenizer),
             shuffle=False,
         )
         gptq_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
