@@ -103,7 +103,20 @@ set +u
 source "$(conda info --base)/etc/profile.d/conda.sh"
 set -u
 
-activate_env() { set +u; conda activate "$1"; set -u; }
+# The compute nodes start with a Cray/system LD_LIBRARY_PATH already populated, and something
+# in that stack pulls /lib64/libstdc++.so.6 (CXXABI up to 1.3.11) into the process before the
+# env's own (1.3.17) is reached. Once a soname is loaded the loader reuses it, so the env's
+# libicui18n — pulled in by sqlite3, which vLLM's engine imports — then fails to resolve
+# CXXABI_1.3.15 and the whole engine import dies. Putting the active env's lib dir first makes
+# the FIRST libstdc++ loaded the new one. Rebuilt from the pristine value on every hop so the
+# two envs cannot leak libraries into each other.
+_ORIG_LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+activate_env() {
+    set +u
+    conda activate "$1"
+    export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib${_ORIG_LD_LIBRARY_PATH:+:$_ORIG_LD_LIBRARY_PATH}"
+    set -u
+}
 deactivate_env() { set +u; conda deactivate; set -u; }
 
 echo "============================================================"
@@ -129,6 +142,18 @@ deactivate_env
 # --- Stage 2: generate (vllm env) -------------------------------------------
 echo -e "\n>>> Stage 2/3: generating with vLLM"
 activate_env "$VLLM_ENV"
+
+# Two seconds here instead of discovering a broken env after the model is on the GPUs. The
+# import chain is the one that actually failed in practice: vLLM's engine imports sqlite3,
+# which drags in the env's libicui18n and its libstdc++ requirement.
+if ! python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" 2>/dev/null; then
+    echo "ERROR: the '$VLLM_ENV' env cannot import vLLM's engine on this node." >&2
+    echo "  CONDA_PREFIX     = ${CONDA_PREFIX:-unset}" >&2
+    echo "  LD_LIBRARY_PATH  = ${LD_LIBRARY_PATH:-unset}" >&2
+    echo "  --- full traceback ---" >&2
+    python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" >&2
+    exit 1
+fi
 # shellcheck disable=SC2086
 python scripts/gen_vllm.py \
     --model          "$VLLM_MODEL_DIR" \
