@@ -89,6 +89,9 @@ def main() -> int:
     parser.add_argument("--dtype", type=str, default="auto")
     parser.add_argument("--tensor_parallel_size", type=int, default=None,
                         help="Default: every visible GPU.")
+    parser.add_argument("--custom_all_reduce", action="store_true",
+                        help="Re-enable vLLM's custom all-reduce kernel (off by default here; "
+                             "see the LLM() call below for why it does not work on this cluster).")
     args = parser.parse_args()
 
     meta_path = os.path.join(args.model, "sqat_permute_meta.pt")
@@ -117,6 +120,16 @@ def main() -> int:
         max_model_len=args.max_model_len,
         gpu_memory_utilization=args.gpu_memory_utilization,
         dtype=args.dtype,
+        # OFF because it does not work on these nodes, twice measured. vLLM logs
+        #   "Skipping P2P check and trusting the driver's P2P report"
+        # and then its custom kernel dies at engine init with
+        #   Failed: Cuda error custom_all_reduce.cuh:455 'invalid argument'
+        # -> RuntimeError: cancelled -> "Engine core initialization failed", which names neither
+        # P2P nor all-reduce, so the traceback sends you looking at the checkpoint instead.
+        # The driver advertises peer access that the GPUs do not actually have; NCCL's own
+        # all-reduce handles that correctly. The cost is a few percent of TP throughput on a
+        # batch job that runs for minutes, against an eval stage that otherwise never starts.
+        disable_custom_all_reduce=not args.custom_all_reduce,
     )
 
     prompts = [r["instruction"] for r in records]
