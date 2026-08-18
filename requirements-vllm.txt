@@ -3,20 +3,25 @@
 # would move the numerics every checkpoint in outputs/ was trained under.
 #
 # vllm is PINNED, and the pin is about the DRIVER, not about features. This cluster runs
-# 570.124.06 = CUDA 12.8. vLLM >= 0.27 requires torch 2.13, which ships built against CUDA
-# 13.0, and every worker dies at engine start with:
-#     RuntimeError: The NVIDIA driver on your system is too old (found version 12080)
-# 0.26.0 is the newest release pinning torch==2.11.0 — the same torch the training env uses,
-# and one with a cu128 build. Phase 1 of setup_vllm_env.sh installs that build first.
+# 570.124.06 = CUDA 12.8, and vLLM's own COMPILED extension (vllm/_C.abi3.so) has to match it.
+# Measured by unzipping each wheel and reading the linked runtime out of _C.abi3.so:
 #
-# torchcodec is a hard dependency of vLLM that we never use: it decodes audio/video, and a text
-# model never imports it. It still has to be PINNED, because it tracks torch's minor version
-# (0.16 -> 2.13, 0.14 -> 2.11) without declaring it, so pip pairs 0.16 with torch 2.11 and the
-# resolve looks fine until something touches it. Note that even the correct pin cannot LOAD here
-# (its FFmpeg shared libraries are absent) — that is expected and harmless, which is why the
-# verification below does not import it.
-vllm==0.26.0
-torchcodec==0.14.0
+#     vllm 0.11.0   ->  libcudart.so.12    works here   <- pinned (torch 2.8.0, see phase 1)
+#     vllm 0.11.2   ->  libcudart.so.12    also works   (torch 2.9.0)
+#     vllm 0.21.0   ->  libcudart.so.13    ImportError: libcudart.so.13
+#     vllm 0.26.0   ->  libcudart.so.13    "NVIDIA driver ... too old (found version 12080)"
+#     vllm 0.27.1   ->  libcudart.so.13    same
+#
+# Pinning torch to a cu128 build is NOT sufficient on its own: 0.26.0 pins torch==2.11.0 and
+# still ships a CUDA 13 extension, which is why phase 1 and this pin have to move together and
+# why the verification imports vllm._C rather than just vllm.
+#
+# To move this pin forward, re-run that check on the candidate wheel:
+#     pip download --no-deps --only-binary=:all: vllm==<v> -d /tmp/w
+#     unzip -o /tmp/w/*.whl 'vllm/_C*.so' -d /tmp/w/x
+#     strings /tmp/w/x/vllm/_C*.so | grep -o 'libcudart\.so\.[0-9]*' | sort -u
+# and update phase 1's torch/torchvision/torchaudio to whatever that release pins.
+vllm==0.11.0
 
 # scripts/gen_vllm.py needs nothing else — it reads datasets/<name>/test.json with the stdlib
 # json module, and scripts/test_acc.py is pure stdlib.

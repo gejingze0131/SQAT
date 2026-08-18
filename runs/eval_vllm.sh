@@ -147,15 +147,14 @@ activate_env "$VLLM_ENV"
 # things that have actually broken are covered: vLLM's engine imports sqlite3, which drags in
 # the env's libicui18n and its libstdc++ requirement, and a torch built for CUDA 13 kills every
 # worker at engine start on this cluster's 12.8 driver.
-# torchcodec is deliberately NOT imported — it is a hard dependency of vLLM but is only used
-# for audio/video inputs, its FFmpeg shared libraries are absent here, and it is never imported
-# for a text model.
-if ! python -c "import sqlite3, torch, vllm; from vllm.v1.engine.core_client import EngineCoreClient; assert torch.version.cuda.startswith('12.')" 2>/dev/null; then
+# vllm._C is imported EXPLICITLY: `import vllm` succeeds on a wheel built against the wrong
+# CUDA and only the compiled extension fails, so a package-level import proves nothing.
+if ! python -c "import sqlite3, torch, vllm, vllm._C; from vllm.v1.engine.core_client import EngineCoreClient; assert torch.version.cuda.startswith('12.')" 2>/dev/null; then
     echo "ERROR: the '$VLLM_ENV' env cannot import vLLM's engine on this node." >&2
     echo "  CONDA_PREFIX     = ${CONDA_PREFIX:-unset}" >&2
     echo "  LD_LIBRARY_PATH  = ${LD_LIBRARY_PATH:-unset}" >&2
     echo "  --- full traceback ---" >&2
-    python -c "import sqlite3, torch, vllm; from vllm.v1.engine.core_client import EngineCoreClient; assert torch.version.cuda.startswith('12.')" >&2
+    python -c "import sqlite3, torch, vllm, vllm._C; from vllm.v1.engine.core_client import EngineCoreClient; assert torch.version.cuda.startswith('12.')" >&2
     exit 1
 fi
 # shellcheck disable=SC2086
