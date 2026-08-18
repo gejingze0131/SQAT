@@ -2,7 +2,7 @@
 """
 export_permute_fp16_ablation.py — Methodology UPPER-BOUND ablation for Permuted Selective-QAT.
 
-What our method does (run_permute_sqat.sh):
+What our method does (runs/permute_sqat/_pipeline.sh):
   permute the residual stream so the salient d_model channels gather into the leading slice
   [0:group_k]; PROTECT that slice with LSQ-style fakequant during QAT; export the non-salient
   columns [group_k:] with GPTQ. The salient slice is deployed as a low-bit (canonical-grid)

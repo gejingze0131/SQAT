@@ -1,6 +1,10 @@
 #!/bin/bash
 # =============================================================================
-# run_permute_sqat.sh — Permuted Selective-QAT pipeline (validate → train → export → eval)
+# runs/permute_sqat/_pipeline.sh — Permuted Selective-QAT pipeline engine
+#
+# Not meant to be run directly — the per-task entry scripts fix --dataset and the
+# matching --config together, which is the pair that must never disagree:
+#   runs/permute_sqat/run_permute_sqat_math.sh / _commonsense.sh
 #
 # Pipeline (qat_mode = sqat_permute):
 #   Stage 0  Permutation equivalence verification (fp32, no training) — scripts/verify_permute.py
@@ -10,18 +14,23 @@
 #   Stage 3  Benchmark evaluation (boundary gather auto-applied from sqat_permute_meta.pt)
 #
 # Usage:
-#   bash run_permute_sqat.sh                          # all stages
-#   bash run_permute_sqat.sh --skip_validate          # skip Stage 0
-#   bash run_permute_sqat.sh --skip_eval              # train+export, no benchmarks
-#   bash run_permute_sqat.sh --skip_train             # export + eval from latest checkpoint
-#   bash run_permute_sqat.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
-#   bash run_permute_sqat.sh --resume_from <ckpt>     # CONTINUE training from a Trainer checkpoint
+#   bash runs/permute_sqat/run_permute_sqat_math.sh                          # all stages
+#   bash runs/permute_sqat/run_permute_sqat_math.sh --skip_validate          # skip Stage 0
+#   bash runs/permute_sqat/run_permute_sqat_math.sh --skip_eval              # train+export, no benchmarks
+#   bash runs/permute_sqat/run_permute_sqat_math.sh --skip_train             # export + eval from latest checkpoint
+#   bash runs/permute_sqat/run_permute_sqat_math.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
+#   bash runs/permute_sqat/run_permute_sqat_math.sh --resume_from <ckpt>     # CONTINUE training from a Trainer checkpoint
 #                                                     #   (reuses permuted base; raise num_epochs to
 #                                                     #    train past the original max_steps)
-#   bash run_permute_sqat.sh --num_gpus 2 --config configs/sqat_permute.yaml
+#   bash runs/permute_sqat/run_permute_sqat_math.sh --num_gpus 2 --config configs/sqat_permute.yaml
 # =============================================================================
 
 set -euo pipefail
+
+# Addresses configs/ scripts/ outputs/ datasets/ from the repo root, and refuses a --config
+# whose training task disagrees with --dataset. See runs/lib/common.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+cd_repo_root
 
 # Fix A: avoid CUDA allocator fragmentation (the OOM showed several GB "reserved
 # but unallocated"). expandable_segments lets the caching allocator grow/shrink
@@ -33,7 +42,9 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # Config
 # ---------------------------------------------------------------------------
 DATASET_NAME="commonsense" # math or commonsense (must match the config yaml, which controls the boundary gather)
-CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+# Empty => resolved from DATASET_NAME after parsing, so --config and
+# --dataset cannot depend on the order they were passed in.
+CONFIG=""
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=3
 BITS=3
@@ -80,6 +91,7 @@ while [[ $# -gt 0 ]]; do
         --resume_from)    RESUME_FROM="$2";   shift 2 ;;
         --num_gpus)       NUM_GPUS="$2";      shift 2 ;;
         --config)         CONFIG="$2";        shift 2 ;;
+        --dataset)        DATASET_NAME="$2";  shift 2 ;;
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
         --eval_gpus)      EVAL_GPUS="$2";     shift 2 ;;
@@ -89,6 +101,16 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+# Resolved here rather than at declaration: --config and --dataset can now be passed in either
+# order without one silently overwriting the other.
+[ -n "$CONFIG" ] || CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+
+# Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run
+# will actually evaluate — a --skip_eval run is free to train on anything.
+if [ "$SKIP_EVAL" = false ]; then
+    assert_config_matches_dataset "$CONFIG" "$DATASET_NAME"
+fi
 
 # Map the toggle to the train.py flag (config yaml is the fallback default).
 if [ "$AWQ_SCALE" = "true" ]; then
@@ -148,7 +170,7 @@ echo "============================================================"
 # ---------------------------------------------------------------------------
 if [ "$SKIP_VALIDATE" = false ]; then
     echo -e "\n>>> Stage 0: Legacy fixed-segment permutation verification (fp32, no training)"
-    bash run_validation.sh \
+    bash runs/analysis/run_validation.sh \
         --model_name     "$MODEL_NAME" \
         --boundary_sizes $VALIDATION_BOUNDARY_SIZES \
         --group_k        $VALIDATION_GROUP_K

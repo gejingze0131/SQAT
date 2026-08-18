@@ -21,9 +21,16 @@ nvidia-smi | head -12
 # despite training converging cleanly (loss 2.552 -> 0.418) and every mechanism checking out:
 # boundary gathers registered (3 hooks), deploy equivalence exact (max|d| = 0).
 #
-# CommonsenseQA avoids the worst of that: `commonsense_qa` is itself an lm-eval task, so train and
-# eval at least address the same dataset. --eval_tasks scores exactly that one task and skips the
-# 8-task suite and MMLU, into results/commonsense_qa/.
+# CommonsenseQA avoided the worst of that under the OLD lm-eval path: `commonsense_qa` is itself
+# an lm-eval task, so train and eval at least addressed the same dataset.
+#
+# THAT PATH IS GONE. Evaluation is now generative (vLLM + exact match) against a LOCAL test
+# split, and there is no datasets/commonsense_qa/test.json — the 8-task file's `type` column has
+# no commonsense_qa in it. So this cell can be TRAINED but not scored, and --skip_eval says so
+# rather than letting runs/lib/common.sh reject the launch. To score it, either add a
+# commonsense_qa test split in the pissa-dataset schema (instruction pre-wrapped in
+# src/data.PROMPT, output = the gold letter) and point --dataset at it, or retrain this cell on
+# datasets/commonsense like the other commonsense jobs.
 #
 # LEARNING RATES ARE RESCALED x4.25. CSQA is 9741 examples, so 3 epochs at effective batch 80 is
 # only ~365 optimizer steps against the 6584 the INT3 rates were validated at. Under the measured
@@ -39,11 +46,10 @@ python scripts/test_saltq.py           || exit 1
 python scripts/test_gptq_nonsalient.py || exit 1
 set +x
 
-./run_saltq.sh \
+bash runs/saltq/run_saltq_commonsense.sh \
     --config configs/saltq_csqa_int3_g64.yaml \
     --bits 3 \
-    --dataset commonsense \
-    --eval_tasks commonsense_qa \
+    --skip_eval \
     --output_root outputs/saltq_csqa_int3_g64 \
     --note "SALT-Q CommonsenseQA INT3 g64, autoseg fixed k=128, 3 epochs, lrs x4.25 for T=365" \
     > logs/commonsense_qa/saltq_csqa_int3_g64.log 2>&1

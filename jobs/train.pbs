@@ -59,7 +59,7 @@ python scripts/test_qat_permute_sqat.py       || exit 1
 python scripts/test_gptq_nonsalient.py        || exit 1
 set +x
 
-./run_saltq.sh \
+bash runs/saltq/run_saltq_math.sh \
     --config configs/saltq_autoseg_k128.yaml \
     --bits 2 \
     --output_root outputs/saltq_autoseg_k128 \

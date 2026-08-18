@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_validation.sh — Stage 1 permutation equivalence + Stage 1b AWQ-S fusion
+# runs/analysis/run_validation.sh — Stage 1 permutation equivalence + Stage 1b AWQ-S fusion
 #
 # Tests, on plain fp32 weights (no NF4, no LoRA, no training):
 #   Stage 1  — permutation equivalence
@@ -17,14 +17,19 @@
 #     9. S genuinely changes the quant grid vs no scaling (not a silent no-op)
 #
 # Usage:
-#   bash run_validation.sh                              # Llama-2-7b, 2-segment, AWQ-S on
-#   bash run_validation.sh --boundary_sizes 8 24        # custom 2-segment split
-#   bash run_validation.sh --group_size 64              # match the training config (gs=64)
-#   bash run_validation.sh --no_awq_scale               # permutation equivalence only
-#   bash run_validation.sh --awq_alpha 0.5 --awq_max 2.0
+#   bash runs/analysis/run_validation.sh                              # Llama-2-7b, 2-segment, AWQ-S on
+#   bash runs/analysis/run_validation.sh --boundary_sizes 8 24        # custom 2-segment split
+#   bash runs/analysis/run_validation.sh --group_size 64              # match the training config (gs=64)
+#   bash runs/analysis/run_validation.sh --no_awq_scale               # permutation equivalence only
+#   bash runs/analysis/run_validation.sh --awq_alpha 0.5 --awq_max 2.0
 # =============================================================================
 
 set -euo pipefail
+
+# Addresses configs/ scripts/ outputs/ datasets/ from the repo root, so the caller's cwd does
+# not matter. See runs/lib/common.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+cd_repo_root
 
 # ---------------------------------------------------------------------------
 # Defaults (override via CLI args passed through to scripts/verify_permute.py)

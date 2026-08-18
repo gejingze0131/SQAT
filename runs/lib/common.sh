@@ -1,0 +1,62 @@
+#!/bin/bash
+# =============================================================================
+# runs/lib/common.sh — sourced by every pipeline under runs/.
+#
+# Two jobs, both about making a whole class of silent mistakes impossible:
+#
+#   cd_repo_root                    every pipeline addresses configs/, scripts/, outputs/ and
+#                                   datasets/ relative to the repo root, so the caller's cwd
+#                                   must not matter. `bash runs/saltq/run_saltq_math.sh` and
+#                                   `cd runs/saltq && bash run_saltq_math.sh` now behave the same.
+#
+#   assert_config_matches_dataset   the config decides what the model TRAINS on; --dataset
+#                                   decides what it is SCORED on. Nothing used to tie the two
+#                                   together, so `--dataset commonsense` against the default
+#                                   metamath config trained on math, evaluated on commonsense,
+#                                   and reported a number without a single error message. The
+#                                   per-task entry scripts make that hard to do by accident;
+#                                   this makes it impossible to do at all.
+# =============================================================================
+
+# Resolved at SOURCE time, while the cwd is still whatever the caller started in. Resolving it
+# lazily inside the function would break as soon as anything cd'd first, because BASH_SOURCE
+# holds the path as written on the `source` line, which is usually relative.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+cd_repo_root() { cd "$REPO_ROOT"; }
+
+# Map a --dataset name to the local data dir the configs point at.
+dataset_dir_for() {
+    case "$1" in
+        math)        echo "datasets/metamath" ;;
+        commonsense) echo "datasets/commonsense" ;;
+        *) echo "ERROR: unknown --dataset '$1' (expected math or commonsense)" >&2; return 1 ;;
+    esac
+}
+
+assert_config_matches_dataset() {
+    local cfg="$1" task="$2" want have
+    want="$(dataset_dir_for "$task")" || exit 1
+
+    if [ ! -f "$cfg" ]; then
+        echo "ERROR: config not found: $cfg" >&2
+        exit 1
+    fi
+
+    have="$(python - "$cfg" <<'PY'
+import sys, yaml
+print(yaml.safe_load(open(sys.argv[1]))["data"]["train_dataset"])
+PY
+)"
+
+    if [ "$have" != "$want" ]; then
+        echo "ERROR: task mismatch between training and evaluation." >&2
+        echo "  --dataset $task  scores  $want/test.json" >&2
+        echo "  $cfg  trains on  '$have'" >&2
+        echo >&2
+        echo "  A model trained on one task and scored on another produces a number that means" >&2
+        echo "  nothing, and neither stage would have complained. Point --config at a config for" >&2
+        echo "  this task, or pass --skip_eval if you only meant to train." >&2
+        exit 1
+    fi
+}

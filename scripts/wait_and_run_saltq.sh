@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# wait_and_run_saltq.sh — block until the GPUs are actually free, then run run_saltq.sh.
+# wait_and_run_saltq.sh — block until the GPUs are actually free, then launch a pipeline.
 #
 # Written because the box was busy with an unrelated training job when SALT-Q was ready to start.
 # Rather than contend for compute (both jobs would roughly halve in throughput, with little OOM
@@ -14,12 +14,18 @@
 # just recreate the contention this script exists to avoid.
 #
 # Usage:
-#   bash scripts/wait_and_run_saltq.sh [args passed through to run_saltq.sh]
+#   bash scripts/wait_and_run_saltq.sh [args passed through to the entry script]
+#   ENTRY=runs/saltq/run_saltq_commonsense.sh bash scripts/wait_and_run_saltq.sh --bits 3
+#
+# ENTRY names the per-task entry script to launch (default: SALT-Q on MetaMathQA). The waiting
+# logic has nothing to do with which method or task runs, so it is a variable rather than a
+# second copy of this file.
 # =============================================================================
 
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENTRY="${ENTRY:-runs/saltq/run_saltq_math.sh}"
 cd "$REPO"
 
 CONDA_ENV_BIN="${CONDA_ENV_BIN:-/home/dong/anaconda3/envs/sqat/bin}"
@@ -97,12 +103,12 @@ while true; do
 done
 
 log "----------------------------------------------------------"
-log "Launching: bash run_saltq.sh $*"
+log "Launching: bash $ENTRY $*"
 log "----------------------------------------------------------"
 status "running: SALT-Q pipeline started $(date '+%F %T')"
 
 set -o pipefail
-bash run_saltq.sh "$@" 2>&1 | tee -a "$LOG"
+bash "$ENTRY" "$@" 2>&1 | tee -a "$LOG"
 RC=${PIPESTATUS[0]}
 
 if [ "$RC" -eq 0 ]; then

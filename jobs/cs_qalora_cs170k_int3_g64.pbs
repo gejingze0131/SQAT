@@ -26,10 +26,9 @@ nvidia-smi | head -12
 #
 # Everything not specific to the method matches the SALT-Q runs: dataset, prompt template, 3
 # epochs, effective batch 80, seq 2048, LoRA r64/a16/dropout 0, cosine + 3% warmup, seed 42.
-./run_qalora.sh \
+bash runs/qalora/run_qalora_commonsense.sh \
     --config configs/qalora_cs170k_int3_g64.yaml \
     --bits 3 \
-    --dataset commonsense \
     --output_dir outputs/qalora-cs170k-int3_g64 \
     --eval_gpus 0,1,2,3 \
     > logs/commonsense_170k/qalora_int3_g64.log 2>&1

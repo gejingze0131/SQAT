@@ -1,8 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# run_none_qlora.sh — Plain QLoRA baseline (qat_mode = none) pipeline
+# runs/qlora/_pipeline.sh — plain QLoRA baseline (qat_mode = none) pipeline engine
 #
-# Mirrors run_permute_sqat.sh but with qat_mode=none (no Selective-QAT, no
+# Not meant to be run directly — the per-task entry scripts fix --dataset and the
+# matching --config together, which is the pair that must never disagree:
+#   runs/qlora/run_qlora_math.sh / run_qlora_commonsense.sh
+#
+# Mirrors runs/permute_sqat/_pipeline.sh but with qat_mode=none (no Selective-QAT, no
 # permutation). It deliberately reads the SAME configs/sqat_permute_${DATASET_NAME}.yaml
 # so that every parameter UNRELATED to the sqat_permute method (model, LoRA,
 # dataset, training hyper-params, group_size, ...) stays identical to the
@@ -20,26 +24,33 @@
 #   Stage 1b Export merged-only (FP16 upper bound) from the final checkpoint
 #   Stage 2  Export-only (both variants) when --skip_train / --checkpoint_dir is given
 #   Stage 3  Generative evaluation of BOTH exported models through vLLM, in the `vllm`
-#            conda env (run_eval_vllm.sh)
+#            conda env (runs/eval_vllm.sh)
 #
 # Usage:
-#   bash run_none_qlora.sh                          # all stages
-#   bash run_none_qlora.sh --skip_eval              # train+export, no benchmarks
-#   bash run_none_qlora.sh --skip_train             # export + eval from latest checkpoint
-#   bash run_none_qlora.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
-#   bash run_none_qlora.sh --num_gpus 2 --config configs/sqat_permute_math.yaml
+#   bash runs/qlora/run_qlora_math.sh                          # all stages
+#   bash runs/qlora/run_qlora_math.sh --skip_eval              # train+export, no benchmarks
+#   bash runs/qlora/run_qlora_math.sh --skip_train             # export + eval from latest checkpoint
+#   bash runs/qlora/run_qlora_math.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
+#   bash runs/qlora/run_qlora_math.sh --num_gpus 2 --config configs/sqat_permute_math.yaml
 # =============================================================================
 
 set -euo pipefail
 
-# Avoid CUDA allocator fragmentation (see run_permute_sqat.sh for rationale).
+# Addresses configs/ scripts/ outputs/ datasets/ from the repo root, and refuses a --config
+# whose training task disagrees with --dataset. See runs/lib/common.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+cd_repo_root
+
+# Avoid CUDA allocator fragmentation (see runs/permute_sqat/_pipeline.sh for rationale).
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 # ---------------------------------------------------------------------------
 # Config — read the SAME sqat_permute config to keep all non-method params equal
 # ---------------------------------------------------------------------------
 DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
-CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+# Empty => resolved from DATASET_NAME after parsing, so --config and
+# --dataset cannot depend on the order they were passed in.
+CONFIG=""
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=2
 BITS=3
@@ -47,10 +58,12 @@ BITS=3
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 EVAL_GPU=0                # single GPU used for EXPORT (one dense fp16 model per card)
 EVAL_GPUS="0,1,2,3"       # GPUs vLLM evaluates on; >1 id => tensor-parallel, matching
-                          # run_saltq.sh so the suites are run identically across methods
+                          # runs/saltq/_pipeline.sh so the suites are run identically across methods
 
 # Dedicated output dir so a plain-QLoRA run never clobbers a real sqat_permute run.
-OUTPUT_DIR="outputs/qlora-none-${DATASET_NAME}"
+# Empty => derived from DATASET_NAME after parsing. Declared eagerly, it baked in
+# the DEFAULT task and a --dataset override never reached it.
+OUTPUT_DIR=""
 
 SKIP_TRAIN=false
 SKIP_EVAL=false
@@ -71,10 +84,21 @@ while [[ $# -gt 0 ]]; do
         --output_dir)     OUTPUT_DIR="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
         --eval_gpus)      EVAL_GPUS="$2";     shift 2 ;;
-        --dataset)        DATASET_NAME="$2"; CONFIG="configs/sqat_permute_${2}.yaml"; shift 2 ;;
+        --dataset)        DATASET_NAME="$2";  shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+# Resolved here rather than at declaration: --config and --dataset can now be passed in either
+# order without one silently overwriting the other.
+[ -n "$CONFIG" ] || CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+[ -n "$OUTPUT_DIR" ] || OUTPUT_DIR="outputs/qlora-none-${DATASET_NAME}"
+
+# Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run
+# will actually evaluate — a --skip_eval run is free to train on anything.
+if [ "$SKIP_EVAL" = false ]; then
+    assert_config_matches_dataset "$CONFIG" "$DATASET_NAME"
+fi
 
 DEQUANT_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-none-dequant-eval"
 MERGED_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-none-merged-eval"
@@ -155,13 +179,13 @@ fi
 #
 # Both exported variants are scored on their OWN generations, the same metric the SALT-Q run
 # reports, so this baseline and the method are directly comparable.
-# run_eval_vllm.sh hops conda envs (vLLM pins its own torch) and folds any residual permutation
+# runs/eval_vllm.sh hops conda envs (vLLM pins its own torch) and folds any residual permutation
 # into the weights first.
 # ---------------------------------------------------------------------------
 eval_one() {
     local eval_dir="$1"
     [ -d "$eval_dir" ] || { echo "  (skip) $eval_dir not found"; return; }
-    bash run_eval_vllm.sh \
+    bash runs/eval_vllm.sh \
         --model_path "$eval_dir" \
         --dataset    "$DATASET_NAME" \
         --gpus       "$EVAL_GPUS" \

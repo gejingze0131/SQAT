@@ -37,20 +37,18 @@ set -e
 CKPT="outputs/qlora-none-cs170k-int3_g64-3bit-none/final"
 
 echo "===== train once (INT3 g64 config; the training itself is bit-independent) ====="
-./run_none_qlora.sh \
+bash runs/qlora/run_qlora_commonsense.sh \
     --config configs/qlora_none_cs170k_int3_g64.yaml \
     --bits 3 \
-    --dataset commonsense \
     --output_dir outputs/qlora-none-cs170k-int3_g64 \
     --eval_gpus 0,1,2,3 \
     > logs/commonsense_170k/qlora_none_int3_g64.log 2>&1
 
 echo "===== re-export the SAME checkpoint at INT2 g32 and evaluate ====="
 ls -d "$CKPT" || { echo "expected checkpoint $CKPT not found; check the training log"; exit 1; }
-./run_none_qlora.sh \
+bash runs/qlora/run_qlora_commonsense.sh \
     --config configs/qlora_none_cs170k_int2_g32.yaml \
     --bits 2 \
-    --dataset commonsense \
     --output_dir outputs/qlora-none-cs170k-int2_g32 \
     --checkpoint_dir "$CKPT" \
     --eval_gpus 0,1,2,3 \

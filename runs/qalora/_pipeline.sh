@@ -1,6 +1,10 @@
 #!/bin/bash
 # =============================================================================
-# run_qalora.sh — QA-LoRA (qat_mode = qalora) pipeline
+# runs/qalora/_pipeline.sh — QA-LoRA (qat_mode = qalora) pipeline engine
+#
+# Not meant to be run directly — the per-task entry scripts fix --dataset and the
+# matching --config together, which is the pair that must never disagree:
+#   runs/qalora/run_qalora_math.sh / run_qalora_commonsense.sh
 #
 # QA-LoRA (Xu et al., 2023 — arXiv:2309.14717), faithful to the paper/official repo:
 # the base is a REAL GPTQ INT-b g{group_size} model quantized ONCE directly from fp16
@@ -19,7 +23,7 @@
 # COST vs the NF4 baselines: the frozen fp16 base is ~13GB/GPU (vs ~4GB NF4) and the GPTQ base
 # build writes a ~13GB checkpoint to disk — ensure free disk + GPU headroom (lower batch if OOM).
 #
-# Like run_full_qlora.sh / run_none_qlora.sh, it deliberately reads the SAME
+# Like runs/full_qat/_pipeline.sh / runs/qlora/_pipeline.sh, it deliberately reads the SAME
 # configs/sqat_permute_${DATASET_NAME}.yaml so that every parameter UNRELATED to
 # the QAT method (model, LoRA, dataset, training hyper-params, group_size,
 # symmetric, ...) stays identical to the permuted-SQAT run — only the QAT method
@@ -48,15 +52,15 @@
 #   Stage 1b Export merged-only (FP16) from the final checkpoint
 #   Stage 2  Export-only (both variants) when --skip_train / --checkpoint_dir is given
 #   Stage 3  Generative evaluation of BOTH exported models through vLLM, in the `vllm`
-#            conda env (run_eval_vllm.sh)
+#            conda env (runs/eval_vllm.sh)
 #
 # Usage:
-#   bash run_qalora.sh                          # all stages
-#   bash run_qalora.sh --skip_eval              # train+export, no benchmarks
-#   bash run_qalora.sh --skip_train             # export + eval from latest checkpoint
-#   bash run_qalora.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
-#   bash run_qalora.sh --num_gpus 2 --config configs/sqat_permute_math.yaml --bits 2
-#   bash run_qalora.sh --eval_gpus 0 --note "..."   # 1-GPU eval; stamp a note on the CSV rows
+#   bash runs/qalora/run_qalora_math.sh                          # all stages
+#   bash runs/qalora/run_qalora_math.sh --skip_eval              # train+export, no benchmarks
+#   bash runs/qalora/run_qalora_math.sh --skip_train             # export + eval from latest checkpoint
+#   bash runs/qalora/run_qalora_math.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
+#   bash runs/qalora/run_qalora_math.sh --num_gpus 2 --config configs/sqat_permute_math.yaml --bits 2
+#   bash runs/qalora/run_qalora_math.sh --eval_gpus 0 --note "..."   # 1-GPU eval; stamp a note on the CSV rows
 #
 # Results are appended to results_saltq.csv (--results_csv) via scripts/collect_saltq_results.py,
 # the same table SALT-Q writes to, so a QA-LoRA control row sits next to the run it controls for.
@@ -64,14 +68,21 @@
 
 set -euo pipefail
 
-# Avoid CUDA allocator fragmentation (see run_permute_sqat.sh for rationale).
+# Addresses configs/ scripts/ outputs/ datasets/ from the repo root, and refuses a --config
+# whose training task disagrees with --dataset. See runs/lib/common.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+cd_repo_root
+
+# Avoid CUDA allocator fragmentation (see runs/permute_sqat/_pipeline.sh for rationale).
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 # ---------------------------------------------------------------------------
 # Config — read the SAME sqat_permute config to keep all non-method params equal
 # ---------------------------------------------------------------------------
 DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
-CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+# Empty => resolved from DATASET_NAME after parsing, so --config and
+# --dataset cannot depend on the order they were passed in.
+CONFIG=""
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=4
 BITS=2            # 2 / 3 / 4 (must match configs/*.yaml model.quant_bits; base stays NF4)
@@ -79,12 +90,14 @@ BITS=2            # 2 / 3 / 4 (must match configs/*.yaml model.quant_bits; base 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 EVAL_GPU=0                # single GPU used for EXPORT (one dense fp16 model must fit on one card)
 EVAL_GPUS="0,1,2,3"       # GPUs vLLM evaluates on; >1 id => tensor-parallel, same as
-                          # run_saltq.sh. Evaluating on 1 GPU while SALT-Q evaluates on 4 does not
+                          # runs/saltq/_pipeline.sh. Evaluating on 1 GPU while SALT-Q evaluates on 4 does not
                           # change the score, only the wall clock — but keeping them identical
                           # removes one more thing that has to be argued about.
 
 # Dedicated output dir so a QA-LoRA run never clobbers a permuted/full/none run.
-OUTPUT_DIR="outputs/qlora-qalora-${DATASET_NAME}"
+# Empty => derived from DATASET_NAME after parsing. Declared eagerly, it baked in
+# the DEFAULT task and a --dataset override never reached it.
+OUTPUT_DIR=""
 
 # Every eval run is folded into the same long-format table SALT-Q writes to, so the QA-LoRA row
 # lands next to the SALT-Q row it is the control for.
@@ -105,6 +118,7 @@ while [[ $# -gt 0 ]]; do
         --checkpoint_dir) CHECKPOINT_DIR="$2"; SKIP_TRAIN=true; shift 2 ;;
         --num_gpus)       NUM_GPUS="$2";      shift 2 ;;
         --config)         CONFIG="$2";        shift 2 ;;
+        --dataset)        DATASET_NAME="$2";  shift 2 ;;
         --bits)           BITS="$2";          shift 2 ;;
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --output_dir)     OUTPUT_DIR="$2";    shift 2 ;;
@@ -115,6 +129,17 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+# Resolved here rather than at declaration: --config and --dataset can now be passed in either
+# order without one silently overwriting the other.
+[ -n "$CONFIG" ] || CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+[ -n "$OUTPUT_DIR" ] || OUTPUT_DIR="outputs/qlora-qalora-${DATASET_NAME}"
+
+# Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run
+# will actually evaluate — a --skip_eval run is free to train on anything.
+if [ "$SKIP_EVAL" = false ]; then
+    assert_config_matches_dataset "$CONFIG" "$DATASET_NAME"
+fi
 
 DEQUANT_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-qalora-dequant-eval"
 MERGED_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-qalora-merged-eval"
@@ -178,13 +203,13 @@ fi
 #
 # Both exported variants are scored on their OWN generations, the same metric the SALT-Q run
 # reports, so the control row and the row it controls for are directly comparable.
-# run_eval_vllm.sh hops conda envs (vLLM pins its own torch) and folds any residual permutation
+# runs/eval_vllm.sh hops conda envs (vLLM pins its own torch) and folds any residual permutation
 # into the weights first.
 # ---------------------------------------------------------------------------
 eval_one() {
     local eval_dir="$1"
     [ -d "$eval_dir" ] || { echo "  (skip) $eval_dir not found"; return; }
-    bash run_eval_vllm.sh \
+    bash runs/eval_vllm.sh \
         --model_path "$eval_dir" \
         --dataset    "$DATASET_NAME" \
         --gpus       "$EVAL_GPUS" \

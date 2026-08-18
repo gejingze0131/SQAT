@@ -1,6 +1,10 @@
 #!/bin/bash
 # =============================================================================
-# run_gptq_ablation.sh — Selective-QAT ABLATION: full GPTQ on the merged weights
+# runs/permute_sqat/_gptq_ablation.sh — ABLATION engine: full GPTQ on the merged weights
+#
+# Not meant to be run directly — the per-task entry scripts fix --dataset and the
+# matching --config together, which is the pair that must never disagree:
+#   runs/permute_sqat/run_gptq_ablation_math.sh / _commonsense.sh
 #
 # Takes a TRAINED sqat_permute checkpoint, merges the LoRA into the (permuted)
 # fp16 base, and quantizes the WHOLE weight with GPTQ — NO salient slice kept on
@@ -9,19 +13,24 @@
 # protection is removed.
 #
 # Purpose: isolate what the Selective-QAT salient handling contributes. Compare
-#   permuted-SQAT (salient slice canonical-grid + GPTQ non-salient + AWQ)   <- run_permute_sqat.sh
+#   permuted-SQAT (salient slice canonical-grid + GPTQ non-salient + AWQ)   <- runs/permute_sqat/_pipeline.sh
 #   vs this ablation (everything GPTQ'd, like vanilla GPTQ on the trained model).
 # Both start from the SAME checkpoint, so the delta is exactly the SQAT export
 # protection (on a model whose LoRA was still SQAT-trained).
 #
 # Usage:
-#   bash run_gptq_ablation.sh                          # auto-detect latest sqat_permute checkpoint
-#   bash run_gptq_ablation.sh --checkpoint_dir <path>  # a specific checkpoint
-#   bash run_gptq_ablation.sh --skip_eval              # export only
-#   bash run_gptq_ablation.sh --config configs/sqat_permute_math.yaml --eval_gpu 1
+#   bash runs/permute_sqat/run_gptq_ablation_math.sh                          # auto-detect latest sqat_permute checkpoint
+#   bash runs/permute_sqat/run_gptq_ablation_math.sh --checkpoint_dir <path>  # a specific checkpoint
+#   bash runs/permute_sqat/run_gptq_ablation_math.sh --skip_eval              # export only
+#   bash runs/permute_sqat/run_gptq_ablation_math.sh --config configs/sqat_permute_math.yaml --eval_gpu 1
 # =============================================================================
 
 set -euo pipefail
+
+# Addresses configs/ scripts/ outputs/ datasets/ from the repo root, and refuses a --config
+# whose training task disagrees with --dataset. See runs/lib/common.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+cd_repo_root
 
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
@@ -29,7 +38,9 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # Config — must match the run that produced the checkpoint
 # ---------------------------------------------------------------------------
 DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
-CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+# Empty => resolved from DATASET_NAME after parsing, so --config and
+# --dataset cannot depend on the order they were passed in.
+CONFIG=""
 BITS=3
 EVAL_GPU=0
 
@@ -43,11 +54,22 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --checkpoint_dir) CHECKPOINT_DIR="$2"; shift 2 ;;
         --config)         CONFIG="$2";         shift 2 ;;
+        --dataset)        DATASET_NAME="$2";  shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";       shift 2 ;;
         --skip_eval)      SKIP_EVAL=true;      shift ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+# Resolved here rather than at declaration: --config and --dataset can now be passed in either
+# order without one silently overwriting the other.
+[ -n "$CONFIG" ] || CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+
+# Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run
+# will actually evaluate — a --skip_eval run is free to train on anything.
+if [ "$SKIP_EVAL" = false ]; then
+    assert_config_matches_dataset "$CONFIG" "$DATASET_NAME"
+fi
 
 if [ -z "$CHECKPOINT_DIR" ]; then
     CHECKPOINT_DIR=$(ls -td outputs/qlora-sqat-permute*/final 2>/dev/null | head -1 || true)

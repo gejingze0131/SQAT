@@ -1657,7 +1657,8 @@ def merge_and_export(
             raise RuntimeError(
                 "GPTQ export ran out of GPU memory (the merged fp16 model shares the GPU with the "
                 "resident training model). The checkpoint IS saved — recover with export-only:\n"
-                "    bash run_permute_sqat.sh --skip_train --checkpoint_dir <output_dir>/final\n"
+                "    bash runs/permute_sqat/run_permute_sqat_math.sh --skip_train "
+                "--checkpoint_dir <output_dir>/final\n"
                 "or reduce qat.sqat_permute.gptq.batch_size / nsamples in the config."
             ) from e
         merged_model.to("cpu")

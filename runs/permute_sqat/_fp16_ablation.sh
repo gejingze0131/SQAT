@@ -1,8 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# run_permute_fp16_ablation.sh — Permuted Selective-QAT UPPER-BOUND ablation
+# runs/permute_sqat/_fp16_ablation.sh — ABLATION engine: fp16 salient upper bound
 #
-# Runs the IDENTICAL permute algorithm as run_permute_sqat.sh (same calibration
+# Not meant to be run directly — the per-task entry scripts fix --dataset and the
+# matching --config together, which is the pair that must never disagree:
+#   runs/permute_sqat/run_permute_fp16_ablation_math.sh / _commonsense.sh
+#
+# Runs the IDENTICAL permute algorithm as runs/permute_sqat/_pipeline.sh (same calibration
 # set, saliency selection, P_k / P4 / Hadamard transforms, boundary gathers), but
 # instead of QAT-protecting the salient slice it keeps that slice at FULL fp16.
 # The non-salient columns are still GPTQ'd. The ONLY difference vs. our method is:
@@ -19,13 +23,18 @@
 # so nothing-but-the-method differs — a rigorous upper-bound comparison.
 #
 # Usage:
-#   bash run_permute_fp16_ablation.sh
-#   bash run_permute_fp16_ablation.sh --checkpoint_dir outputs/qlora-none-math-3bit-none/final
-#   bash run_permute_fp16_ablation.sh --skip_eval
-#   bash run_permute_fp16_ablation.sh --config configs/sqat_permute_math.yaml --eval_gpu 1
+#   bash runs/permute_sqat/run_permute_fp16_ablation_math.sh
+#   bash runs/permute_sqat/run_permute_fp16_ablation_math.sh --checkpoint_dir outputs/qlora-none-math-3bit-none/final
+#   bash runs/permute_sqat/run_permute_fp16_ablation_math.sh --skip_eval
+#   bash runs/permute_sqat/run_permute_fp16_ablation_math.sh --config configs/sqat_permute_math.yaml --eval_gpu 1
 # =============================================================================
 
 set -euo pipefail
+
+# Addresses configs/ scripts/ outputs/ datasets/ from the repo root, and refuses a --config
+# whose training task disagrees with --dataset. See runs/lib/common.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+cd_repo_root
 
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
@@ -33,7 +42,9 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # Config — must match the permute-SQAT run it is compared against
 # ---------------------------------------------------------------------------
 DATASET_NAME="math"  # "math" or "commonsense" (must match the config yaml)
-CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+# Empty => resolved from DATASET_NAME after parsing, so --config and
+# --dataset cannot depend on the order they were passed in.
+CONFIG=""
 BITS=3
 EVAL_GPU=0
 
@@ -48,11 +59,22 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --checkpoint_dir) CHECKPOINT_DIR="$2"; shift 2 ;;
         --config)         CONFIG="$2";         shift 2 ;;
+        --dataset)        DATASET_NAME="$2";  shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";       shift 2 ;;
         --skip_eval)      SKIP_EVAL=true;      shift ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+# Resolved here rather than at declaration: --config and --dataset can now be passed in either
+# order without one silently overwriting the other.
+[ -n "$CONFIG" ] || CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+
+# Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run
+# will actually evaluate — a --skip_eval run is free to train on anything.
+if [ "$SKIP_EVAL" = false ]; then
+    assert_config_matches_dataset "$CONFIG" "$DATASET_NAME"
+fi
 
 if [ -z "$CHECKPOINT_DIR" ] || [ ! -d "$CHECKPOINT_DIR" ]; then
     echo "ERROR: plain-QLoRA checkpoint not found at '$CHECKPOINT_DIR'."

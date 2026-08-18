@@ -3,7 +3,7 @@
 Generative evaluation, stage 1 of 2: sample answers with vLLM.
 
 This is the migration/gen_vllm.py reference adapted to the local dataset layout. It runs in
-the `vllm` conda env, NOT the training env — see run_eval_vllm.sh.
+the `vllm` conda env, NOT the training env — see runs/eval_vllm.sh.
 
 The test splits under datasets/<name>/test.json ship their `instruction` field ALREADY
 wrapped in src/data.PROMPT, so the prompt is fed to the model verbatim. Do not re-wrap it:

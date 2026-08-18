@@ -31,10 +31,9 @@ python scripts/test_saltq.py            || exit 1
 python scripts/test_gptq_nonsalient.py  || exit 1
 set +x
 
-./run_saltq.sh \
+bash runs/saltq/run_saltq_commonsense.sh \
     --config configs/saltq_cs170k_int3_g64.yaml \
     --bits 3 \
-    --dataset commonsense \
     --output_root outputs/saltq_cs170k_int3_g64 \
     --note "SALT-Q commonsense_170k INT3 g64, autoseg fixed k=128, 3 epochs" \
     > logs/commonsense_170k/saltq_int3_g64.log 2>&1

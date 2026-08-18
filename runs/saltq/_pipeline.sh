@@ -1,6 +1,10 @@
 #!/bin/bash
 # =============================================================================
-# run_saltq.sh — SALT-Q pipeline (train -> export -> eval) on MetaMathQA
+# runs/saltq/_pipeline.sh — SALT-Q pipeline engine (train -> export -> eval)
+#
+# Not meant to be run directly — the per-task entry scripts fix --dataset and the
+# matching --config together, which is the pair that must never disagree:
+#   runs/saltq/run_saltq_math.sh / run_saltq_commonsense.sh
 #
 # SALT-Q = Saliency-Allocated Low-bit Trainability. Per weight matrix, after the shared offline
 # permutation has moved the salient input channels to the front:
@@ -22,21 +26,26 @@
 #            one-shot discrete choice, so a fresh base invalidates every trained tensor.
 #            The merge-free export runs automatically at the end of training.
 #   Stage 2  Export-only (only when --skip_train / --checkpoint_dir is given)
-#   Stage 3  Generative evaluation through vLLM, in the `vllm` conda env (run_eval_vllm.sh).
+#   Stage 3  Generative evaluation through vLLM, in the `vllm` conda env (runs/eval_vllm.sh).
 #            The residual permutation is folded into the weights first — the export needs a
 #            boundary gather per segment and vLLM cannot register that hook.
 #
 # Usage:
-#   bash run_saltq.sh                              # train + export + eval
-#   bash run_saltq.sh --skip_eval                  # train + export only
-#   bash run_saltq.sh --skip_train                 # export + eval from the latest checkpoint
-#   bash run_saltq.sh --checkpoint_dir <path>      # export + eval from a specific checkpoint
-#   bash run_saltq.sh --resume_from <ckpt>         # CONTINUE training (reuses both bases)
-#   bash run_saltq.sh --salient_lr 1e-5            # sweep the key new hyper-parameter
-#   bash run_saltq.sh --num_gpus 2 --config configs/saltq.yaml
+#   bash runs/saltq/run_saltq_math.sh                              # train + export + eval
+#   bash runs/saltq/run_saltq_math.sh --skip_eval                  # train + export only
+#   bash runs/saltq/run_saltq_math.sh --skip_train                 # export + eval from the latest checkpoint
+#   bash runs/saltq/run_saltq_math.sh --checkpoint_dir <path>      # export + eval from a specific checkpoint
+#   bash runs/saltq/run_saltq_math.sh --resume_from <ckpt>         # CONTINUE training (reuses both bases)
+#   bash runs/saltq/run_saltq_math.sh --salient_lr 1e-5            # sweep the key new hyper-parameter
+#   bash runs/saltq/run_saltq_math.sh --num_gpus 2 --config configs/saltq.yaml
 # =============================================================================
 
 set -euo pipefail
+
+# Addresses configs/ scripts/ outputs/ datasets/ from the repo root, and refuses a --config
+# whose training task disagrees with --dataset. See runs/lib/common.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+cd_repo_root
 
 # Avoid CUDA allocator fragmentation. SALT-Q rebuilds one [out, in] fp32 weight per projection on
 # every forward, so the allocator sees a steady churn of large short-lived blocks.
@@ -45,7 +54,9 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-CONFIG="configs/saltq.yaml"
+# Empty => resolved from DATASET_NAME after parsing, so --config and
+# --dataset cannot depend on the order they were passed in.
+CONFIG=""
 # Which test set Stage 3 scores, and it MUST match what was trained on: "math" ->
 # datasets/metamath/test.json (gsm8k + MATH), "commonsense" -> datasets/commonsense/test.json
 # (the 8-task suite). Results land under results/<dataset>_vllm/.
@@ -113,6 +124,21 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+# CONFIG default depends on the task and there is no shared family for SALT-Q, so name both.
+# INT3 g64 is the reference cell for each; the bit sweep overrides with --config.
+if [ -z "$CONFIG" ]; then
+    case "$DATASET_NAME" in
+        math)        CONFIG="configs/saltq.yaml" ;;
+        commonsense) CONFIG="configs/saltq_cs170k_int3_g64.yaml" ;;
+    esac
+fi
+
+# Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run
+# will actually evaluate — a --skip_eval run is free to train on anything.
+if [ "$SKIP_EVAL" = false ]; then
+    assert_config_matches_dataset "$CONFIG" "$DATASET_NAME"
+fi
 
 EXTRA_FLAGS=""
 [ -n "$SALIENT_LR" ] && EXTRA_FLAGS="$EXTRA_FLAGS --salient_lr $SALIENT_LR"
@@ -208,7 +234,7 @@ fi
 # baselines being compared against report, and it is also the only one that can see a model that
 # never learned to stop.
 #
-# run_eval_vllm.sh hops conda envs (vLLM pins its own torch, which must not be installed next to
+# runs/eval_vllm.sh hops conda envs (vLLM pins its own torch, which must not be installed next to
 # the training stack) and folds the residual permutation into the weights first: the exported
 # model still needs a boundary gather per segment, and vLLM cannot register that hook.
 # ---------------------------------------------------------------------------
@@ -218,7 +244,7 @@ if [ "$SKIP_EVAL" = false ]; then
     if [ ! -d "$EVAL_DIR" ]; then
         echo "  (no exported eval dir at $EVAL_DIR — nothing to evaluate)"
     else
-        bash run_eval_vllm.sh \
+        bash runs/eval_vllm.sh \
             --model_path "$EVAL_DIR" \
             --dataset    "$DATASET_NAME" \
             --gpus       "$EVAL_GPUS" \

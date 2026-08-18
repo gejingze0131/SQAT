@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# run_eval_vllm.sh — generative evaluation of an exported model, in a separate conda env
+# runs/eval_vllm.sh — generative evaluation of an exported model, in a separate conda env
 #
 # The training env (saltq) cannot hold vLLM: vLLM pins its own torch build, and installing it
 # next to the training stack would silently move the torch/transformers versions every trained
@@ -19,9 +19,9 @@
 #   3. SCORE. Exact-match through the reference extractors in scripts/test_acc.py.
 #
 # Usage:
-#   bash run_eval_vllm.sh --model_path outputs/saltq-3bit-saltq-deploy-eval --dataset commonsense
-#   bash run_eval_vllm.sh --model_path <dir> --dataset math --tag saltq_int2_g32
-#   bash run_eval_vllm.sh --model_path <dir> --sub_task boolq piqa      # one-off subset
+#   bash runs/eval_vllm.sh --model_path outputs/saltq-3bit-saltq-deploy-eval --dataset commonsense
+#   bash runs/eval_vllm.sh --model_path <dir> --dataset math --tag saltq_int2_g32
+#   bash runs/eval_vllm.sh --model_path <dir> --sub_task boolq piqa      # one-off subset
 #
 # Outputs (under --output_dir, default results/<dataset>_vllm/):
 #   <tag>.jsonl   one {type, query, output, answer} per test record
@@ -29,6 +29,11 @@
 # =============================================================================
 
 set -euo pipefail
+
+# Addresses configs/ scripts/ outputs/ datasets/ from the repo root, so the caller's cwd does
+# not matter. See runs/lib/common.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+cd_repo_root
 
 MODEL_PATH=""
 DATASET_NAME="commonsense"        # commonsense | math

@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# setup_vllm_env.sh — build the conda env that run_eval_vllm.sh generates in.
+# setup_vllm_env.sh — build the conda env that runs/eval_vllm.sh generates in.
 #
 # WHY A SEPARATE ENV. vLLM ships its own pinned torch. Installing it into the training env
 # would move torch/transformers underneath every checkpoint already in outputs/, and a
@@ -53,4 +53,4 @@ python -c "import vllm; print('vllm', vllm.__version__)"
 
 echo
 echo "Done. Evaluate with:"
-echo "  bash run_eval_vllm.sh --model_path <exported dir> --dataset commonsense"
+echo "  bash runs/eval_vllm.sh --model_path <exported dir> --dataset commonsense"

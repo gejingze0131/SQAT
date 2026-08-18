@@ -205,7 +205,7 @@ M0 重构后，`qat_permute_sqat.py` 里与方法无关的部分已抽成三个�
 名字直接编码方法本体：贡献重心不在"排列"，而在**可训练自由度的分配**——salient 段满自由度、其余仿射自由度、
 codes 零自由度。permutation 只是让这个分配能落在连续的量化组边界上的手段。
 
-- QAT 模式字符串：`"saltq"`　主模块：`src/qat_saltq.py`　配置：`configs/saltq.yaml`　启动：`run_saltq.sh`
+- QAT 模式字符串：`"saltq"`　主模块：`src/qat_saltq.py`　配置：`configs/saltq.yaml`　启动：`runs/saltq/run_saltq_{math,commonsense}.sh`
 - 输出目录：`outputs/saltq-{bits}bit-saltq/`（训练）、`outputs/saltq-{bits}bit-saltq-deploy-eval/`（导出）
 
 ## 8. 核心叙事
@@ -337,11 +337,11 @@ checkpoint 本来就要存这些 metadata。
 ## 14. 怎么跑
 
 ```bash
-bash run_saltq.sh                      # train + export + eval（MetaMathQA, INT3 g64, 3 GPU）
-bash run_saltq.sh --bits 2             # INT2 g64（run3）
-bash run_saltq.sh --salient_lr 1e-5    # 扫首要超参
-bash run_saltq.sh --skip_train --checkpoint_dir outputs/saltq-2bit-saltq/final
-bash run_saltq.sh --resume_from outputs/saltq-2bit-saltq/checkpoint-500
+bash runs/saltq/run_saltq_math.sh                      # train + export + eval（MetaMathQA, INT3 g64, 3 GPU）
+bash runs/saltq/run_saltq_math.sh --bits 2             # INT2 g64（run3）
+bash runs/saltq/run_saltq_math.sh --salient_lr 1e-5    # 扫首要超参
+bash runs/saltq/run_saltq_math.sh --skip_train --checkpoint_dir outputs/saltq-2bit-saltq/final
+bash runs/saltq/run_saltq_math.sh --resume_from outputs/saltq-2bit-saltq/checkpoint-500
 ```
 
 两个离线基座（`outputs/saltq/permuted_fp16_base` ~13 GB、`outputs/saltq/saltq_base*` ~7 GB/bit）在

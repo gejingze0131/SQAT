@@ -1,13 +1,17 @@
 #!/bin/bash
 # =============================================================================
-# run_full_qlora.sh — Full QAT (qat_mode = full) pipeline
+# runs/full_qat/_pipeline.sh — Full QAT (qat_mode = full) pipeline engine
+#
+# Not meant to be run directly — the per-task entry scripts fix --dataset and the
+# matching --config together, which is the pair that must never disagree:
+#   runs/full_qat/run_full_qat_math.sh / run_full_qat_commonsense.sh
 #
 # Full QAT fake-quantizes EVERY target linear's base weight on each forward pass
 # (groupwise STE), so the LoRA adapter is trained against the actual INT4 grid
 # instead of the fp16 dequantization of NF4. This is the "quantize everything"
 # upper-effort baseline to compare against permuted Selective-QAT.
 #
-# Like run_none_qlora.sh, it deliberately reads the SAME
+# Like runs/qlora/_pipeline.sh, it deliberately reads the SAME
 # configs/sqat_permute_${DATASET_NAME}.yaml so that every parameter UNRELATED to
 # the QAT method (model, LoRA, dataset, training hyper-params, group_size,
 # symmetric, ...) stays identical to the permuted-SQAT run — only the QAT method
@@ -27,23 +31,30 @@
 #   Stage 3  Benchmark evaluation of BOTH exported models
 #
 # Usage:
-#   bash run_full_qlora.sh                          # all stages
-#   bash run_full_qlora.sh --skip_eval              # train+export, no benchmarks
-#   bash run_full_qlora.sh --skip_train             # export + eval from latest checkpoint
-#   bash run_full_qlora.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
-#   bash run_full_qlora.sh --num_gpus 2 --config configs/sqat_permute_math.yaml
+#   bash runs/full_qat/run_full_qat_math.sh                          # all stages
+#   bash runs/full_qat/run_full_qat_math.sh --skip_eval              # train+export, no benchmarks
+#   bash runs/full_qat/run_full_qat_math.sh --skip_train             # export + eval from latest checkpoint
+#   bash runs/full_qat/run_full_qat_math.sh --checkpoint_dir <path>  # export + eval from a specific checkpoint
+#   bash runs/full_qat/run_full_qat_math.sh --num_gpus 2 --config configs/sqat_permute_math.yaml
 # =============================================================================
 
 set -euo pipefail
 
-# Avoid CUDA allocator fragmentation (see run_permute_sqat.sh for rationale).
+# Addresses configs/ scripts/ outputs/ datasets/ from the repo root, and refuses a --config
+# whose training task disagrees with --dataset. See runs/lib/common.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+cd_repo_root
+
+# Avoid CUDA allocator fragmentation (see runs/permute_sqat/_pipeline.sh for rationale).
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 # ---------------------------------------------------------------------------
 # Config — read the SAME sqat_permute config to keep all non-method params equal
 # ---------------------------------------------------------------------------
 DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
-CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+# Empty => resolved from DATASET_NAME after parsing, so --config and
+# --dataset cannot depend on the order they were passed in.
+CONFIG=""
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=2
 BITS=3
@@ -52,7 +63,9 @@ MODEL_NAME="meta-llama/Llama-2-7b-hf"
 EVAL_GPU=0                # single GPU used for export + evaluation
 
 # Dedicated output dir so a full-QAT run never clobbers a permuted/none run.
-OUTPUT_DIR="outputs/qlora-full-${DATASET_NAME}"
+# Empty => derived from DATASET_NAME after parsing. Declared eagerly, it baked in
+# the DEFAULT task and a --dataset override never reached it.
+OUTPUT_DIR=""
 
 # LSQ / LSQ+ learnable quantization scale (LR-QAT style). true → --enable_lsq,
 # false → --no_enable_lsq (original per-step min-max scale). The flag is threaded
@@ -73,6 +86,7 @@ while [[ $# -gt 0 ]]; do
         --checkpoint_dir) CHECKPOINT_DIR="$2"; SKIP_TRAIN=true; shift 2 ;;
         --num_gpus)       NUM_GPUS="$2";      shift 2 ;;
         --config)         CONFIG="$2";        shift 2 ;;
+        --dataset)        DATASET_NAME="$2";  shift 2 ;;
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --output_dir)     OUTPUT_DIR="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;
@@ -81,6 +95,17 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
+
+# Resolved here rather than at declaration: --config and --dataset can now be passed in either
+# order without one silently overwriting the other.
+[ -n "$CONFIG" ] || CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+[ -n "$OUTPUT_DIR" ] || OUTPUT_DIR="outputs/qlora-full-${DATASET_NAME}"
+
+# Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run
+# will actually evaluate — a --skip_eval run is free to train on anything.
+if [ "$SKIP_EVAL" = false ]; then
+    assert_config_matches_dataset "$CONFIG" "$DATASET_NAME"
+fi
 
 # Resolve the LSQ flag passed to scripts/train.py (train + export-only commands).
 if [ "$ENABLE_LSQ" = true ]; then

@@ -117,7 +117,7 @@ def _verify_awq_fusion(permuted_model, artifacts, boundary_sizes, group_k, group
     print(f"  [AWQ] checked {n} salient slices: "
           f"train<->export grid worst max|Δ|={worst_grid:.2e}, "
           f"S-vs-noS worst max|Δ|={worst_effect:.2e}")
-    # ASCII-only machine-parseable summary (for run_validation.sh)
+    # ASCII-only machine-parseable summary (for runs/analysis/run_validation.sh)
     print(f"  [AWQ] METRICS grid={worst_grid:.3e} effect={worst_effect:.3e}")
 
     if worst_grid >= tol:
