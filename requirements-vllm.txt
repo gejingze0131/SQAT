@@ -23,5 +23,12 @@
 # and update phase 1's torch/torchvision/torchaudio to whatever that release pins.
 vllm==0.11.0
 
+# vllm 0.11.0 declares `transformers>=4.55.2` with NO upper bound, so pip installs 5.x, whose
+# tokenizer API dropped attributes vLLM still reads. The engine starts, loads the model, and
+# then dies mid-generation with
+#     AttributeError: LlamaTokenizer has no attribute all_special_tokens_extended
+# The cap has to be here because the dependency itself does not carry it.
+transformers<5
+
 # scripts/gen_vllm.py needs nothing else — it reads datasets/<name>/test.json with the stdlib
 # json module, and scripts/test_acc.py is pure stdlib.

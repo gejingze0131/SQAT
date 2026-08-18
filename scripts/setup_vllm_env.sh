@@ -71,11 +71,15 @@ pip install --no-cache-dir -r requirements-vllm.txt \
 #                  imported explicitly here rather than trusted to a package-level import.
 echo ">>> Verifying"
 LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" python - <<'PYCHECK'
-import sqlite3, torch, torchaudio, vllm
+import sqlite3, torch, torchaudio, transformers, vllm
 from vllm.v1.engine.core_client import EngineCoreClient
 import vllm._C  # the COMPILED extension — this is what fails on a CUDA-13 wheel
 assert torch.version.cuda.startswith("12."), f"torch is built for CUDA {torch.version.cuda}, not 12.x"
-print(f"  vllm {vllm.__version__} | torch {torch.__version__} ({torch.version.cuda})")
+assert transformers.__version__ < "5", (
+    f"transformers {transformers.__version__}: vLLM 0.11 reads tokenizer attributes the 5.x "
+    f"API dropped, and only finds out mid-generation")
+print(f"  vllm {vllm.__version__} | torch {torch.__version__} ({torch.version.cuda}) "
+      f"| transformers {transformers.__version__}")
 PYCHECK
 
 echo
