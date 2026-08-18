@@ -46,10 +46,30 @@ export CC=gcc CXX=g++
 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=gcc
 export RUSTFLAGS="-C linker=gcc"
 
-echo ">>> Installing vLLM (llguidance is built from source; this takes a while)"
-pip install --no-cache-dir -r requirements-vllm.txt
+# PHASE 1 — the CUDA-matched runtime, from the cu128 index EXCLUSIVELY (--index-url, not
+# --extra-index-url). Both indexes carry torch 2.11.0 and pip's choice between them is
+# arbitrary; getting the PyPI one means a cu130 build and "driver too old" at engine start.
+# Installing the trio first also stops the vLLM resolve in phase 2 from pulling its own.
+echo ">>> Phase 1/2: torch runtime built for CUDA 12.8"
+pip install --no-cache-dir \
+    torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0 \
+    --index-url https://download.pytorch.org/whl/cu128
 
-python -c "import vllm; print('vllm', vllm.__version__)"
+# PHASE 2 — vLLM itself. llguidance is built from source here (see CC=gcc above).
+echo ">>> Phase 2/2: vLLM (llguidance builds from source; this takes a while)"
+pip install --no-cache-dir -r requirements-vllm.txt \
+    --extra-index-url https://download.pytorch.org/whl/cu128
+
+# Import the chain that actually breaks when any of the above is mismatched: vLLM's engine
+# imports sqlite3, which drags in the env's libicui18n, and torch/torchaudio/torchcodec all
+# load native libraries against libtorch.
+echo ">>> Verifying"
+LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" python - <<'PYCHECK'
+import sqlite3, torch, torchaudio, torchcodec, vllm
+from vllm.v1.engine.core_client import EngineCoreClient
+assert torch.version.cuda.startswith("12."), f"torch is built for CUDA {torch.version.cuda}, not 12.x"
+print(f"  vllm {vllm.__version__} | torch {torch.__version__} | torchcodec {torchcodec.__version__}")
+PYCHECK
 
 echo
 echo "Done. Evaluate with:"

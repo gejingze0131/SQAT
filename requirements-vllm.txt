@@ -1,7 +1,19 @@
-# Evaluation env ONLY (scripts/setup_vllm_env.sh). Kept apart from requirements.txt because
-# vLLM pins its own torch build: installing it next to the training stack would move the
-# numerics every checkpoint in outputs/ was trained under.
+# Evaluation env ONLY — phase 2 of scripts/setup_vllm_env.sh. Kept apart from
+# requirements.txt because vLLM pins its own torch: installing it next to the training stack
+# would move the numerics every checkpoint in outputs/ was trained under.
 #
+# vllm is PINNED, and the pin is about the DRIVER, not about features. This cluster runs
+# 570.124.06 = CUDA 12.8. vLLM >= 0.27 requires torch 2.13, which ships built against CUDA
+# 13.0, and every worker dies at engine start with:
+#     RuntimeError: The NVIDIA driver on your system is too old (found version 12080)
+# 0.26.0 is the newest release pinning torch==2.11.0 — the same torch the training env uses,
+# and one with a cu128 build. Phase 1 of setup_vllm_env.sh installs that build first.
+#
+# torchcodec tracks torch's minor version (0.16 -> 2.13, 0.14 -> 2.11) and does NOT declare
+# the dependency, so pip will happily pair 0.16 with torch 2.11 and then fail to load
+# libtorchcodec_image.so. It has to be pinned by hand.
+vllm==0.26.0
+torchcodec==0.14.0
+
 # scripts/gen_vllm.py needs nothing else — it reads datasets/<name>/test.json with the stdlib
 # json module, and scripts/test_acc.py is pure stdlib.
-vllm
