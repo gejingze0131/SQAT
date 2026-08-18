@@ -15,7 +15,10 @@ nvidia-smi | head -12
 # (job 15187946). That run's evaluation died on a path bug in runs/eval_vllm.sh — it sourced
 # ../lib/common.sh, correct for the two-level runs/<method>/ scripts and wrong for a one-level
 # one — so nothing about the model is in question and there is nothing to retrain.
-# scripts/test_runs_wiring.sh now catches that class of break before a job starts.
+# scripts/test_runs_wiring.sh now catches that class of break before a job starts. The second
+# attempt then died on the eval env itself — pip had resolved vLLM 0.27.1, which needs a CUDA
+# 13 torch, against this cluster's 12.8 driver. The env is now vLLM 0.26.0 on torch
+# 2.11.0+cu128, built on /scratch (see scripts/setup_vllm_env.sh).
 
 set -x
 bash scripts/test_runs_wiring.sh || exit 1
