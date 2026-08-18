@@ -13,13 +13,13 @@
 # `-plugin-opt=defaults=cray` and friends that rust-lld rejects; the build dies with
 # "unknown plugin option 'lto=0'". Pointing Rust's linker at plain gcc is the whole fix.
 #
-#   bash scripts/setup_vllm_env.sh              # create env `vllm` with python 3.12
+#   bash scripts/setup_vllm_env.sh              # create env `vllm-eval`, python 3.12
 #   bash scripts/setup_vllm_env.sh myenv 3.12   # or name it yourself
 # =============================================================================
 
 set -euo pipefail
 
-ENV_NAME="${1:-vllm}"
+ENV_NAME="${1:-vllm-eval}"
 PY_VERSION="${2:-3.12}"
 
 if ! command -v conda >/dev/null 2>&1; then
@@ -61,14 +61,16 @@ pip install --no-cache-dir -r requirements-vllm.txt \
     --extra-index-url https://download.pytorch.org/whl/cu128
 
 # Import the chain that actually breaks when any of the above is mismatched: vLLM's engine
-# imports sqlite3, which drags in the env's libicui18n, and torch/torchaudio/torchcodec all
-# load native libraries against libtorch.
+# imports sqlite3, which drags in the env's libicui18n, and torch/torchaudio load native
+# libraries against libtorch. torchcodec is deliberately NOT imported here — it is pinned only
+# so pip cannot pair a torch-2.13 build with torch 2.11, and importing it needs an ffmpeg this
+# env has no reason to carry. Nothing on vLLM's text-generation path touches it.
 echo ">>> Verifying"
 LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" python - <<'PYCHECK'
-import sqlite3, torch, torchaudio, torchcodec, vllm
+import sqlite3, torch, torchaudio, vllm
 from vllm.v1.engine.core_client import EngineCoreClient
 assert torch.version.cuda.startswith("12."), f"torch is built for CUDA {torch.version.cuda}, not 12.x"
-print(f"  vllm {vllm.__version__} | torch {torch.__version__} | torchcodec {torchcodec.__version__}")
+print(f"  vllm {vllm.__version__} | torch {torch.__version__} ({torch.version.cuda})")
 PYCHECK
 
 echo

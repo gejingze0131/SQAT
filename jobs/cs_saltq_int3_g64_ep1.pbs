@@ -44,7 +44,7 @@ nvidia-smi | head -12
 
 # Stage 3 runs in a DIFFERENT conda env. Check it is importable now rather than discovering it
 # is missing after several hours of training.
-conda run -n vllm python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
   || { echo "vllm env cannot import the engine on this node; see runs/eval_vllm.sh stage 2"; exit 1; }
 
 set -x

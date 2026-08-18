@@ -45,7 +45,7 @@ MAX_TOKENS=1024
 MAX_MODEL_LEN=2048
 GPU_MEM_UTIL=0.90
 TRAIN_ENV="${TRAIN_ENV:-saltq}"
-VLLM_ENV="${VLLM_ENV:-vllm}"
+VLLM_ENV="${VLLM_ENV:-vllm-eval}"
 FORCE_FOLD=false
 
 while [[ $# -gt 0 ]]; do

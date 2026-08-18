@@ -5,7 +5,7 @@
 | env | built by | holds | used for |
 |-----|----------|-------|----------|
 | `saltq` | `requirements.txt` | torch / transformers / peft / bitsandbytes | training, the offline permute + GPTQ pre-steps, export |
-| `vllm` | `scripts/setup_vllm_env.sh` (`requirements-vllm.txt`) | vLLM and its own pinned torch | generative evaluation |
+| `vllm-eval` | `scripts/setup_vllm_env.sh` (`requirements-vllm.txt`) | vLLM and its own pinned torch | generative evaluation |
 
 They are kept apart because vLLM pins its own torch build, and a quantization method is
 exactly the kind of code whose numbers move when the numerics under it move. The two envs
