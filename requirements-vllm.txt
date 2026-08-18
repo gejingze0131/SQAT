@@ -9,9 +9,12 @@
 # 0.26.0 is the newest release pinning torch==2.11.0 — the same torch the training env uses,
 # and one with a cu128 build. Phase 1 of setup_vllm_env.sh installs that build first.
 #
-# torchcodec tracks torch's minor version (0.16 -> 2.13, 0.14 -> 2.11) and does NOT declare
-# the dependency, so pip will happily pair 0.16 with torch 2.11 and then fail to load
-# libtorchcodec_image.so. It has to be pinned by hand.
+# torchcodec is a hard dependency of vLLM that we never use: it decodes audio/video, and a text
+# model never imports it. It still has to be PINNED, because it tracks torch's minor version
+# (0.16 -> 2.13, 0.14 -> 2.11) without declaring it, so pip pairs 0.16 with torch 2.11 and the
+# resolve looks fine until something touches it. Note that even the correct pin cannot LOAD here
+# (its FFmpeg shared libraries are absent) — that is expected and harmless, which is why the
+# verification below does not import it.
 vllm==0.26.0
 torchcodec==0.14.0
 
