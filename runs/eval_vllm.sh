@@ -32,7 +32,7 @@ set -euo pipefail
 
 # Addresses configs/ scripts/ outputs/ datasets/ from the repo root, so the caller's cwd does
 # not matter. See runs/lib/common.sh.
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 cd_repo_root
 
 MODEL_PATH=""

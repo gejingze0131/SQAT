@@ -1,0 +1,45 @@
+#!/bin/bash
+#PBS -N cs_saltq_ep1_eval
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# Stage 3 only, for the epoch-1 cell whose training and export already completed
+# (job 15187946). That run's evaluation died on a path bug in runs/eval_vllm.sh — it sourced
+# ../lib/common.sh, correct for the two-level runs/<method>/ scripts and wrong for a one-level
+# one — so nothing about the model is in question and there is nothing to retrain.
+# scripts/test_runs_wiring.sh now catches that class of break before a job starts.
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+
+bash runs/eval_vllm.sh \
+    --model_path outputs/saltq_cs170k_int3_g64_ep1-3bit-saltq-deploy-eval \
+    --dataset    commonsense \
+    --gpus       0,1,2,3 \
+    > logs/commonsense_170k/saltq_cs170k_int3_g64_ep1_eval.log 2>&1
+RC=$?
+
+# Fold the per-task summary into the long-format table (idempotent).
+if [ "$RC" -eq 0 ]; then
+    python scripts/collect_saltq_results.py \
+        --results_dir results \
+        --csv         results_saltq.csv \
+        --config      configs/saltq_cs170k_int3_g64_ep1.yaml \
+        --filter      saltq \
+        --note        "1 epoch (T=1845), lrs x sqrt(3); PiSSA data pipeline + vLLM generative eval" \
+        >> logs/commonsense_170k/saltq_cs170k_int3_g64_ep1_eval.log 2>&1
+fi
+
+echo "eval rc=$RC"
+echo "End time: $(date)"
