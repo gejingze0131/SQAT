@@ -19,7 +19,8 @@
 #   Stage 1  Training (auto-exports the dequant eval model via export.merge_and_save)
 #   Stage 1b Export merged-only (FP16 upper bound) from the final checkpoint
 #   Stage 2  Export-only (both variants) when --skip_train / --checkpoint_dir is given
-#   Stage 3  Benchmark evaluation of BOTH exported models
+#   Stage 3  Generative evaluation of BOTH exported models through vLLM, in the `vllm`
+#            conda env (run_eval_vllm.sh)
 #
 # Usage:
 #   bash run_none_qlora.sh                          # all stages
@@ -45,7 +46,7 @@ BITS=3
 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 EVAL_GPU=0                # single GPU used for EXPORT (one dense fp16 model per card)
-EVAL_GPUS="0,1,2,3"       # GPUs used for EVALUATION; >1 id => data-parallel, matching
+EVAL_GPUS="0,1,2,3"       # GPUs vLLM evaluates on; >1 id => tensor-parallel, matching
                           # run_saltq.sh so the suites are run identically across methods
 
 # Dedicated output dir so a plain-QLoRA run never clobbers a real sqat_permute run.
@@ -75,14 +76,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-EVAL_NUM_GPUS=$(awk -F',' '{print NF}' <<< "$EVAL_GPUS")
-if [ "$EVAL_NUM_GPUS" -gt 1 ]; then
-    EVAL_LAUNCH="accelerate launch --num_processes $EVAL_NUM_GPUS --num_machines 1 \
-        --gpu_ids $EVAL_GPUS --mixed_precision no --main_process_port ${EVAL_PORT:-29600}"
-else
-    EVAL_LAUNCH="env CUDA_VISIBLE_DEVICES=$EVAL_GPUS python"
-fi
-
 DEQUANT_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-none-dequant-eval"
 MERGED_EVAL_DIR="${OUTPUT_DIR}-${BITS}bit-none-merged-eval"
 
@@ -90,7 +83,7 @@ echo "============================================================"
 echo "  Plain QLoRA Baseline (qat_mode=none) Pipeline"
 echo "  Config:      $CONFIG"
 echo "  Model:       $MODEL_NAME"
-echo "  GPUs:        $NUM_GPUS (train) / cuda:$EVAL_GPU (eval)"
+echo "  GPUs:        $NUM_GPUS (train) / [$EVAL_GPUS] (eval, vLLM tensor-parallel)"
 echo "  Bits:        $BITS"
 echo "  Output dir:  $OUTPUT_DIR"
 echo "============================================================"
@@ -158,33 +151,25 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Stage 3: Benchmark evaluation of BOTH exported models
+# Stage 3: Generative evaluation through vLLM (separate conda env)
+#
+# Both exported variants are scored on their OWN generations, the same metric the SALT-Q run
+# reports, so this baseline and the method are directly comparable.
+# run_eval_vllm.sh hops conda envs (vLLM pins its own torch) and folds any residual permutation
+# into the weights first.
 # ---------------------------------------------------------------------------
 eval_one() {
     local eval_dir="$1"
     [ -d "$eval_dir" ] || { echo "  (skip) $eval_dir not found"; return; }
-    echo "  Evaluating $eval_dir"
-    if [ "$DATASET_NAME" = "commonsense" ]; then
-        $EVAL_LAUNCH scripts/eval_benchmarks.py eval \
-            --model_path "$eval_dir" \
-            --output_dir results/commonsense_170k
-        $EVAL_LAUNCH scripts/eval_mmlu.py \
-            --model_path  "$eval_dir" \
-            --num_fewshot 0 \
-            --output_dir  results/commonsense_170k
-    elif [ "$DATASET_NAME" = "math" ]; then
-        $EVAL_LAUNCH scripts/eval_math.py \
-            --model_path  "$eval_dir" \
-            --num_fewshot 5 \
-            --output_dir  results/math
-    else
-        echo "Unknown DATASET_NAME: $DATASET_NAME"
-        exit 1
-    fi
+    bash run_eval_vllm.sh \
+        --model_path "$eval_dir" \
+        --dataset    "$DATASET_NAME" \
+        --gpus       "$EVAL_GPUS" \
+        --tag        "$(basename "$eval_dir")"
 }
 
 if [ "$SKIP_EVAL" = false ]; then
-    echo -e "\n>>> Stage 3: Evaluating exported models"
+    echo -e "\n>>> Stage 3: Generative evaluation (vLLM)"
     eval_one "$DEQUANT_EVAL_DIR"   # INT4 quant->dequant (realistic bound)
     eval_one "$MERGED_EVAL_DIR"    # FP16 merged (upper bound)
 fi

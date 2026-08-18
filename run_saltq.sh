@@ -22,7 +22,9 @@
 #            one-shot discrete choice, so a fresh base invalidates every trained tensor.
 #            The merge-free export runs automatically at the end of training.
 #   Stage 2  Export-only (only when --skip_train / --checkpoint_dir is given)
-#   Stage 3  Benchmark evaluation (boundary gather auto-applied from sqat_permute_meta.pt)
+#   Stage 3  Generative evaluation through vLLM, in the `vllm` conda env (run_eval_vllm.sh).
+#            The residual permutation is folded into the weights first — the export needs a
+#            boundary gather per segment and vLLM cannot register that hook.
 #
 # Usage:
 #   bash run_saltq.sh                              # train + export + eval
@@ -44,14 +46,12 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # Config
 # ---------------------------------------------------------------------------
 CONFIG="configs/saltq.yaml"
-# Which benchmark suite Stage 3 runs. "math" -> gsm8k via eval_math.py into results/math and the
-# long-format results_saltq.csv. "commonsense" -> the 8-task commonsense suite + MMLU via
-# eval_benchmarks.py / eval_mmlu.py into results/commonsense_170k. The CSV collector parses gsm8k
-# specifically, so it only runs for math.
+# Which test set Stage 3 scores, and it MUST match what was trained on: "math" ->
+# datasets/metamath/test.json (gsm8k + MATH), "commonsense" -> datasets/commonsense/test.json
+# (the 8-task suite). Results land under results/<dataset>_vllm/.
 DATASET_NAME="math"
-# Optional explicit lm-eval task list for the commonsense path. Empty => the 8-task suite in
-# eval_benchmarks.DEFAULT_TASKS plus MMLU. Set it (e.g. "commonsense_qa") to score exactly one
-# task and skip MMLU — useful when the fine-tuning target IS that task.
+# Optional subset of that test set, by the records' `type` field (e.g. "boolq piqa", or
+# "gsm8k"). Empty => every task in the split. Useful when the fine-tuning target IS one task.
 EVAL_TASKS=""
 ACCEL_CONFIG="accelerate_config.yaml"
 NUM_GPUS=4                # 3 x RTX 6000 Ada (46 GB)
@@ -61,7 +61,7 @@ BITS=2                    # first run: INT3 g64, where a Permuted-SQAT MetaMath 
 MODEL_NAME="meta-llama/Llama-2-7b-hf"
 OUTPUT_ROOT="outputs/saltq"     # must match training.output_dir in the yaml
 EVAL_GPU=0                # single GPU used for export
-EVAL_GPUS="0,1,2,3"         # GPUs used for evaluation; >1 id => data-parallel eval
+EVAL_GPUS="0,1,2,3"         # GPUs vLLM evaluates on; >1 id => tensor-parallel
 
 # The single most important new hyper-parameter: these are REAL WEIGHTS, not an adapter, so a
 # LoRA-scale lr (2e-4) destroys them. Empty = take the value from the yaml.
@@ -128,16 +128,6 @@ SALTQ_BASE_FLAG=""
 PERMUTED_BASE_FLAG=""
 [ -n "$PERMUTED_BASE_DIR" ] && PERMUTED_BASE_FLAG="--permuted_base_dir $PERMUTED_BASE_DIR"
 
-# Build the eval launch prefix. >1 GPU id => data-parallel eval via `accelerate launch`
-# (plain DDP data sharding); a single id => one-GPU `python`.
-EVAL_NUM_GPUS=$(awk -F',' '{print NF}' <<< "$EVAL_GPUS")
-if [ "$EVAL_NUM_GPUS" -gt 1 ]; then
-    EVAL_LAUNCH="accelerate launch --num_processes $EVAL_NUM_GPUS --num_machines 1 \
-        --gpu_ids $EVAL_GPUS --mixed_precision no --main_process_port ${EVAL_PORT:-29600}"
-else
-    EVAL_LAUNCH="env CUDA_VISIBLE_DEVICES=$EVAL_GPUS python"
-fi
-
 # Resume: CONTINUE training from a checkpoint (reuses both offline bases; does NOT skip train).
 RESUME_FLAG=""
 if [ -n "$RESUME_FROM" ]; then
@@ -153,7 +143,7 @@ echo "  SALT-Q — Saliency-Allocated Low-bit Trainability"
 echo "  Config:        $CONFIG"
 echo "  Model:         $MODEL_NAME"
 echo "  Bits:          INT$BITS (asymmetric affine)"
-echo "  GPUs:          $NUM_GPUS (train) / [$EVAL_GPUS] (eval, $EVAL_NUM_GPUS-way data-parallel)"
+echo "  GPUs:          $NUM_GPUS (train) / [$EVAL_GPUS] (eval, vLLM tensor-parallel)"
 echo "  salient_lr:    ${SALIENT_LR:-<from yaml>}   (REAL weights — not an adapter lr)"
 echo "  scales_lr:     ${SCALES_LR:-<from yaml>}   ((s, z) of both segments)"
 echo "  train_LN:      $TRAIN_LAYERNORMS"
@@ -211,72 +201,48 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Stage 3: Benchmark evaluation
-# The exported dir ships sqat_permute_meta.pt, so the eval scripts register the runtime residual
-# reorder at each segment boundary. Evaluating it with a loader that ignores that metadata gives
-# garbage.
+# Stage 3: Generative evaluation through vLLM (separate conda env)
+#
+# The model is scored on its OWN generations — the same thing the fine-tuning data taught it to
+# produce — rather than by ranking answer options under teacher forcing. That is the metric the
+# baselines being compared against report, and it is also the only one that can see a model that
+# never learned to stop.
+#
+# run_eval_vllm.sh hops conda envs (vLLM pins its own torch, which must not be installed next to
+# the training stack) and folds the residual permutation into the weights first: the exported
+# model still needs a boundary gather per segment, and vLLM cannot register that hook.
 # ---------------------------------------------------------------------------
 if [ "$SKIP_EVAL" = false ]; then
-    echo -e "\n>>> Stage 3: Evaluating exported models"
-    shopt -s nullglob
-    found=false
-    for eval_dir in ${OUTPUT_ROOT}-${BITS}bit-saltq-deploy-eval; do
-        [ -d "$eval_dir" ] || continue
-        found=true
-        EVAL_OUT="results/commonsense_170k"
-        [ -n "$EVAL_TASKS" ] && EVAL_OUT="results/${EVAL_TASKS%% *}"
-        echo "  Evaluating $eval_dir  (suite: $DATASET_NAME, tasks: ${EVAL_TASKS:-<default+mmlu>}, out: $EVAL_OUT)"
-        if [ "$DATASET_NAME" = "commonsense" ]; then
-            # Same 4-way data-parallel launcher as the math path — the exported model ships
-            # sqat_permute_meta.pt and both eval scripts register the boundary gathers from it.
-            if [ -n "$EVAL_TASKS" ]; then
-                $EVAL_LAUNCH scripts/eval_benchmarks.py eval \
-                    --model_path  "$eval_dir" \
-                    --tasks       $EVAL_TASKS \
-                    --output_dir  "$EVAL_OUT"
-            else
-                $EVAL_LAUNCH scripts/eval_benchmarks.py eval \
-                    --model_path  "$eval_dir" \
-                    --output_dir  "$EVAL_OUT"
-                $EVAL_LAUNCH scripts/eval_mmlu.py \
-                    --model_path  "$eval_dir" \
-                    --num_fewshot 0 \
-                    --output_dir  "$EVAL_OUT"
-            fi
-        else
-            $EVAL_LAUNCH scripts/eval_math.py \
-                --model_path  "$eval_dir" \
-                --num_fewshot 5 \
-                --output_dir  results/math
-        fi
-    done
-    shopt -u nullglob
-    [ "$found" = true ] || echo "  (no exported eval dirs found under ${OUTPUT_ROOT}-${BITS}bit-saltq-deploy-eval)"
-
-    # Fold the timestamped lm-eval JSONs into one long-format table. Idempotent, so re-running
-    # the pipeline never duplicates rows. Run-level context (bits / group_size / group_k / lrs /
-    # the freedom split) is recovered from the artifacts next to the evaluated model.
-    if [ "$DATASET_NAME" != "math" ]; then
-        echo -e "\n>>> Skipping $RESULTS_CSV: the collector parses gsm8k, and this run evaluated"
-        echo "    the $DATASET_NAME suite. Raw JSONs are under results/commonsense_170k/."
-        echo -e "\n============================================================"
-        echo "  SALT-Q pipeline complete!"
-        echo "============================================================"
-        exit 0
+    echo -e "\n>>> Stage 3: Generative evaluation (vLLM)"
+    EVAL_DIR="${OUTPUT_ROOT}-${BITS}bit-saltq-deploy-eval"
+    if [ ! -d "$EVAL_DIR" ]; then
+        echo "  (no exported eval dir at $EVAL_DIR — nothing to evaluate)"
+    else
+        bash run_eval_vllm.sh \
+            --model_path "$EVAL_DIR" \
+            --dataset    "$DATASET_NAME" \
+            --gpus       "$EVAL_GPUS" \
+            --tag        "$(basename "$EVAL_DIR")" \
+            ${EVAL_TASKS:+--sub_task $EVAL_TASKS}
     fi
 
+    # Fold the per-run summaries into one long-format table. Idempotent, so re-running the
+    # pipeline never duplicates rows. Run-level context (bits / group_size / group_k / lrs / the
+    # freedom split) is recovered from the artifacts next to the evaluated model, which is why
+    # the summary records the PRE-fold export dir.
     echo -e "\n>>> Collecting results into $RESULTS_CSV"
     # --seed merges the reported MetaMath baselines (source=report) so the new SALT-Q row lands
-    # next to what it has to beat. --filter saltq keeps the lm-eval side to SALT-Q only: the older
-    # JSONs under results/ are intermediate artifacts from a previous development round and are
-    # NOT valid baselines.
+    # next to what it has to beat; it is math-specific. --filter saltq keeps this invocation from
+    # re-ingesting other methods' summaries, which carry their own run context.
+    SEED_FLAG=""
+    [ "$DATASET_NAME" = "math" ] && SEED_FLAG="--seed baselines_metamath.csv"
     python scripts/collect_saltq_results.py \
         --results_dir results \
         --csv         "$RESULTS_CSV" \
         --config      "$CONFIG" \
-        --seed        baselines_metamath.csv \
         --filter      saltq \
-        --note        "${RESULTS_NOTE}"
+        --note        "${RESULTS_NOTE}" \
+        $SEED_FLAG
 fi
 
 echo -e "\n============================================================"

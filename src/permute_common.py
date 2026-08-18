@@ -1349,6 +1349,71 @@ class BoundaryGatherHook:
             self._handle.remove(); self._handle = None
 
 
+@torch.no_grad()
+def fold_boundary_gathers_into_weights(model: nn.Module, meta) -> int:
+    """Undo the residual-stream permutation in the weights so the model needs NO runtime hook.
+
+    A multi-segment permuted model is only correct with BoundaryGatherHooks registered: the
+    residual stream is in P_k order inside segment k and has to be re-gathered to P_{k+1} at
+    each boundary. That is a Python forward hook on the HF module tree, which exists only in
+    this repo's own eval path — an external runtime (vLLM) loads the checkpoint, sees a plain
+    Llama, and silently produces garbage.
+
+    The permutation is pure relabelling of the residual channels, so it can simply be undone.
+    This applies P_k^{-1} to every tensor apply_segment_permutation_fp32 touched, which puts
+    the whole model back in the ORIGINAL channel order; the boundary gathers then compose to
+    the identity and are no longer needed. It is exact — a reindex, not an approximation —
+    and it does not undo the quantization: the VALUES are the trained/deployed ones, only
+    their position in the channel axis moves back.
+
+    The block-internal (P4) permutation and the Hadamard rotation are deliberately left alone.
+    Both are confined inside a block (gate/up rows <-> down cols; v rows <-> o cols) and never
+    reach the residual stream, so neither needs a runtime op in the first place.
+
+    `meta` may be a perm_meta dict, the export wrapper {"layers":..., "model": perm_meta}, or
+    a path/dir to sqat_permute_meta.pt. Returns the number of boundaries eliminated.
+    """
+    if isinstance(meta, str):
+        meta = load_perm_meta(meta)
+    meta = _unwrap_perm_model_meta(meta) or meta
+    segment_perms = meta.get("segment_perms") or {}
+    boundary_sizes = list(meta.get("boundary_sizes") or [])
+    if not segment_perms or not boundary_sizes:
+        raise ValueError(
+            "fold_boundary_gathers_into_weights needs segment_perms + boundary_sizes in the "
+            f"perm meta; got keys {sorted(meta.keys())}."
+        )
+
+    num_segments = len(boundary_sizes)
+    b_offsets = _boundary_offsets(boundary_sizes)
+    # inv[P[i]] = i, so t_permuted[inv] == t_original (t_permuted[i] == t[P[i]]).
+    inv = {
+        int(k): torch.argsort(torch.as_tensor(v, dtype=torch.long))
+        for k, v in segment_perms.items()
+    }
+    missing = [k for k in range(num_segments) if k not in inv]
+    if missing:
+        raise ValueError(f"perm meta has no segment_perms entry for segment(s) {missing}.")
+
+    inner = _resolve_llama_model(model)
+    inner.embed_tokens.weight.data = _perm_tensor(
+        inner.embed_tokens.weight.data, inv[0], dim=1
+    )
+    for seg in range(num_segments):
+        _apply_residual_perm_fp32(
+            model, range(b_offsets[seg], b_offsets[seg + 1]), inv[seg]
+        )
+    inner.norm.weight.data = inner.norm.weight.data[inv[num_segments - 1]]
+    model.lm_head.weight.data = _perm_tensor(
+        model.lm_head.weight.data, inv[num_segments - 1], dim=1
+    )
+
+    n_boundaries = num_segments - 1
+    print(f"[SegPerm] Folded the residual permutation back into the weights: "
+          f"{num_segments} segments, {n_boundaries} runtime gather(s) eliminated")
+    return n_boundaries
+
+
 def register_boundary_gathers(
     model: nn.Module,
     boundary_perms: List[torch.LongTensor],

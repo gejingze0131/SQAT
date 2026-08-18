@@ -195,9 +195,47 @@ def _run_context(model_dir: str, cfg: Optional[dict]) -> Dict[str, object]:
     return ctx
 
 
+def _rows_from_vllm_json(payload: dict, path: str, cfg: Optional[dict],
+                         note: str) -> List[Dict[str, object]]:
+    """Ingest a scripts/test_acc.py summary (generative eval through vLLM).
+
+    Kept separate from the lm-eval path because the two measure different things and the table
+    has to say which: lm-eval scores a task by ranking the answer options under teacher forcing,
+    while this scores the model's own free-form generation with an exact-match extractor. The
+    two are not interchangeable and a row that did not name its source would invite averaging
+    them.
+    """
+    conf = payload.get("config", {}) or {}
+    model_dir = conf.get("model_path", "")
+    ctx = _run_context(model_dir, cfg)
+    ctx.update(
+        source="vllm-generative",
+        timestamp=payload.get("timestamp", ""),
+        method=_infer_method(model_dir),
+        model_dir=model_dir,
+        dataset=conf.get("dataset", ""),
+        num_fewshot=0,          # the prompt is the fine-tuning prompt; no exemplars
+        result_json=path,
+        note=note,
+    )
+
+    rows: List[Dict[str, object]] = []
+    for task, metrics in (payload.get("results", {}) or {}).items():
+        row = dict(ctx)
+        row["task"] = task
+        row["metric"] = "acc"
+        row["value"] = metrics.get("acc", "")
+        row["stderr"] = ""
+        rows.append(row)
+    return rows
+
+
 def _rows_from_json(path: str, cfg: Optional[dict], note: str) -> List[Dict[str, object]]:
     with open(path, encoding="utf-8") as f:
         payload = json.load(f)
+
+    if payload.get("source") == "vllm-generative":
+        return _rows_from_vllm_json(payload, path, cfg, note)
 
     conf = payload.get("config", {})
     model_dir = conf.get("model_path", "")

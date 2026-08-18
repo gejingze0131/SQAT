@@ -1,0 +1,7 @@
+# Evaluation env ONLY (scripts/setup_vllm_env.sh). Kept apart from requirements.txt because
+# vLLM pins its own torch build: installing it next to the training stack would move the
+# numerics every checkpoint in outputs/ was trained under.
+#
+# scripts/gen_vllm.py needs nothing else — it reads datasets/<name>/test.json with the stdlib
+# json module, and scripts/test_acc.py is pure stdlib.
+vllm

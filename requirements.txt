@@ -1,3 +1,5 @@
+# Training env. vLLM is deliberately NOT here — it pins its own torch and lives in the
+# separate eval env built by scripts/setup_vllm_env.sh (requirements-vllm.txt).
 torch
 transformers
 accelerate
@@ -5,7 +7,6 @@ peft
 bitsandbytes
 datasets
 pyyaml
-vllm
 lm-eval
 wandb
 tqdm
