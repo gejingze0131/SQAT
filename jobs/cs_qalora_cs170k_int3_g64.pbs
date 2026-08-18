@@ -1,0 +1,37 @@
+#!/bin/bash
+#PBS -N cs_qalora_int3_g64
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# QA-LoRA on Commonsense-170k, INT3 g64, 3 epochs, lr 5.0e-3.
+#
+# The rate is chosen, not inherited. QA-LoRA's group-pooled adapter deploys by folding into the
+# affine zero-points, so its magnitude only means anything in quantization LEVELS (D/s). Measured
+# on MetaMath: 1e-4 -> 0.0054 levels -> 19.4; 2e-3 -> 0.0544 levels -> 37.07, still BELOW the
+# 0.1-0.3 useful band. The response is sublinear (20x lr bought 10x displacement, ~lr^0.77), which
+# put the band near 8e-3; 5e-3 is the midpoint between that extrapolation and the last rate with a
+# real measurement behind it. The paper's own 2e-5 is for batch 16 and would be badly
+# under-driven here, and a handicapped baseline is worth nothing to compare against.
+#
+# AFTER THIS RUN, re-measure D/s on the checkpoint before trusting the score: if it lands under
+# 0.1 levels this cell is still under-driven and the number is a floor, not QA-LoRA's ability.
+#
+# Everything not specific to the method matches the SALT-Q runs: dataset, prompt template, 3
+# epochs, effective batch 80, seq 2048, LoRA r64/a16/dropout 0, cosine + 3% warmup, seed 42.
+./run_qalora.sh \
+    --config configs/qalora_cs170k_int3_g64.yaml \
+    --bits 3 \
+    --dataset commonsense \
+    --output_dir outputs/qalora-cs170k-int3_g64 \
+    --eval_gpus 0,1,2,3 \
+    > logs/commonsense_170k/qalora_int3_g64.log 2>&1
+
+echo "End time: $(date)"

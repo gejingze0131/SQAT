@@ -1,0 +1,48 @@
+#!/bin/bash
+
+#PBS -N saltq_zonly
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+
+echo "===== JOB INFO ====="
+echo "Job ID: $PBS_JOBID"
+echo "Host: $(hostname)"
+echo "Workdir: $(pwd)"
+echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+echo "Start time: $(date)"
+
+# Activate conda
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+
+echo "Python: $(which python)"
+python --version
+
+echo "===== GPU INFO ====="
+nvidia-smi
+
+# ===== Start training =====
+# Ablation: train_salient=false ("z-only everywhere" — the salient slice is NOT given weight-space
+# LSQ training either; it is folded into the same frozen-codes + trainable-(s,z) pool the
+# non-salient segment uses, so the ONLY thing trained anywhere is z). Single-variable vs. the
+# just-finished INT2 g32 baseline (outputs/saltq-2bit-saltq, results_saltq.csv 20260809_032835):
+# same permutation (reused via --permuted_base_dir, not rebuilt), same bits/group_size/lrs, only
+# qat.saltq.train_salient flips from true to false (configs/saltq_zonly.yaml).
+#
+# --output_root points checkpoints/exports at outputs/saltq_zonly-2bit-saltq* so they land next to,
+# not on top of, the baseline. outputs/ is a symlink to /scratch/users/nus/jingzege/SQAT_outputs,
+# so everything this run produces lands on scratch, not home.
+./run_saltq.sh \
+    --config configs/saltq_zonly.yaml \
+    --bits 2 \
+    --output_root outputs/saltq_zonly \
+    --permuted_base_dir outputs/saltq/permuted_fp16_base \
+    --note "ablation: train_salient=false (z-only everywhere), vs INT2 g32 baseline run 20260809_032835" \
+    > logs/saltq_zonly_int2_g32.log 2>&1
+
+echo "End time: $(date)"

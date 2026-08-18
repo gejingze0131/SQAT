@@ -251,6 +251,52 @@ def main():
         check(err < 1e-4,
               f"exported model reproduces the training model's logits, max|Δ|={err:.3e}")
 
+        # ---- stage 8: train_salient=False ablation ("z-only everywhere") ----
+        # Same permuted base (permutation is untouched by this flag), a SEPARATE frozen-code base
+        # because the persisted tensors differ (no w_s/s_s/z_s, full-width codes/s_n/z_n).
+        print("\n[stage 8] build_saltq_base(train_salient=False) — z-only-everywhere ablation")
+        saltq_dir_zonly = os.path.join(work, "saltq_base_zonly")
+        meta_zonly = build_saltq_base(
+            permuted_base_dir=perm_dir, perm_meta=perm_meta, tokenizer=tok,
+            calibration_dataloader=loader, target_terminals=TARGETS,
+            group_size=GROUP_SIZE, q_bits=Q_BITS, symmetric=SYMMETRIC,
+            save_dir=saltq_dir_zonly, device=torch.device("cpu"), nsamples=8, blocksize=32,
+            dtype=torch.float32, train_salient=False,
+        )
+        pc_zonly = meta_zonly["param_counts"]
+        check(pc_zonly["trainable_salient_weights"] == 0,
+              "train_salient=False: zero trainable salient weights")
+        check(pc_zonly["frozen_codes"] > pc["frozen_codes"],
+              "train_salient=False: frozen codes cover the whole width (more than the default run)")
+        gks_zonly = [v["group_k"] for v in meta_zonly["layers"].values()]
+        check(all(g == 0 for g in gks_zonly),
+              "train_salient=False: EVERY layer recorded with group_k=0, not just o_proj")
+
+        model_z, meta_z2 = build_saltq_model(saltq_dir_zonly, dtype=torch.float32,
+                                             gradient_checkpointing=True)
+        handler_z = SALTQ()
+        model_z = handler_z.prepare_model(model_z, fake_cfg(work), saltq_meta=meta_z2,
+                                          saltq_base_dir=saltq_dir_zonly)
+        layers_z = saltq_layers(model_z)
+        check(all(not hasattr(m, "weight_salient") for m in layers_z.values()),
+              "train_salient=False: no SALTQLinear has a weight_salient parameter")
+
+        model_z.train()
+        out_z = model_z(input_ids=ids, labels=ids)
+        check(torch.isfinite(out_z.loss).item(), f"train_salient=False: loss finite: {out_z.loss.item():.4f}")
+        out_z.loss.backward()
+        trainable_z = [n for n, p in model_z.named_parameters() if p.requires_grad]
+        got_grad_z = [n for n in trainable_z
+                      if dict(model_z.named_parameters())[n].grad is not None
+                      and dict(model_z.named_parameters())[n].grad.abs().sum() > 0]
+        check(len(trainable_z) > 0 and len(got_grad_z) == len(trainable_z),
+              f"train_salient=False: all {len(trainable_z)} trainable tensors (pure z/norms) got a "
+              f"non-zero gradient")
+
+        model_z.eval()
+        verify_saltq_deploy_equivalence(model_z, max_layers=len(layers_z))
+        check(True, "train_salient=False: deployed == trained (exact) still holds")
+
         print("\n" + "=" * 68)
         print(f"  SALT-Q e2e: {PASSED} passed, {FAILED} failed")
         print("=" * 68)

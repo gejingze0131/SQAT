@@ -1,0 +1,69 @@
+#!/bin/bash
+
+#PBS -N aseg_k128
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=14:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+
+echo "===== JOB INFO ====="
+echo "Job ID: $PBS_JOBID"
+echo "Host: $(hostname)"
+echo "Workdir: $(pwd)"
+echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+echo "Start time: $(date)"
+
+# Activate conda
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+
+echo "Python: $(which python)"
+python --version
+
+echo "===== GPU INFO ====="
+nvidia-smi
+
+# ===== SALT-Q INT2 g32 — auto segment BOUNDARIES at a FIXED group_k=128 =====
+# Where this cell stands, all at identical lrs (salient 5e-4 / scales 2e-5 / zp 5e-3):
+#   40.90  legacy [2,30] k=128                                     <- best
+#   40.79  legacy [2,30] k=128 + AWQ fold + salient reorder        <- no effect (-0.11, se +/-1.35)
+#   38.82  auto_segment_by_outliers + AWQ fold + salient reorder
+#   36.69  auto_segment_by_outliers alone
+#
+# The AWQ control settled two things at once. On a healthy segmentation, folding + reordering does
+# nothing measurable; therefore the +2.1 they appeared to buy under auto segmentation was NOT an
+# independent gain but compensation for damage that segmentation had done. Stacking them was
+# predicated on additivity, and additivity is now falsified.
+#
+# That leaves the segmentation itself. auto_segment_by_outliers minimizes sum(layers * group_k)
+# subject to capturing every channel above a fixed z-score — so it bought a CHEAPER residual budget
+# than legacy (3936 vs 4096) while protecting far less energy through the middle of the network
+# (per-segment energy coverage 82% / 51% / 35% / 24% with depth), and lost 4.2 points. Cost was
+# free to move, so "where to cut" and "how much to spend" were confounded.
+#
+# THIS RUN removes that confound. Setting group_k while omitting boundary_sizes dispatches to
+# auto_segment_with_fixed_group_k, whose DP chooses only the CUT POINTS, every segment forced to
+# k=128, minimizing the outlier overflow that does not fit. The budget is then exactly legacy's
+# (32 * 128 = 4096), so the run answers one clean question: at equal cost, is the hand-set [2, 30]
+# boundary actually the right place to cut?
+#
+# Everything else is the 40.90 configuration verbatim — no AWQ folding, no reordering, same three
+# learning rates, same eff batch 80, same seed. Both bases rebuild under outputs/saltq_autoseg_k128
+# because the segmentation is baked into the permuted base; the 40.90 bases are untouched.
+set -x
+python scripts/test_saltq.py                  || exit 1
+python scripts/test_qat_permute_sqat.py       || exit 1
+python scripts/test_gptq_nonsalient.py        || exit 1
+set +x
+
+./run_saltq.sh \
+    --config configs/saltq_autoseg_k128.yaml \
+    --bits 2 \
+    --output_root outputs/saltq_autoseg_k128 \
+    --note "auto segment boundaries at FIXED group_k=128 (auto_segment_with_fixed_group_k); budget identical to legacy 4096; everything else = the 40.90 run" \
+    > logs/saltq_autoseg_k128.log 2>&1
+
+echo "End time: $(date)"

@@ -62,14 +62,21 @@ def main():
           f"{pc['trainable_qparams']/1e6:.1f}M affine + {pc['frozen_codes']/1e6:.1f}M frozen\n")
 
     # group_k structure
+    train_salient = bool(meta.get("train_salient", True))
     bad = []
     for n, info in meta["layers"].items():
         gk = int(info["group_k"])
         term = n.split(".")[-1]
-        if term == "o_proj" and gk != 0:
+        if not train_salient:
+            # z-only-everywhere ablation: EVERY layer is folded into the frozen-codes-only
+            # branch, so group_k=0 is expected across the board, not just for o_proj.
+            if gk != 0:
+                bad.append(f"{n}: train_salient=False base must have group_k=0 everywhere, got {gk}")
+        elif term == "o_proj" and gk != 0:
             bad.append(f"{n}: o_proj must have group_k=0, got {gk}")
         elif term != "o_proj" and (gk <= 0 or gk % gs):
             bad.append(f"{n}: group_k={gk} is not a positive multiple of {gs}")
+    print(f"train_salient: {train_salient}")
     print(f"group_k structure: {'OK' if not bad else 'PROBLEM'}")
     for b in bad[:5]:
         print(f"  {b}")

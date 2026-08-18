@@ -1,0 +1,42 @@
+#!/bin/bash
+#PBS -N cs_saltq_int3_g64
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q on Commonsense-170k, INT3 g64, 3 epochs.
+#
+# Segmentation: auto_segment_with_fixed_group_k (boundary_sizes omitted + group_k=128), the same
+# scheme evaluated on MetaMath. Learning rates resolve per bit width through the *_by_bits maps,
+# which is what "the best run's rates" means across two cells: INT2 inherits the 40.90 run's
+# (salient 5e-4 / scales 2e-5 / zp 5e-3), INT3 the validated 44.8 run's (2e-4 / 1e-5 / 1e-3). Two
+# of the three rates scale as 1/(2^b - 1), so a single scalar would have been wrong for one cell.
+#
+# 3 epochs x 170k at effective batch 80 is ~6.4k optimizer steps, close to the 4938 of the
+# 1-epoch MetaMath runs, so the displacement calibration transfers without a sqrt(T) rescale.
+#
+# Eval: the 8-task commonsense suite + MMLU, 4-way data-parallel (--dataset commonsense routes
+# Stage 3 to eval_benchmarks.py / eval_mmlu.py under the same accelerate launcher the math path
+# uses). Results land in results/commonsense_170k/; results_saltq.csv is skipped because its
+# collector parses gsm8k.
+set -x
+python scripts/test_saltq.py            || exit 1
+python scripts/test_gptq_nonsalient.py  || exit 1
+set +x
+
+./run_saltq.sh \
+    --config configs/saltq_cs170k_int3_g64.yaml \
+    --bits 3 \
+    --dataset commonsense \
+    --output_root outputs/saltq_cs170k_int3_g64 \
+    --note "SALT-Q commonsense_170k INT3 g64, autoseg fixed k=128, 3 epochs" \
+    > logs/commonsense_170k/saltq_int3_g64.log 2>&1
+
+echo "End time: $(date)"

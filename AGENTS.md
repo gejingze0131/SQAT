@@ -1,5 +1,35 @@
 # AGENTS.md — SQAT 仓库工作指南 & SALT-Q
 
+# NSCC 环境
+
+- 用户目录：`/home`
+- Scratch：`/scratch`
+- Conda：`~/miniforge3`
+- 默认环境：`saltq`
+
+激活环境：
+
+```bash
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+```
+
+大型模型、数据集、checkpoint 和缓存应放在 Scratch，不要占用 Home。常用缓存路径：
+
+```bash
+export HF_HOME=/scratch/cache/huggingface
+export TORCH_HOME=/scratch/cache/torch
+export PIP_CACHE_DIR=/scratch/cache/pip
+export VLLM_CACHE_ROOT=/scratch/cache/vllm
+export WANDB_DIR=/scratch/cache/wandb
+```
+
+NSCC 登录节点不要直接运行 GPU 训练。GPU 任务需通过 PBS `qsub` 获取计算节点后再运行 `accelerate` / `deepspeed`。
+
+项目：`personal-jingzege`
+
+GitHub SSH 可能被 NSCC 网络阻断；优先使用 HTTPS remote + PAT。
+
 本文档有两部分：
 
 - **第 I 部分**：现有 **Permuted SQAT** 方法的完整叙事与代码地图（agent 动手前必须先读懂的部分）。
@@ -327,6 +357,9 @@ resume 和 export 时**必须复用**，不要手工删除。
 | run1 | INT3 g64，**整数 z + scale 量级 lr** | 32.9 | **作废**：z 完全没动（round(z) 在 1.63M 个参数上零变化），非显著段贡献为 0 |
 | run2 | INT3 g64，连续 z，z-only，salient_lr 2e-4 / zp_lr 1e-3 | **44.8** | 超过 PSQAT+GPTQ 42.6 **+2.2**，逼平 LR-QAT/fp16 45.2 |
 | run3 | **INT2 g64**，其余与 run2 逐字一致 | 31.8 | **lr 没跟着比特走**：INT2 的格步长是 INT3 的 7/3 倍，同一个 lr 只把 W_S 推了 0.25 个格步（run2 是 0.58）——见下 |
+| run4 | **INT2 g32**，salient_lr 5e-4 / scales_lr 2e-5 / zp_lr 1e-3，eff batch 80 | **36.1** | 比 run3 +4.3，但**同时动了两个变量**（group_size 64→32 与 lr 修正），不可归因。缺 INT2 g64 @ 5e-4 这个点来解耦 |
+| zonly | 与 run4 逐字一致，只翻 `train_salient: false` | 29.8 | **干净的单变量消融**：砍掉 salient 权重训练掉 **6.3 分**。1–2% 的权重扛了 6.3 分，说明 INT2 下高精度 latent + LSQ 这一档贡献很大 |
+| zp5e3 | 与 run4 逐字一致，只把 `zp_lr_by_bits[2]` 1e-3→5e-3 | **40.9** | **+4.8**。依据是 run4 的实测位移（见下）：z 是唯一欠驱动的一档。**INT2 g32 当前最好**（flexible 37.3，低于 strict，是 flexible 抽取误取数字所致，不影响 strict 口径） |
 
 ### lr 必须跟着比特走（run3 的教训，已量化）
 
@@ -336,12 +369,25 @@ resume 和 export 时**必须复用**，不要手工删除。
 |---|---|---|---|---|---|
 | run2 INT3 lr 对 | 1.22e-2 | **0.584** | 3.3% | 0.039 | 35.5 / 40.1 / 38.8 |
 | run3 INT2 lr 照抄 | 2.84e-2 | **0.246** | 1.4% | 0.040 | 34.9 / 40.7 / 40.4 |
+| run4 INT2 g32 lr 修正 | 2.49e-2 | **0.504** | 2.8% | **0.032** | 25.1 / — / 32 |
 
-三件事被这两组数钉死了：
+run4 追加的两条结论：
+
+- **weight 单位的两档已经到位，z 没有**。0.504 格步、2.79% 相对——都在靶心；而 z 只走了 0.032 level，
+  对着 0.1–0.3 的有用区间**差 3–9 倍**，比 run2 的 0.039 还低。z 管 98–99% 的权重，且 INT2 正是
+  non-salient 段靠 GPTQ 压不住的失效区。**再抬 salient_lr 没有收益**——0.584 是 run2 拿到 44.8 的
+  已验证工作点，越过它是新赌注不是补自由度。
+- **`c` 不是常数，是 ∝ √T，而 T 取决于 eff batch**。run4 从 3 卡换到 4 卡，eff batch 60→80，
+  T 6584→约 4938，实测 c 从 35.5 掉到 **25.1**。5e-4 之所以还能命中 0.5 格步，是因为 g32 的格步长
+  p50（2.49e-2）比推导用的 g64 值（2.84e-2）小 12%，两个偏差恰好抵消——**别指望这种运气**。
+  改 epochs 或 eff batch 时，所有 lr 要乘 √(T_new/T_old)。要在 4 卡上拿回 eff batch 60：
+  `per_device 3 × accum 5 × 4`。
+
+三件事被前两组数钉死了：
 
 1. **Adam 的位移只由 lr 决定**：三个参数组、两个比特宽度下，`c = 位移/lr` 全部落在 35–41
    （≈0.47·√T，T=6584）。梯度幅值、LSQ 的 1/√(N·Qp) 梯度缩放在 Adam 里被 v̂ 归一化整除掉了
-   ——**所以 lr 必须按参数自身的单位来定，这就是按单位分组的全部理由**。
+   ——**所以 lr 必须按参数自身的单位来定，这就是按单位分组的全部理由**。（`c` 随 T 变，见上。）
 2. **min-max 初始化让 s(b) = range/(2^b−1) 精确成立**：实测 s₂/s₃ = 2.333 = 7/3（四位有效数字），
    salient / non-salient 都是。所以 weight 单位的两个 lr 必须 ∝ 1/(2^b−1)。
 3. **run3 的位移正好是 run2 的 3/7**：0.584×3/7 = 0.250，实测 0.246。它不是"2bit 学不动"，
@@ -359,8 +405,17 @@ resume 和 export 时**必须复用**，不要手工删除。
 zp_lr 不随比特下降，因为 z 的单位是 level：它一半的活是补 ±0.5 level 的量化误差（与比特无关），
 另一半是把固定 weight 量级的任务 delta 换算成 level（∝ 2^b−1，所以只在 INT4 抬到 2e-3）。
 
-**已知余量**：zp_lr=1e-3 实测只走了 0.039 level，而有用区间是 0.1–0.3——z 目前只吃掉约 8% 的
-码字误差。`zp_lr=3e-3` 是下一个最值得扫的点，INT2 尤其（那里"补量化误差"这一半是主要矛盾）。
+**已验证：zp_lr 是当时唯一欠驱动的一档，抬它值 +4.8 分。** run4（INT2 g32）实测 z 只走了 **0.032**
+level，有用区间 0.1–0.3——只吃掉约 6% 的码字误差；而 weight 单位的两档（0.504 格步 / 2.79%）都已在靶心。
+早先写的 `zp_lr=3e-3` 是从 INT3 的 0.039 外推的，INT2 实测更低（`c_z = 0.032/1e-3 = 32`），3e-3 只到
+~0.096 **仍在区间外**，所以直接跳到 **5e-3**（→ ~0.16，区间中点）。结果 **36.1 → 40.9**
+（`configs/saltq_zp5e3.yaml`，run `20260809_162312`）。
+
+这条给出的方法论比这一个数字更重要：**先用 `measure_saltq_displacement.py` 量位移，再决定动哪个 lr。**
+run1/run3 两次作废、以及"该不该继续抬 salient_lr"这个问题，都是靠这把尺子在零 GPU 成本下解掉的。
+
+下一步的余量：5e-3 是否已经到位仍未量（应重跑一次 displacement 确认 z 落在 0.1–0.3 而不是冲过 0.5）；
+INT2 下 z 的值域只有 `[0, 3]`，0.16 level 约占 5%，clamp 风险小，但 7e-3/1e-2 是否继续涨要看实测。
 
 run2 的三点对照（这一格是唯一有完整外部 baseline 的）：
 

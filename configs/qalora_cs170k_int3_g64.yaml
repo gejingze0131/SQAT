@@ -1,3 +1,22 @@
+# QA-LoRA — Commonsense-170k, INT3 g64
+#
+# lr 5.0e-3, chosen deliberately rather than inherited. QA-LoRA's group-pooled adapter deploys by
+# folding into the affine zero-points (paper Eq. 7), so its magnitude only means anything in
+# quantization LEVELS, D/s. Measured on MetaMath: lr 1e-4 realized 0.0054 levels and scored 19.4;
+# lr 2e-3 realized 0.0544 and scored 37.07 — still BELOW the 0.1-0.3 useful band, i.e. 2e-3 is a
+# known-under-driven setting. The response is sublinear (20x the rate bought 10x the displacement,
+# ~lr^0.77), which put the band at roughly 8e-3; 5e-3 is the chosen midpoint between that estimate
+# and the last rate with a real measurement behind it.
+#
+# The paper's own 2e-5 is for LLaMA-7B at batch 16 (arXiv:2309.14717); this runs at batch 80 for 3
+# epochs, so it would be badly under-driven transplanted verbatim, and a handicapped baseline is
+# worth nothing to compare against. Re-measure D/s on the finished checkpoint before trusting the
+# score: if it lands under 0.1, this cell is still under-driven.
+# Matched to the SALT-Q Commonsense-170k runs so the comparison is method-only: same dataset and
+# prompt template, 3 epochs, effective batch 80 (5 x 4 x 4 GPUs), max_seq_len 2048, LoRA r=64 /
+# alpha=16 / dropout 0, cosine + 3% warmup, max_grad_norm 0.3, seed 42. Only quant_bits,
+# group_size and the learning rate differ per file.
+#
 model:
   name: "meta-llama/Llama-2-7b-hf"
   quant_bits: 3
@@ -30,7 +49,7 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
-  group_size: 64            # group_k % group_size == 0 required.
+  group_size: 64
                             # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
                             # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
                             # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
@@ -126,7 +145,7 @@ training:
   per_device_eval_batch_size: 5
   gradient_accumulation_steps: 4
   group_by_length: false
-  learning_rate: 2.0e-4
+  learning_rate: 5.0e-3
   weight_decay: 0.01
   lr_scheduler_type: "cosine"
   warmup_ratio: 0.03

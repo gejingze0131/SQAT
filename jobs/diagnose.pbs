@@ -1,0 +1,51 @@
+#!/bin/bash
+#PBS -N strictdiag2
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=03:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+
+# Is the 3.3-point strict-match gap between the 40.90 run and autoseg_k128 real, or a scoring
+# artifact? Everything else says the two models are equivalent:
+#     train loss   0.2464  vs  0.2447   (autoseg_k128 slightly LOWER)
+#     flexible     37.30   vs  37.15    (0.15 apart)
+#     strict       40.94   vs  37.60    (3.34 apart)  <- the lone disagreement
+# Every other run in results_saltq.csv has flexible 0.15-0.38 ABOVE strict, which is the expected
+# ordering: flexible-extract (last number in the output) is strictly more permissive than
+# strict-match (require a literal "#### <n>"). The 40.90 run is -3.64, i.e. INVERTED, which is
+# what happens when a model answers in the right format and then keeps generating, so the last
+# number is no longer the answer. If that is what is going on, the 40.90 baseline that every
+# ranking in this cell rests on is partly a formatting artifact.
+#
+# RESUBMIT of 15164404, which exported correctly and then died in the eval step: the script
+# derived the eval directory from the BASE location (outputs/saltq for the zp5e3 run, whose bases
+# are shared with the original run) instead of from the config's training.output_dir
+# (outputs/saltq_zp5e3), and looked for a directory that never existed. Both dense eval models are
+# on disk now, so this pass skips the export entirely and only evaluates.
+#
+# --limit 300 scores are NOT comparable to the full-1319 numbers above and are deliberately kept
+# out of results_saltq.csv; only the generations matter here.
+
+set -e
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+
+for EVALDIR in outputs/saltq_zp5e3-2bit-saltq-deploy-eval \
+               outputs/saltq_autoseg_k128-2bit-saltq-deploy-eval; do
+    echo "===== $EVALDIR ====="
+    [ -d "$EVALDIR" ] || { echo "MISSING $EVALDIR"; exit 1; }
+    accelerate launch --num_processes 4 --num_machines 1 --gpu_ids 0,1,2,3 \
+        --mixed_precision no --main_process_port 29600 \
+        scripts/eval_math.py \
+        --model_path "$EVALDIR" \
+        --num_fewshot 5 \
+        --limit 300 \
+        --log_samples \
+        --output_dir results/strict_diag
+done
+
+echo "End time: $(date)"

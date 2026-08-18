@@ -1,0 +1,59 @@
+#!/bin/bash
+#PBS -N cs_qlnone
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# QLoRA merged baseline on Commonsense-170k, 3 epochs — the LOWER BOUND of the comparison.
+#
+# ONE TRAINING RUN, TWO EXPORTS. With qat_mode=none the training is bit-INDEPENDENT: model_loader
+# loads the base as 4-bit NF4 for any quant_bits in (2,3,4) and there is no fakequant anywhere in
+# this path, so quant_bits/group_size only take effect when the adapter is merged and the result
+# re-quantized. Training INT3 g64 and INT2 g32 separately would run the same computation twice for
+# the same weights. So this trains once and then exports + evaluates the SAME checkpoint at both
+# settings via --skip_train --checkpoint_dir.
+#
+# (SALT-Q and QA-LoRA get no such shortcut and are correctly two runs each: SALT-Q's frozen codes
+# and QA-LoRA's GPTQ INT-b base are both built BEFORE training at a specific bit width.)
+#
+# Each export produces two variants and both are evaluated: the dequant export, which is what
+# actually deploys and is the honest number, and the fp16 merged export, which carries no
+# quantization error and is the ceiling this recipe could reach. Their difference is the merge
+# damage measured directly.
+#
+# lr 2e-4 is the standard LoRA rate. Unlike SALT-Q's tiers and QA-LoRA's zero-point-space adapter,
+# a BF16 LoRA delta lives in weight units and has no reason to scale with the bit width.
+# Everything not method-specific matches the SALT-Q runs: dataset, 3 epochs, eff batch 80, seq
+# 2048, LoRA r64/a16/dropout 0, cosine + 3% warmup, seed 42.
+
+set -e
+CKPT="outputs/qlora-none-cs170k-int3_g64-3bit-none/final"
+
+echo "===== train once (INT3 g64 config; the training itself is bit-independent) ====="
+./run_none_qlora.sh \
+    --config configs/qlora_none_cs170k_int3_g64.yaml \
+    --bits 3 \
+    --dataset commonsense \
+    --output_dir outputs/qlora-none-cs170k-int3_g64 \
+    --eval_gpus 0,1,2,3 \
+    > logs/commonsense_170k/qlora_none_int3_g64.log 2>&1
+
+echo "===== re-export the SAME checkpoint at INT2 g32 and evaluate ====="
+ls -d "$CKPT" || { echo "expected checkpoint $CKPT not found; check the training log"; exit 1; }
+./run_none_qlora.sh \
+    --config configs/qlora_none_cs170k_int2_g32.yaml \
+    --bits 2 \
+    --dataset commonsense \
+    --output_dir outputs/qlora-none-cs170k-int2_g32 \
+    --checkpoint_dir "$CKPT" \
+    --eval_gpus 0,1,2,3 \
+    > logs/commonsense_170k/qlora_none_int2_g32.log 2>&1
+
+echo "End time: $(date)"

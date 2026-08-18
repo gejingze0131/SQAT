@@ -1,3 +1,19 @@
+# QLoRA merged baseline (qat_mode=none) — Commonsense-170k, INT3 g64
+#
+# The LOWER BOUND of the whole comparison: train a plain BF16 LoRA on a quantized base, then merge
+# and re-quantize. Merging is exactly what destroys the adapter — the delta is full-rank and gets
+# rounded back onto the INT-b grid it was never constrained to. run_none_qlora.sh exports two
+# variants and evaluates both: the dequant export (what actually deploys, the honest number) and
+# the fp16 merged export (no quantization error, the ceiling this recipe could ever reach).
+#
+# lr 2.0e-4 is the standard LoRA rate and the one the existing sqat_permute baselines use; unlike
+# SALT-Q's tiers and QA-LoRA's zero-point-space adapter, a plain BF16 LoRA delta lives in weight
+# units and has no reason to scale with the bit width.
+# Matched to the SALT-Q Commonsense-170k runs so the comparison is method-only: same dataset and
+# prompt template, 3 epochs, effective batch 80 (5 x 4 x 4 GPUs), max_seq_len 2048, LoRA r=64 /
+# alpha=16 / dropout 0, cosine + 3% warmup, max_grad_norm 0.3, seed 42. Only quant_bits,
+# group_size and the learning rate differ per file.
+#
 model:
   name: "meta-llama/Llama-2-7b-hf"
   quant_bits: 3
@@ -30,7 +46,7 @@ lora:
 qat:
   mode: "sqat_permute"
   symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
-  group_size: 64            # group_k % group_size == 0 required.
+  group_size: 64
                             # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
                             # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
                             # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
