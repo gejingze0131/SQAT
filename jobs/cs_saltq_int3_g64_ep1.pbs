@@ -41,11 +41,19 @@ nvidia-smi | head -12
 # results/commonsense_vllm/<tag>.jsonl, per-task accuracy to <tag>.json, and one row per task
 # folded into results_saltq.csv by scripts/collect_saltq_results.py.
 #
-# AFTER THIS RUN: the opening loss is the first thing to read. ~2.9 is a healthy INT3 start
-# (fp16 response-only is 2.84, and the quantization gap should be small at 3 bits); anything
-# near 8 means the base is broken again, whatever the score says. Then measure |dW_S| and |dz|
-# with scripts/measure_saltq_displacement.py -- near 0.5 grid steps / 0.1-0.3 levels means the
-# sqrt(3) rescale landed.
+# AFTER THIS RUN, IN THIS ORDER. Do NOT read the loss as a health signal on this dataset: the
+# response is ~8 tokens of which ~7 are the fixed template, so a model that learns the template
+# and ignores the question lands at ~0.12 -- which is exactly what the first clean run did, while
+# scoring the majority-class rate on all 8 tasks. Measured openings: 8.14 = destroyed base,
+# 1.22 = healthy base (matches the value check_saltq_base.py's docstring already recorded).
+#   1. scripts/test_acc.py now prints distinct-output counts per task and warns when <=2. That
+#      is the real pass/fail: a collapsed model reports a plausible mean (37.03) and means
+#      nothing.
+#   2. scripts/measure_saltq_displacement.py -- near 0.5 grid steps / 0.1-0.3 levels means the
+#      rates landed. The sqrt(3) rescale did NOT land here: c came out 7.9 against the law's
+#      0.47*sqrt(T) = 20.2, because that constant was fitted on MetaMath, where the loss keeps
+#      falling. This task saturates by step 40 (grad_norm 34 -> 0.03) and the remaining 1800
+#      steps contribute almost no displacement.
 
 # Stage 3 runs in a DIFFERENT conda env. Check it is importable now rather than discovering it
 # is missing after several hours of training.

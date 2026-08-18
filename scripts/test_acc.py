@@ -16,7 +16,7 @@ import json
 import os
 import re
 from fractions import Fraction
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 
 def remove_right_units(string):
@@ -297,17 +297,37 @@ def main() -> int:
     args = parser.parse_args()
 
     results = defaultdict(list)
+    outputs = defaultdict(list)      # raw generations, for the degeneracy check below
+    golds = defaultdict(list)
     with open(args.input_file, 'r') as f:
         for line in f:
             line = line.strip()
             if line:
                 data = json.loads(line)
                 results[data['type']].append(score_record(data))
+                outputs[data['type']].append((data.get('output') or '').strip())
+                golds[data['type']].append((data.get('answer') or '').strip())
 
     summary = {}
+    collapsed = []
     for task, hits in sorted(results.items()):
-        summary[task] = {'n': len(hits), 'acc': sum(hits) / len(hits)}
-        print(f"{task:16s} n={len(hits):6d}  acc={summary[task]['acc'] * 100:6.2f}")
+        acc = sum(hits) / len(hits)
+        # A model that emits ONE answer for every question scores the frequency of that answer in
+        # the gold labels, which looks like a real number and is not one. The INT3 g64 commonsense
+        # run reported 37.03% mean this way: always "true" on boolq (62.2% = the true-rate),
+        # always "answer1" on arc_challenge (22.7%), and so on for all 8 tasks. Nothing in a
+        # per-task accuracy table shows this, so it is measured here instead of eyeballed.
+        n_distinct = len(set(outputs[task]))
+        majority = max(Counter(golds[task]).values()) / len(golds[task]) if golds[task] else 0.0
+        summary[task] = {'n': len(hits), 'acc': acc,
+                         'n_distinct_outputs': n_distinct,
+                         'majority_class_acc': majority}
+        flag = ''
+        if n_distinct <= 2:
+            collapsed.append(task)
+            flag = f'  <-- only {n_distinct} distinct output(s)'
+        print(f"{task:16s} n={len(hits):6d}  acc={acc * 100:6.2f}  "
+              f"(majority-class {majority * 100:5.2f}, {n_distinct} distinct){flag}")
 
     total = sum(v['n'] for v in summary.values())
     if total:
@@ -316,6 +336,16 @@ def main() -> int:
         mean_acc = sum(v['acc'] for v in summary.values()) / len(summary)
         summary['_mean'] = {'n': total, 'acc': mean_acc}
         print(f"{'MEAN (unweighted)':16s} n={total:6d}  acc={mean_acc * 100:6.2f}")
+
+    if collapsed:
+        summary['_degenerate_tasks'] = sorted(collapsed)
+        print()
+        print(f"*** WARNING: {len(collapsed)} of {len(results)} tasks got <=2 distinct outputs "
+              f"across the whole split: {', '.join(sorted(collapsed))}")
+        print("*** The model learned the RESPONSE TEMPLATE and a per-task prior, not the task. "
+              "Its accuracy is the majority-class rate and means nothing.")
+        print("*** Note the training loss will look healthy: the response is ~8 tokens of which "
+              "~7 are template, so missing only the answer token costs ~0.09 nats.")
 
     out_json = args.output_json or os.path.splitext(args.input_file)[0] + '.json'
     os.makedirs(os.path.dirname(os.path.abspath(out_json)), exist_ok=True)
