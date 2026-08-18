@@ -87,6 +87,17 @@ def _permuted_base_reusable(permuted_dir: str, cfg: dict, sp_cfg: dict):
                 return None
         elif float(have) != float(wanted):
             return None
+
+    # Boolean transforms baked into the saved weights. Compared separately (and defaulted to
+    # False) so that a base written before these existed still matches a config that wants
+    # neither — the numeric path above would treat a missing key as a mismatch and force a
+    # needless 13 GB rebuild.
+    for key, wanted in (
+        ("awq_folded", bool((sp_cfg.get("awq_scale", {}) or {}).get("fold", False))),
+        ("salient_reordered", bool(sp_cfg.get("reorder_salient", False))),
+    ):
+        if bool(meta.get(key, False)) != wanted:
+            return None
     return (f"group_k={meta.get('group_k')} boundary_sizes={meta.get('boundary_sizes')} "
             f"group_size={meta.get('group_size')}")
 
@@ -127,12 +138,15 @@ def _saltq_base_matches(base_dir: str, cfg: dict):
         meta = torch.load(meta_pt, map_location="cpu", weights_only=False)
     except Exception:
         return None
+    sq_cfg = cfg["qat"].get("saltq", {}) or {}
     if (int(meta.get("q_bits", -1)) != int(cfg["model"]["quant_bits"])
             or int(meta.get("group_size", -1)) != int(cfg["qat"].get("group_size", 128))
-            or bool(meta.get("symmetric", False)) != bool(cfg["qat"].get("symmetric", False))):
+            or bool(meta.get("symmetric", False)) != bool(cfg["qat"].get("symmetric", False))
+            or bool(meta.get("train_salient", True)) != bool(sq_cfg.get("train_salient", True))):
         return None
     return (f"INT{meta.get('q_bits')} g{meta.get('group_size')} "
-            f"{'sym' if meta.get('symmetric') else 'asym'}")
+            f"{'sym' if meta.get('symmetric') else 'asym'}"
+            f"{'' if meta.get('train_salient', True) else ' train_salient=False'}")
 
 
 def load_config(config_path: str, overrides: dict) -> dict:
@@ -517,6 +531,11 @@ def main():
                 awq_alpha=(sp_cfg.get("awq_scale", {}) or {}).get("alpha", 0.5),
                 awq_max=(sp_cfg.get("awq_scale", {}) or {}).get("max", 2.0),
                 max_segments=sp_cfg.get("max_segments", 4),
+                # Fold S into the weights offline (producers divided) so nothing downstream needs
+                # to know about AWQ, and order the salient block by post-fold magnitude so the
+                # channels S amplifies share a group with each other.
+                fold_awq=bool((sp_cfg.get("awq_scale", {}) or {}).get("fold", False)),
+                reorder_salient=bool(sp_cfg.get("reorder_salient", False)),
             )
         accelerator.wait_for_everyone()
 
@@ -592,6 +611,7 @@ def main():
                 blocksize=int(sq_gptq.get("blocksize", 128)),
                 nsamples=int(sq_gptq.get("nsamples", 128)),
                 dtype=getattr(torch, cfg["model"]["dtype"]),
+                train_salient=bool(sq_cfg.get("train_salient", True)),
             )
         accelerator.wait_for_everyone()
         print(f"[SALT-Q] Using frozen-code base {saltq_base_dir}")
@@ -684,7 +704,19 @@ def main():
 
     # --- Load data ---
     print("\n[2/5] Loading datasets...")
-    train_dataset, eval_dataset = load_dataset_for_training(cfg, tokenizer)
+    # Tokenize on rank 0 FIRST, then let the other ranks read the finished cache.
+    #
+    # load_dataset_for_training calls datasets.map(num_proc=4) with a content-addressed cache
+    # path, so under `accelerate launch --num_processes 4` all four ranks compute the SAME cache
+    # filenames and race to write them, each with four worker processes of its own. Usually one
+    # rank wins and the rest silently reuse its files; occasionally a loser finishes writing after
+    # the winner has already renamed the temp file away and datasets' post-write
+    # `os.chmod(cache_file_name, ...)` dies with FileNotFoundError on
+    # cache-<hash>_00000_of_00004.arrow. That killed the AWQ-legacy run after the bases were
+    # already built. main_process_first serializes it: rank 0 populates the cache, the others
+    # enter afterwards and hit it, which is also ~4x less tokenization work.
+    with accelerator.main_process_first():
+        train_dataset, eval_dataset = load_dataset_for_training(cfg, tokenizer)
     print(f"  Train: {len(train_dataset)} samples")
     if eval_dataset is not None:
         print(f"  Eval:  {len(eval_dataset)} samples")

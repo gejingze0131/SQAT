@@ -934,6 +934,93 @@ def _build_segment_perm(salient_channels: List[int], total_dim: int) -> List[int
     return list(salient_channels) + remaining
 
 
+def reorder_salient_by_post_awq_magnitude(
+    model: nn.Module,
+    residual_salient: Dict[int, List[int]],
+    second_moments: Dict[Tuple[int, str], torch.Tensor],
+    boundary_sizes: Sequence[int],
+    *,
+    alpha: float = 0.5,
+    max_s: float = 2.0,
+    eps: float = 1e-12,
+) -> Dict[int, List[int]]:
+    """
+    Reorder each segment's salient channel LIST (not its membership) so that channels which will
+    end up with similar magnitude after the AWQ fold land in the same quantization group.
+
+    WHY THIS IS FREE. `_build_segment_perm` lays the salient channels out at [0, group_k) in
+    whatever order the list happens to be in, and that order is otherwise arbitrary — it is folded
+    offline into the weights like the rest of P_k and costs nothing at runtime. Which channels are
+    salient is unchanged, so group_k, the outlier capture and the boundary gathers are all
+    unaffected; only WHICH 32 channels share a scale changes.
+
+    WHY POST-AWQ MAGNITUDE IS THE RIGHT KEY. A group's scale is s = (max - min)/(2^b - 1) over its
+    32 columns, so what a shared scale costs is the SPREAD inside the group. Before the AWQ fold
+    the salient columns' weights are fairly homogeneous — saliency is a property of the
+    activations, not of the weights — so there is little spread to exploit and regrouping buys
+    almost nothing. The fold is what creates the spread: it multiplies column j by
+    S_j = E[x_j^2]^alpha (normalized to min 1, clamped to max_s), deliberately paying a larger
+    shared scale to buy smaller relative error on the highest-E[x^2] channels. Sorting by the
+    POST-fold magnitude |W_j| * S_j therefore isolates the amplified channels together, so the
+    scale they inflate is one they share with each other rather than with quiet columns. Sorting
+    on E[x^2] alone, or on |W| alone, each captures only one of the two factors.
+
+    THE COMPROMISE, STATED. P_k is shared by every layer in the segment AND by both the attn
+    (q/k/v) and mlp (gate/up) consumers, while |W_j| is per-(layer, projection) and E[x_j^2]
+    differs between the attn and mlp sources. One ordering therefore cannot be optimal for all of
+    them; the key below is the mean of |W_j| * S_j over the segment's layers and over both
+    sources, i.e. the best single compromise rather than a per-layer optimum. down_proj is NOT
+    handled here — it permutes per layer via `internal_salient`, so it can be ordered exactly.
+
+    Returns a new {segment: [channels]} dict; the input is not modified.
+    """
+    b_off = [0] + list(itertools.accumulate(boundary_sizes))
+    num_segments = len(boundary_sizes)
+    out: Dict[int, List[int]] = {}
+
+    for k in range(num_segments):
+        chans = list(residual_salient.get(k, []))
+        if len(chans) <= 1:
+            out[k] = chans
+            continue
+        idx = torch.tensor(chans, dtype=torch.long)
+        acc = torch.zeros(len(chans), dtype=torch.float64)
+        n_acc = 0
+
+        for l in range(b_off[k], min(b_off[k + 1], model.config.num_hidden_layers)):
+            layer = model.model.layers[l]
+            for src, projs in (
+                ("attn", (layer.self_attn.q_proj, layer.self_attn.k_proj, layer.self_attn.v_proj)),
+                ("mlp", (layer.mlp.gate_proj, layer.mlp.up_proj)),
+            ):
+                sm = second_moments.get((l, src))
+                if sm is None:
+                    continue
+                h = torch.as_tensor(sm, dtype=torch.float64).flatten()[idx].clamp(min=eps)
+                S = h.pow(alpha)
+                S = (S / S.min().clamp(min=eps)).clamp(max=max_s)   # same normalization as
+                                                                    # compute_awq_scales
+                for p in projs:
+                    w = p.weight.data
+                    if w.shape[1] <= int(idx.max()):
+                        continue
+                    # RMS over output rows: a per-column magnitude comparable across columns.
+                    m = w[:, idx.to(w.device)].to(torch.float64).pow(2).mean(0).sqrt().cpu()
+                    acc += m * S
+                    n_acc += 1
+
+        if n_acc == 0:
+            out[k] = chans
+            continue
+        key = acc / n_acc
+        order = torch.argsort(key, descending=True)
+        out[k] = [chans[i] for i in order.tolist()]
+
+    print(f"[SegPerm] Reordered salient channels within {len(out)} segments by post-AWQ "
+          f"magnitude (membership and group_k unchanged)")
+    return out
+
+
 def _compute_boundary_perm(
     P_k: List[int], P_kp1: List[int], d_model: int,
 ) -> torch.LongTensor:
@@ -1076,6 +1163,97 @@ def apply_block_internal_permutations_fp32(
 
     print(f"[SegPerm] Applied P4 (down_proj) permutations: {len(applied_perms)} layers")
     return applied_perms
+
+
+def apply_awq_folding_fp32(
+    model: nn.Module,
+    awq_scales: Optional[dict],
+    layer_group_ks: Sequence[int],
+    down_layer_group_ks: Sequence[int],
+) -> int:
+    """
+    Fold the AWQ per-input-channel scale S into the weights, offline and EXACTLY.
+
+    This is the fourth equivalence-preserving transform, and it runs AFTER the permutations so
+    that the salient channels already occupy [0, group_k). For every linear whose input carries a
+    salient slice we scale that slice UP by S and divide the PRODUCER of those activations by S:
+
+        q/k/v  cols[:gk] *= S_attn   <->  input_layernorm.weight[:gk]          /= S_attn
+        gate/up cols[:gk] *= S_mlp   <->  post_attention_layernorm.weight[:gk] /= S_mlp
+        down    cols[:gk] *= S_down  <->  up_proj.weight[rows :gk, :]          /= S_down
+
+    Each pairing is exact and has exactly one consumer, which is what makes the fold safe:
+      * Llama's input_layernorm feeds ONLY q/k/v, and post_attention_layernorm ONLY gate/up, so
+        rescaling an RMSNorm weight channel rescales precisely the activations we scaled up. The
+        residual stream bypasses both norms and is untouched.
+      * down_proj's input is silu(gate(x)) * up(x), elementwise, so dividing up_proj's OUTPUT row j
+        divides input channel j of down_proj. up_proj's rows are consumed by nothing else.
+      * q/k/v share S_attn and gate/up share S_mlp (compute_awq_scales emits one vector per
+        (layer, source)), so a single norm rescale serves both consumers.
+      * o_proj has no salient slice (group_k = 0) and is never touched.
+
+    WHY FOLD HERE rather than at export. Once S lives in the weights, the quantizer simply sees a
+    better-conditioned matrix and NOTHING downstream needs to know about AWQ: GPTQ, the SALT-Q
+    training forward and the merge-free export are all unchanged, and `deployed == trained` still
+    holds by construction. The alternative — carrying S through training and dividing it out at
+    export — cannot work for SALT-Q, because 1/S is per-COLUMN while a deployed INT-b checkpoint
+    only has a per-(row, group) scale; that path forces a dense export and destroys the property
+    that the codes ARE the deployment.
+
+    NOTE the direction: compute_awq_scales normalizes min(S) = 1 and clamps to [1, max_s], so S
+    only ever AMPLIFIES. It does not compress the within-group range — it deliberately spends
+    range (a larger shared s for the whole group) to buy smaller relative error on the channels
+    with the largest E[x^2]. Grouping the amplified channels together afterwards is what contains
+    that cost, which is why any salient reordering must be keyed on the POST-folding magnitudes.
+
+    Returns the number of layers folded. No-op (returns 0) when awq_scales is falsy.
+    """
+    if not awq_scales:
+        return 0
+
+    num_layers = model.config.num_hidden_layers
+    n_folded = 0
+
+    for l in range(num_layers):
+        layer = model.model.layers[l]
+        gk = int(layer_group_ks[l]) if l < len(layer_group_ks) else 0
+        gk_d = int(down_layer_group_ks[l]) if l < len(down_layer_group_ks) else 0
+
+        # ---- attention: q/k/v input cols <-> input_layernorm ----
+        if gk > 0 and "attn" in awq_scales:
+            S = torch.as_tensor(awq_scales["attn"][l][:gk], dtype=torch.float32)
+            for proj in (layer.self_attn.q_proj, layer.self_attn.k_proj, layer.self_attn.v_proj):
+                w = proj.weight.data
+                w32 = w[:, :gk].to(torch.float32) * S.view(1, -1).to(w.device)
+                w[:, :gk] = w32.to(w.dtype)
+            ln = layer.input_layernorm.weight.data
+            ln[:gk] = (ln[:gk].to(torch.float32) / S.to(ln.device)).to(ln.dtype)
+
+        # ---- MLP: gate/up input cols <-> post_attention_layernorm ----
+        if gk > 0 and "mlp" in awq_scales:
+            S = torch.as_tensor(awq_scales["mlp"][l][:gk], dtype=torch.float32)
+            for proj in (layer.mlp.gate_proj, layer.mlp.up_proj):
+                w = proj.weight.data
+                w32 = w[:, :gk].to(torch.float32) * S.view(1, -1).to(w.device)
+                w[:, :gk] = w32.to(w.dtype)
+            ln = layer.post_attention_layernorm.weight.data
+            ln[:gk] = (ln[:gk].to(torch.float32) / S.to(ln.device)).to(ln.dtype)
+
+        # ---- down_proj input cols <-> up_proj output rows ----
+        if gk_d > 0 and "down" in awq_scales:
+            S = torch.as_tensor(awq_scales["down"][l][:gk_d], dtype=torch.float32)
+            w = layer.mlp.down_proj.weight.data
+            w32 = w[:, :gk_d].to(torch.float32) * S.view(1, -1).to(w.device)
+            w[:, :gk_d] = w32.to(w.dtype)
+            wu = layer.mlp.up_proj.weight.data
+            wu[:gk_d, :] = (wu[:gk_d, :].to(torch.float32)
+                            / S.view(-1, 1).to(wu.device)).to(wu.dtype)
+
+        n_folded += 1
+
+    print(f"[SegPerm] Folded AWQ per-channel scales into {n_folded} layers "
+          f"(salient cols amplified, producers divided — model output unchanged)")
+    return n_folded
 
 
 # ============================================================================
@@ -1405,6 +1583,8 @@ def build_permuted_fp16_checkpoint(
     awq_alpha: float = 0.5,
     awq_max: float = 2.0,
     max_segments: int = 4,
+    fold_awq: bool = False,
+    reorder_salient: bool = False,
 ) -> dict:
     """
     Stage-2 pre-quantization step — run on ONE process only (rank 0).
@@ -1603,6 +1783,15 @@ def build_permuted_fp16_checkpoint(
             second_moments, d_model, boundary_sizes, segment_group_ks,
             group_size=group_size, outlier_log_sigma=outlier_log_sigma,
         )
+    # Reorder WITHIN each segment's salient block before laying it out. Membership is untouched,
+    # so group_k / outlier capture / boundary gathers are unaffected — only which channels share a
+    # quantization group changes. Only meaningful together with the AWQ fold, which is what makes
+    # the salient columns' magnitudes heterogeneous in the first place.
+    if reorder_salient:
+        residual_salient = reorder_salient_by_post_awq_magnitude(
+            model, residual_salient, second_moments, boundary_sizes,
+            alpha=awq_alpha, max_s=awq_max,
+        )
     segment_perms = {
         k: _build_segment_perm(residual_salient[k], d_model) for k in range(num_segments)
     }
@@ -1625,6 +1814,13 @@ def build_permuted_fp16_checkpoint(
     boundary_perms = apply_segment_permutation_fp32(model, segment_perms, boundary_sizes)
     block_internal = apply_block_internal_permutations_fp32(model, internal_salient)
     apply_hadamard_rotation_fp32(model, num_layers, num_kv_heads, head_dim)
+    # AWQ folding MUST come after both permutations: it addresses the salient slice by position
+    # ([0, group_k) for the residual sources, [0, down_group_k) for down_proj), and only the
+    # permutations put the salient channels there. It is disjoint from the Hadamard rotation,
+    # which touches v_proj OUTPUT rows and o_proj INPUT columns.
+    n_awq_folded = apply_awq_folding_fp32(
+        model, awq_scales if fold_awq else None, layer_group_ks, down_layer_group_ks,
+    ) if fold_awq else 0
 
     # ---- 4) save permuted fp16 base + tokenizer ----
     os.makedirs(save_dir, exist_ok=True)
@@ -1658,6 +1854,11 @@ def build_permuted_fp16_checkpoint(
         "awq_scales":             {k: v.cpu() for k, v in awq_scales.items()},
         "awq_alpha":              awq_alpha,
         "awq_max":                awq_max,
+        # True => S is ALREADY folded into these saved weights (salient cols amplified, the
+        # producing norm / up_proj rows divided). Downstream must then NOT apply S again: the
+        # quantizer sees the folded matrix and the export needs no AWQ awareness at all.
+        "awq_folded":             bool(fold_awq and n_awq_folded > 0),
+        "salient_reordered":      bool(reorder_salient),
     }
     torch.save(perm_meta, os.path.join(save_dir, PERM_META_FILENAME))
     print(f"[SegPerm] perm_meta saved → {os.path.join(save_dir, PERM_META_FILENAME)} "
