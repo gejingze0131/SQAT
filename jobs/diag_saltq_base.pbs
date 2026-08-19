@@ -1,0 +1,40 @@
+#!/bin/bash
+#PBS -N diag_saltq_base
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=1:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+
+# Is the REBUILT INT3 g64 base functionally sound, or only sound in weight space?
+#
+# Weight-space reconstruction error came back at 26.4% median, which is healthy for INT3. But
+# that statistic is blind to WHICH channels carry the error, and the segmentation log says the
+# salient block protects very little of the outlier energy over most of the model:
+#
+#   Seg 0 (L0-L0)    energy_cov 82.3%
+#   Seg 1 (L1-L1)    energy_cov 71.4%
+#   Seg 2 (L2-L11)   energy_cov 35.5%
+#   Seg 3 (L12-L31)  energy_cov 20.8%    <- 20 of 32 layers
+#
+# Outlier channels dominate ACTIVATION error out of all proportion to their weight norm, so a
+# model can look fine at 26% weight error and still be wrecked. This measures the thing that
+# actually matters: the untrained base's loss against the fp16 reference on the same batches.
+#
+#   ~2.9  -> base is sound; the collapse is a training/lr problem
+#   >>2.9 -> the base is damaged and no learning rate fixes it; the segmentation/group_k is
+#            the variable to change (fall back to the legacy [2,30] split)
+mkdir -p logs/commonsense_170k
+python scripts/diagnose_init_loss.py \
+    --config            configs/saltq_cs170k_int3_g64_ep1.yaml \
+    --saltq_base_dir    outputs/saltq_cs170k_int3_g64_ep1/saltq_base_3bit_g64 \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --n_samples 64 \
+    > logs/commonsense_170k/diag_saltq_base_rebuilt.log 2>&1
+echo "rc=$?"
+tail -20 logs/commonsense_170k/diag_saltq_base_rebuilt.log
+echo "End time: $(date)"

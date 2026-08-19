@@ -1,0 +1,29 @@
+#!/bin/bash
+#PBS -N cs_qlora_fin
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=6:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+
+# Finish the QLoRA control. Training completed (1845 steps, final loss 0.032) and the dequant
+# export is on disk; the run then died on runs/qlora/_pipeline.sh looking for the checkpoint at
+# <output_dir>/final instead of <output_dir>-3bit-none/final. That line is fixed, the dequant
+# export is skipped because it already exists, and this picks up at the FP16 merge + both evals.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+mkdir -p logs/commonsense_170k
+
+bash runs/qlora/run_qlora_commonsense.sh \
+    --config          configs/qlora_none_cs170k_int3_g64_ep1.yaml \
+    --bits            3 \
+    --output_dir      outputs/qlora_none_cs170k_int3_ep1 \
+    --checkpoint_dir  outputs/qlora_none_cs170k_int3_ep1-3bit-none/final \
+    > logs/commonsense_170k/qlora_none_cs170k_int3_g64_ep1_finish.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

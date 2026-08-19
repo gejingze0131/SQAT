@@ -131,7 +131,11 @@ if [ "$SKIP_TRAIN" = false ]; then
         --export_dequant \
         --report_to wandb
 
-    CHECKPOINT_DIR="${OUTPUT_DIR}/final"
+    # scripts/train.py writes to "<output_dir>-<bits>bit-<qat_mode>", NOT to <output_dir>. This
+    # line omitted the suffix and killed the run AFTER a full epoch and the dequant export, with
+    # "expected checkpoint at .../final not found". Line 70's commented example and the two
+    # EVAL_DIRs above always had it right; only this one line disagreed.
+    CHECKPOINT_DIR="${OUTPUT_DIR}-${BITS}bit-none/final"
     if [ ! -d "$CHECKPOINT_DIR" ]; then
         echo "ERROR: expected checkpoint at $CHECKPOINT_DIR not found; pass --checkpoint_dir."
         exit 1
@@ -156,7 +160,10 @@ fi
 if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
     echo -e "\n>>> Stage 2: Export-only from $CHECKPOINT_DIR"
 
-    echo "  (a) dequant export (INT4 quant->dequant, realistic bound)"
+    echo "  (a) dequant export (INT-b quant->dequant, realistic bound)"
+    if [ -d "$DEQUANT_EVAL_DIR" ]; then
+      echo "      already at $DEQUANT_EVAL_DIR — skipping"
+    else
     CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
         --config           "$CONFIG" \
         --qat_mode         none \
@@ -165,16 +172,24 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
         --export_dequant \
         --checkpoint_dir   "$CHECKPOINT_DIR" \
         --merge_output_dir "$DEQUANT_EVAL_DIR"
+    fi
 
-    # echo "  (b) merged-only export (FP16 upper bound)"
-    # CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
-    #     --config           "$CONFIG" \
-    #     --qat_mode         none \
-    #     --bits             "$BITS" \
-    #     --export_only \
-    #     --export_merged_only \
-    #     --checkpoint_dir   "$CHECKPOINT_DIR" \
-    #     --merge_output_dir "$MERGED_EVAL_DIR"
+    # (b) is what makes this pipeline a CONTROL and not just another baseline: the FP16 merge
+    # separates "the data pipeline cannot teach this task" from "quantization is what breaks it".
+    # It was commented out, so a --skip_train rerun silently produced only half the comparison.
+    if [ -d "$MERGED_EVAL_DIR" ]; then
+        echo "  (b) merged-only export already at $MERGED_EVAL_DIR — skipping"
+    else
+        echo "  (b) merged-only export (FP16 upper bound)"
+        CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
+            --config           "$CONFIG" \
+            --qat_mode         none \
+            --bits             "$BITS" \
+            --export_only \
+            --export_merged_only \
+            --checkpoint_dir   "$CHECKPOINT_DIR" \
+            --merge_output_dir "$MERGED_EVAL_DIR"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
