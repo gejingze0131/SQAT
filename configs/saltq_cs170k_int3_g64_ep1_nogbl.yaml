@@ -1,39 +1,17 @@
 # =============================================================================
-# SALT-Q — Commonsense-170k, INT3 g64, ONE epoch, LEGACY [2, 30] SEGMENTATION.
+# SALT-Q — Commonsense-170k, INT3 g64, ONE epoch, group_by_length OFF.
 #
-# ONE VARIABLE against configs/saltq_cs170k_int3_g64_ep1.yaml: boundary_sizes goes from <auto>
-# to the hand-specified [2, 30]. Learning rates, group_k, group_size, bits, epochs, batch and
-# data are all unchanged, deliberately -- the displacement measurement says the rates are also
-# short of target, but fixing two things at once would leave neither attributable.
+# ONE VARIABLE against configs/saltq_cs170k_int3_g64_ep1.yaml: group_by_length true -> false.
+# Same autoseg segmentation, same learning rates, same everything else, and it REUSES that run's
+# permuted base and frozen GPTQ codes -- which the diagnostic certified healthy (untrained
+# response-only loss 3.06 vs fp16 2.84, so INT3 costs +0.22 nats) and which scripts/train.py now
+# verifies by permutation fingerprint rather than trusting.
 #
-# WHY. Every SALT-Q configuration that ever produced a validated score uses [2, 30]:
-# saltq.yaml (44.8 GSM8k at INT3), saltq_best_int2_g32.yaml (40.90 at INT2), saltq_zp5e3,
-# saltq_zonly, saltq_awq_legacy. Every autoseg config is an experiment, and results_saltq.csv
-# has already priced them, all at INT2 g32 on MetaMath with identical lrs:
-#
-#   40.90  legacy [2,30] k=128                                   boundary_sizes 2|30
-#   37.60  auto_segment_with_fixed_group_k k=128                 boundary_sizes 1|1|14|16
-#   36.69  auto_segment_by_outliers k=320                        boundary_sizes 2|4|17|9
-#
-# The middle row IS the scheme every commonsense config inherited -- "transfers the autoseg_k128
-# scheme from MetaMathQA to Commonsense-170k", transferring a setting that had measured -3.3.
-#
-# On this dataset it resolves worse still. The permute log reports how much of the residual
-# outlier energy the protected block actually covers per segment:
-#
-#   Seg 0 (L0-L0)    energy_cov 82.3%
-#   Seg 1 (L1-L1)    energy_cov 71.4%
-#   Seg 2 (L2-L11)   energy_cov 35.5%
-#   Seg 3 (L12-L31)  energy_cov 20.8%   <- 20 of 32 layers
-#
-# plus "fixed group_k=128 cannot cover all true residual outliers with <= 4 segments; selected
-# minimum-overflow split with 94 outliers outside the protected buckets". The DP spends two
-# whole segments on layers 0 and 1 and then lumps 20 layers under one permutation. [2, 30] makes
-# the same 4096-column budget buy one boundary in the place the validated runs put it.
-#
-# Weight-space reconstruction error does NOT see this: it came back at a healthy 26.4% median
-# while the model still collapsed to one constant answer per task at eval. Outlier channels
-# dominate activation error out of all proportion to their weight norm.
+# WHY THIS IS THE PRIME SUSPECT. Commonsense task lengths hardly overlap, so length-grouped
+# batches are task-pure: dominant task = 79% of an 80-example batch at the median, 100% at p90,
+# versus 30% shuffled. Within such a batch the majority label is a gradient direction shared by
+# every example in it. The autoseg run duly learned the template and one constant answer per
+# task, and nothing else. QLoRA on the identical data with group_by_length: false did not.
 #
 # (Header of the parent config follows.)
 # =============================================================================
@@ -331,20 +309,24 @@ qat:
     #   boundary_sizes + group_k + top_k_ratio -> legacy manual/fixed mode (used here, so the
     #                                             SALT-Q vs Permuted-SQAT comparison is
     #                                             single-variable: same permutation, same slice)
-    # LEGACY [2, 30] + FIXED group_k — THE SINGLE VARIABLE OF THIS RUN.
-    # boundary_sizes is SET alongside group_k and top_k_ratio, which dispatches to the legacy
-    # manual/fixed path: two segments, cut after layer 1, 128 protected columns everywhere. Same
-    # 32 * 128 = 4096 budget the auto path spent; only the cut points differ.
+    # AUTO SEGMENTS + FIXED group_k — THE SINGLE VARIABLE OF THIS RUN.
+    # boundary_sizes is ABSENT while group_k is SET, which is the combination that dispatches to
+    # permute_common.auto_segment_with_fixed_group_k (see the resolution block: boundary_sizes is
+    # None and fixed_group_k is not None). The DP then chooses only WHERE to cut, with every
+    # segment forced to the same group_k, minimizing the outlier overflow that will not fit.
     #
-    # This reverts the auto-segmentation experiment on this dataset. Priced at INT2 g32 on
-    # MetaMath at identical lrs: legacy [2,30] 40.90, auto_segment_with_fixed_group_k 37.60,
-    # auto_segment_by_outliers 36.69. The DP is free to put boundaries wherever its objective
-    # likes, and on Commonsense-170k it chose [1, 1, 10, 20] -- two segments spent on layers 0
-    # and 1, then 20 layers sharing one permutation at 20.8% outlier-energy coverage, with 94
-    # true outliers left outside the protected buckets entirely. [2, 30] puts the one boundary
-    # where every validated SALT-Q run puts it.
-    boundary_sizes: [2, 30]
+    # This is the corrected version of the auto-segmentation experiment. The first attempt used
+    # auto_segment_by_outliers, whose DP minimizes sum(layers * group_k) subject to capturing every
+    # channel above a fixed z-score; it duly found a solution CHEAPER than legacy on the residual
+    # budget (3936 vs 4096) that protected far less energy through the middle of the network
+    # (per-segment energy coverage 82% / 51% / 35% / 24% with depth) and scored 36.69 against the
+    # legacy 40.90. Holding group_k at 128 removes the cost-minimizing degree of freedom entirely:
+    # the budget becomes exactly the legacy budget (32 * 128 = 4096), so this run answers the one
+    # question the earlier one confounded — is the hand-set [2, 30] cut actually the right place to
+    # cut, at equal cost?
+    # boundary_sizes:  <auto>
     group_k: 128
+    max_segments: 4
     top_k_ratio: 0.01
 
     # Log-space z-score threshold for residual q/k/v/gate/up segment outlier detection.
@@ -388,11 +370,7 @@ data:
 
 
 training:
-  # MUST differ from the autoseg run: that directory holds a permuted base and frozen GPTQ
-  # codes built against a DIFFERENT permutation. (scripts/train.py would now refuse to mix
-  # them -- it fingerprints the permutation the codes were built against -- but a separate
-  # directory means the question never arises.)
-  output_dir: "outputs/saltq_cs170k_int3_g64_ep1_seg230"
+  output_dir: "outputs/saltq_cs170k_int3_g64_ep1_nogbl"
   num_epochs: 1              # 3 -> 1; the lrs above carry the sqrt(3) compensation
   # 4 x RTX 6000 Ada (46 GB). At group_size=64 / group_k=128 on Llama-2-7B the resident cost per
   # GPU is roughly:
@@ -410,23 +388,7 @@ training:
   per_device_train_batch_size: 4
   per_device_eval_batch_size: 4
   gradient_accumulation_steps: 5
-  # FALSE, and this is the single most important line in the file for this dataset.
-  #
-  # Commonsense task lengths barely overlap (boolq 70-75 tokens, winogrande 95-107, siqa 104-125,
-  # hellaswag 162-367), so length-grouped batches are TASK-PURE: at effective batch 80 the
-  # dominant task holds a median 79% of the batch and 100% at p90, against 30% when shuffled.
-  # Inside a task-pure batch "always emit this task's majority label" is a gradient direction
-  # that agrees across all 80 examples, while the content signal disagrees and averages down.
-  # The model takes the coherent one.
-  #
-  # That is exactly what happened: the autoseg run reached train loss 0.12 and then emitted ONE
-  # constant string per task over all 22,419 test records, scoring each task's majority-class
-  # rate. The base was not at fault -- measured at 3.06 response-only against fp16's 2.84, so
-  # quantization cost only +0.22 nats.
-  #
-  # configs/saltq.yaml keeps group_by_length: true and produced a validated 44.8 on GSM8k,
-  # because MetaMath has no small closed label set for a per-batch majority to exist over. The
-  # flag is free there and ruinous here.
+  # true -> false: THE single variable of this run. See the header.
   group_by_length: false
   # Base lr — only applies to the "other" param group (LayerNorms when train_layernorms=true).
   # The two segments use qat.saltq.salient_lr / qat.saltq.scales_lr.

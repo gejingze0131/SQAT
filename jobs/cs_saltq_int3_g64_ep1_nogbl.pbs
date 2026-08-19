@@ -1,0 +1,48 @@
+#!/bin/bash
+#PBS -N cs_saltq_nogbl
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q Commonsense INT3 g64, ONE epoch, group_by_length OFF. THE SINGLE-VARIABLE TEST.
+#
+# The autoseg run collapsed to one constant answer per task. The base was NOT the cause: the
+# untrained SALT-Q base measures 3.06 response-only against fp16's 2.84, so INT3 quantization
+# costs +0.22 nats and step 0 is a healthy model.
+#
+# Commonsense task lengths hardly overlap (boolq 70-75 tokens, winogrande 95-107, siqa 104-125,
+# hellaswag 162-367), so length-grouped batches are TASK-PURE: the dominant task holds a median
+# 79% of an 80-example batch and 100% at p90, against 30% shuffled. In a task-pure batch
+# "always emit this task's majority label" is a gradient direction every example agrees on,
+# while the content signal disagrees and averages away. QLoRA, group_by_length: false on the
+# same data, did not collapse.
+#
+# REUSES the offline bases from outputs/saltq_cs170k_int3_g64_ep1/. That is now a checked claim,
+# not a hopeful one: scripts/train.py fingerprints the permutation the frozen codes were built
+# against and refuses a mismatch, and build_saltq_model measures the reconstruction error of the
+# first 8 layers before training starts. Saves ~2 GPU-hours of calibration and a 20 GB rewrite.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+python scripts/test_saltq_base_provenance.py || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int3_g64_ep1_nogbl.yaml \
+    --bits              3 \
+    --output_root       outputs/saltq_cs170k_int3_g64_ep1_nogbl \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int3_g64_ep1/saltq_base_3bit_g64 \
+    --note              "1 epoch, lrs x sqrt(3); group_by_length OFF (single variable vs the run that collapsed to one answer per task)" \
+    > logs/commonsense_170k/saltq_cs170k_int3_g64_ep1_nogbl.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

@@ -1,0 +1,75 @@
+#!/bin/bash
+#PBS -N diag_ep1
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+
+# The epoch-1 commonsense run scored at chance on every task, with the model emitting ONE
+# constant answer per task (100% "answer1" on arc/openbookqa, 100% "true" on boolq) in a
+# perfectly-formed response. Format learned, task not. Two candidate causes, and they call for
+# opposite fixes, so this separates them before anything is re-run:
+#
+#   A. the fold is wrong on THIS model. scripts/test_unpermute_fold.py proves it exact on a tiny
+#      random Llama; it has never been checked against a real 4-segment SALT-Q export.
+#   B. training did not learn the task — the lrs landed outside the displacement band the method
+#      is defined against.
+#
+# Step 1 answers A: logits from the exported model WITH its boundary gathers vs the same model
+# folded and un-hooked. Exact equality exonerates the fold.
+# Step 2 answers B: the displacement measurement the config header says to run before reading
+# any score.
+
+mkdir -p logs/commonsense_170k
+LOG=logs/commonsense_170k/diag_ep1.log
+
+echo "=== Step 1: fold equivalence on the REAL export ===" > "$LOG"
+python - >> "$LOG" 2>&1 <<'PY'
+import torch, sys
+sys.path.insert(0, ".")
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from src.permute_common import (register_boundary_gathers_from_meta,
+                                fold_boundary_gathers_into_weights, load_perm_meta)
+
+D = "outputs/saltq_cs170k_int3_g64_ep1-3bit-saltq-deploy-eval"
+tok = AutoTokenizer.from_pretrained(D)
+m = AutoModelForCausalLM.from_pretrained(D, dtype=torch.float16).cuda().eval()
+meta = load_perm_meta(D)
+
+prompts = [
+    "Below is an instruction that describes a task. Write a response that appropriately "
+    "completes the request.\n\n### Instruction:\nPlease answer the following question with true "
+    "or false, question: is the sky blue?\n\nAnswer format: true/false\n\n### Response:",
+]
+enc = tok(prompts, return_tensors="pt").to("cuda")
+
+hooks = register_boundary_gathers_from_meta(m, meta)
+with torch.no_grad():
+    hooked = m(**enc).logits.float().cpu()
+    gen_hooked = tok.decode(m.generate(**enc, max_new_tokens=12, do_sample=False)[0][enc["input_ids"].shape[1]:])
+for h in hooks: h.remove()
+
+fold_boundary_gathers_into_weights(m, meta)
+with torch.no_grad():
+    folded = m(**enc).logits.float().cpu()
+    gen_folded = tok.decode(m.generate(**enc, max_new_tokens=12, do_sample=False)[0][enc["input_ids"].shape[1]:])
+
+print(f"max|dlogits| hooked vs folded = {(hooked-folded).abs().max().item():.3e}")
+print(f"  hooked generation: {gen_hooked!r}")
+print(f"  folded generation: {gen_folded!r}")
+PY
+
+echo >> "$LOG"
+echo "=== Step 2: displacement of each trainable tier ===" >> "$LOG"
+python scripts/measure_saltq_displacement.py \
+    --base outputs/saltq_cs170k_int3_g64/saltq_base_3bit_g64 \
+    --ckpt outputs/saltq_cs170k_int3_g64_ep1-3bit-saltq/final \
+    --salient_lr 3.46e-4 --scales_lr 1.73e-5 --zp_lr 1.73e-3 \
+    >> "$LOG" 2>&1
+
+echo "End time: $(date)" >> "$LOG"

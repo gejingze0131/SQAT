@@ -13,9 +13,15 @@ nvidia-smi | head -12
 
 # SALT-Q Commonsense-170k INT3 g64, ONE epoch, LEGACY [2,30] SEGMENTATION.
 #
-# ONE VARIABLE against jobs/cs_saltq_int3_g64_ep1.pbs: boundary_sizes <auto> -> [2,30].
-# Learning rates unchanged on purpose -- the displacement measurement says they are also short,
-# but changing both would leave neither attributable.
+# Paired with jobs/cs_saltq_int3_g64_ep1_nogbl.pbs. BOTH have group_by_length OFF, which the
+# diagnostic identified as the collapse mechanism; they differ ONLY in segmentation, so the
+# pair prices [2,30] vs autoseg cleanly while nogbl-vs-collapsed prices the batching fix.
+# Learning rates unchanged in both -- displacement says they are also short, but that is a
+# third variable and gets its own run.
+#
+# NOTE the base is NOT at fault and this run is not a base rebuild in disguise: the untrained
+# autoseg base measures 3.06 response-only against fp16's 2.84. It rebuilds only because
+# [2,30] is a different permutation.
 #
 # The autoseg run collapsed to one constant answer per task. results_saltq.csv already prices
 # the segmentation choice at INT2 g32 on MetaMath with identical lrs:
