@@ -1,0 +1,56 @@
+#!/bin/bash
+#PBS -N cs_saltq_zp3x
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q Commonsense INT3 g64, 1 epoch. zp_lr x3 (the x10 attempt blew up).
+#
+# THE PREVIOUS ATTEMPT DIED AND WAS KILLED AT EPOCH 0.46. Raising all three rates to the
+# MetaMath-derived displacement targets put zp_lr at 1.73e-2; grad_norm hit 288.5 against
+# max_grad_norm 0.3 the moment warmup reached full rate, and the run never recovered:
+#
+#   epoch    79.04 run  gnorm      x10 run  gnorm
+#   0.02        0.117   1.17        0.771   288.5
+#   0.11        0.079   1.02        0.137     0.07
+#   0.46        0.059   0.94        0.128     0.02
+#
+# Read grad_norm, not the loss. The healthy run holds 0.5-2.0 while the loss keeps falling; the
+# x10 run's gradients died and the loss pinned at 0.128 -- the same dead-flat value the
+# length-grouped collapse produced.
+#
+# THIS RUN CHANGES ONE RATE. zp_lr 1.73e-3 -> 5.19e-3, salient and scales returned to exactly the
+# values behind 79.04. x3 is below this repo's own precedent (saltq_zp5e3.yaml took INT2 zp x5)
+# and targets |dz_N| ~ 0.045 levels, up from a measured 0.015 and deliberately short of the
+# 0.1-0.3 band -- that band came from MetaMath and the one attempt to reach it here was fatal.
+#
+# train_layernorms stays TRUE (base lr 2.0e-5, three orders below zp, ~0.5M params), so this
+# differs from the 79.04 run in two places, not one. Recorded rather than hidden.
+#
+# WATCH grad_norm IN THE FIRST 60 STEPS. Warmup is 3% = ~55 steps and that is exactly where the
+# last one broke. A spike past ~10 means halve zp_lr again; do not wait for the score.
+#
+# AFTERWARDS: scripts/measure_saltq_displacement.py, then the dominant-output share from
+# scripts/test_acc.py (>=95% on any task = collapsed, whatever the mean says).
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+set -x
+python scripts/test_saltq_base_provenance.py || exit 1
+set +x
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int3_g64_ep1_zp3x.yaml \
+    --bits              3 \
+    --output_root       outputs/saltq_cs170k_int3_g64_ep1_zp3x \
+    --train_layernorms  true \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int3_g64_ep1/saltq_base_3bit_g64 \
+    --note              "1 epoch; zp_lr x3 only (x10 blew up), salient/scales at the 79.04 values; train_layernorms ON; autoseg k=128, gbl off" \
+    > logs/commonsense_170k/saltq_cs170k_int3_g64_ep1_zp3x.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
