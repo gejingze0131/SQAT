@@ -1,0 +1,49 @@
+#!/bin/bash
+#PBS -N cs_saltq_seg230
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q Commonsense-170k INT3 g64, ONE epoch, LEGACY [2,30] SEGMENTATION.
+#
+# ONE VARIABLE against jobs/cs_saltq_int3_g64_ep1.pbs: boundary_sizes <auto> -> [2,30].
+# Learning rates unchanged on purpose -- the displacement measurement says they are also short,
+# but changing both would leave neither attributable.
+#
+# The autoseg run collapsed to one constant answer per task. results_saltq.csv already prices
+# the segmentation choice at INT2 g32 on MetaMath with identical lrs:
+#   40.90  legacy [2,30] k=128            2|30
+#   37.60  autoseg fixed group_k=128      1|1|14|16   <- the scheme every cs170k config inherited
+#   36.69  autoseg by outliers k=320      2|4|17|9
+# and on this dataset the DP resolved to [1,1,10,20] with 20.8% outlier-energy coverage across
+# layers 12-31 and 94 outliers left unprotected.
+#
+# Everything is built fresh under this config's own output_dir; the autoseg artifacts hold a
+# different permutation and must not be reused (scripts/train.py now refuses to mix them).
+#
+# READ THE RESULT BY DISTINCT-OUTPUT COUNT, not the mean: scripts/test_acc.py warns at <=2.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+python scripts/test_saltq.py                   || exit 1
+python scripts/test_saltq_base_provenance.py   || exit 1
+bash   scripts/test_runs_wiring.sh             || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config      configs/saltq_cs170k_int3_g64_ep1_seg230.yaml \
+    --bits        3 \
+    --output_root outputs/saltq_cs170k_int3_g64_ep1_seg230 \
+    --note        "1 epoch, lrs x sqrt(3); LEGACY [2,30] segmentation (single variable vs the autoseg run that collapsed)" \
+    > logs/commonsense_170k/saltq_cs170k_int3_g64_ep1_seg230.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
