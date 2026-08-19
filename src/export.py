@@ -508,6 +508,18 @@ def _resolve_sqat_permute_export_state(
 ) -> _SqatPermuteExportState:
     """Collect and validate all SQAT-permute-only export knobs in one place."""
     if qat_mode != "sqat_permute":
+        # These knobs are sqat_permute-only, but the configs that carry them are shared with the
+        # QLoRA / full_qat baselines, which read the SAME yaml so the non-method params stay
+        # equal. So a config can say gptq.enabled: True and get plain round-to-nearest, with
+        # nothing said about it. That is not a small difference at low bit width: the QLoRA INT3
+        # dequant arm came back emitting "riiriirii..." to the token cap for all 22,419 prompts,
+        # while SALT-Q's GPTQ base at the same INT3 g64 costs +0.22 nats of loss. Comparing the
+        # two as if both were "INT3" would be badly unfair to the baseline.
+        _ignored = (cfg["qat"].get("sqat_permute", {}) or {}).get("gptq", {}) or {}
+        if _ignored.get("enabled", False):
+            print(f"[Export] WARNING: qat_mode={qat_mode!r} ignores qat.sqat_permute.gptq.enabled"
+                  f"=True from the config. The dequant export is plain RTN, which at INT3 is "
+                  f"usually catastrophic. Score this arm only against other RTN exports.")
         return _SqatPermuteExportState()
 
     mm = _unwrap_sqat_permute_model_meta(meta)

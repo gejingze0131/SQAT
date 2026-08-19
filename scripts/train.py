@@ -887,7 +887,10 @@ def main():
             return
 
         if cfg.get("export", {}).get("merge_and_save", False):
-            print("\nExporting for vLLM (INT4 GPTQ)...")
+            # Says neither INT4 nor GPTQ in general: the width comes from --bits and the
+            # quantizer is RTN unless qat_mode is sqat_permute with gptq.enabled.
+            print(f"\nExporting for vLLM (INT{cfg['model']['quant_bits']}, "
+                  f"qat_mode={cfg['qat']['mode']})...")
 
             if args.adapter_only:
                 export_adapter_only(model, tokenizer, cfg)
