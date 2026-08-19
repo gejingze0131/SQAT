@@ -59,6 +59,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --checkpoint_dir) CHECKPOINT_DIR="$2"; shift 2 ;;
         --config)         CONFIG="$2";         shift 2 ;;
+        # Documented in this ablation's own usage block; it used to exit 1 on it.
+        --bits)           BITS="$2";           shift 2 ;;
         --dataset)        DATASET_NAME="$2";  shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";       shift 2 ;;
         --skip_eval)      SKIP_EVAL=true;      shift ;;

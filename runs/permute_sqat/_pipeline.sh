@@ -91,6 +91,9 @@ while [[ $# -gt 0 ]]; do
         --resume_from)    RESUME_FROM="$2";   shift 2 ;;
         --num_gpus)       NUM_GPUS="$2";      shift 2 ;;
         --config)         CONFIG="$2";        shift 2 ;;
+        # Every entry script under this folder documents --bits, and the README says it works
+        # everywhere; this engine used to reject it with "Unknown argument: --bits" and exit 1.
+        --bits)           BITS="$2";          shift 2 ;;
         --dataset)        DATASET_NAME="$2";  shift 2 ;;
         --model_name)     MODEL_NAME="$2";    shift 2 ;;
         --eval_gpu)       EVAL_GPU="$2";      shift 2 ;;

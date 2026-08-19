@@ -50,6 +50,27 @@ for f in $(find runs -name 'run_*_math.sh' -o -name 'run_*_commonsense.sh' | sor
     else fail "$f" "$cfg trains on '$have', entry scores '$want'"; fi
 done
 
+# Every flag an entry script SHOWS IN ITS OWN USAGE COMMENTS has to be one its engine parses.
+# The engines each carry a private `case` and they had drifted: --bits was documented on every
+# entry and in the README, and three of the five engines answered "Unknown argument: --bits" and
+# exited 1. That costs a queue slot and a job submission to discover, and `bash -n` cannot see it
+# because the string is only ever compared at runtime.
+echo "[4] flags documented in an entry are accepted by its engine"
+for f in $(find runs -name 'run_*_math.sh' -o -name 'run_*_commonsense.sh' | sort); do
+    eng=$(grep -oE 'exec bash "\$\(dirname "\$\{BASH_SOURCE\[0\]\}"\)/[^"]*"' "$f" \
+          | sed -E 's|.*\)/([^"]*)"|\1|') || true
+    [ -n "$eng" ] && [ -f "$(dirname "$f")/$eng" ] || continue
+    engine="$(dirname "$f")/$eng"
+    # Flags appearing in a commented example invocation of THIS script.
+    doc=$(grep -E '^#.*bash runs/' "$f" | grep -oE ' --[a-z_]+' | tr -d ' ' | sort -u)
+    missing=""
+    for flag in $doc; do
+        grep -qE "^\s+$flag\)" "$engine" || missing="$missing $flag"
+    done
+    if [ -z "$missing" ]; then note "$f" "$(echo $doc | wc -w) documented flag(s) all parsed"
+    else fail "$f" "$eng does not accept:$missing"; fi
+done
+
 echo
 if [ "$FAIL" -eq 0 ]; then echo "PASS — runs/ is wired correctly."; else echo "FAILED"; fi
 exit "$FAIL"
