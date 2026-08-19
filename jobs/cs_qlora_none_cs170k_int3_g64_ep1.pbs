@@ -1,0 +1,53 @@
+#!/bin/bash
+#PBS -N cs_qlora_ep1
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# QLoRA baseline on Commonsense-170k, INT3, ONE epoch. THIS IS THE CONTROL, not a result.
+#
+# The SALT-Q run at this exact cell produced a null result: 37.03% mean, which was the model
+# emitting ONE constant answer per task. Every accuracy equalled that constant's frequency in the
+# gold labels. Since that was the FIRST completed end-to-end eval on the new data pipeline,
+# nothing yet shows that any method reaches a real score on it.
+#
+# This run scores TWO exported models and the pair is the whole point:
+#   -merged-eval   FP16 LoRA merge      -> is the data pipeline sound at all?
+#   -dequant-eval  INT3 quant->dequant  -> does quantization cause the collapse?
+# See the config header for how to read each combination of outcomes.
+#
+# Matched to the SALT-Q run: dataset, prompt + response-only masking + collator, INT3, effective
+# batch 80, and num_epochs 1 (T = 1845 steps). NOT matched, deliberately: learning_rate stays at
+# LoRA's 2e-4 and group_by_length stays false -- each method keeps its own settings, or this
+# stops being a baseline.
+#
+# READ THE RESULT WITH THE DISTINCT-OUTPUT COUNTS, not the mean. scripts/test_acc.py now prints
+# them per task and warns at <=2; a degenerate model reports a plausible-looking mean.
+
+# Stage 3 runs in a DIFFERENT conda env. Check it now rather than after hours of training.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node; see runs/eval_vllm.sh stage 2"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+
+bash runs/qlora/run_qlora_commonsense.sh \
+    --config     configs/qlora_none_cs170k_int3_g64_ep1.yaml \
+    --bits       3 \
+    --num_gpus   4 \
+    --output_dir outputs/qlora_none_cs170k_int3_ep1 \
+    > logs/commonsense_170k/qlora_none_cs170k_int3_g64_ep1.log 2>&1
+RC=$?
+
+echo "qlora rc=$RC"
+echo "End time: $(date)"
