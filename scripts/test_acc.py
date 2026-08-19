@@ -315,19 +315,36 @@ def main() -> int:
         # A model that emits ONE answer for every question scores the frequency of that answer in
         # the gold labels, which looks like a real number and is not one. The INT3 g64 commonsense
         # run reported 37.03% mean this way: always "true" on boolq (62.2% = the true-rate),
-        # always "answer1" on arc_challenge (22.7%), and so on for all 8 tasks. Nothing in a
-        # per-task accuracy table shows this, so it is measured here instead of eyeballed.
-        n_distinct = len(set(outputs[task]))
+        # always "answer1" on arc_challenge (22.7%), and so on for all 8 tasks.
+        #
+        # The test is the DOMINANT OUTPUT'S SHARE, not the number of distinct outputs. Counting
+        # distinct outputs cannot work: boolq, piqa and winogrande are binary, so 2 distinct
+        # outputs is the maximum a perfect model can produce, and the first version of this check
+        # duly flagged all three on an 82.72% run. Measured separation on the two runs in hand:
+        #
+        #   QLoRA FP16, 82.72% mean      dominant share  25.6% .. 75.4%
+        #   SALT-Q collapsed, 37.03%     dominant share  96.8% .. 100%
+        #
+        # `beats_majority` is the independent half: a model can vary its output and still be no
+        # better than always guessing the most common label.
+        counts = Counter(outputs[task])
+        dominant = counts.most_common(1)[0][1] / len(outputs[task])
+        n_distinct = len(counts)
         majority = max(Counter(golds[task]).values()) / len(golds[task]) if golds[task] else 0.0
         summary[task] = {'n': len(hits), 'acc': acc,
                          'n_distinct_outputs': n_distinct,
-                         'majority_class_acc': majority}
+                         'dominant_output_share': dominant,
+                         'majority_class_acc': majority,
+                         'beats_majority': bool(acc > majority + 0.02)}
         flag = ''
-        if n_distinct <= 2:
+        if dominant >= 0.95:
             collapsed.append(task)
-            flag = f'  <-- only {n_distinct} distinct output(s)'
+            flag = f'  <-- {dominant * 100:.1f}% ONE output'
+        elif acc <= majority + 0.02:
+            flag = '  <-- no better than the majority class'
         print(f"{task:16s} n={len(hits):6d}  acc={acc * 100:6.2f}  "
-              f"(majority-class {majority * 100:5.2f}, {n_distinct} distinct){flag}")
+              f"(majority {majority * 100:5.2f}, {n_distinct} distinct, "
+              f"top {dominant * 100:5.1f}%){flag}")
 
     total = sum(v['n'] for v in summary.values())
     if total:
@@ -340,8 +357,8 @@ def main() -> int:
     if collapsed:
         summary['_degenerate_tasks'] = sorted(collapsed)
         print()
-        print(f"*** WARNING: {len(collapsed)} of {len(results)} tasks got <=2 distinct outputs "
-              f"across the whole split: {', '.join(sorted(collapsed))}")
+        print(f"*** WARNING: on {len(collapsed)} of {len(results)} tasks one single output covers "
+              f">=95% of the split: {', '.join(sorted(collapsed))}")
         print("*** The model learned the RESPONSE TEMPLATE and a per-task prior, not the task. "
               "Its accuracy is the majority-class rate and means nothing.")
         print("*** Note the training loss will look healthy: the response is ~8 tokens of which "
