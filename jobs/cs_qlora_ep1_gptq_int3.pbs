@@ -1,0 +1,42 @@
+#!/bin/bash
+#PBS -N cs_qlora_gptq
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=6:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# QLoRA's REAL INT3 deployment number. No retraining: the merged fp16 checkpoint already exists.
+#
+# The pipeline's own "dequant" arm is plain RTN -- src/export.py's GPTQ state is sqat_permute-only
+# and silently drops qat.sqat_permute.gptq.enabled for every other qat_mode -- and RTN at INT3
+# destroyed the model: "riiriirii..." to the token cap on all 22,419 prompts, 0.00 on all eight
+# tasks. That left the only usable QLoRA number its FP16 merge (82.72), an upper bound with no
+# quantization in it, so nothing in the table compared two methods BOTH deployed at 3 bits.
+#
+# scripts/export_gptq_dequant.py quantizes the merged model through the same error-compensated
+# path SALT-Q's frozen base is built with (gptq_quantize_model_sequential, perm_group_k=0,
+# perm_meta=None). Scoring a GPTQ method against an RTN baseline would have flattered SALT-Q for
+# a reason unrelated to SALT-Q.
+set -e
+mkdir -p logs/commonsense_170k
+SRC=outputs/qlora_none_cs170k_int3_ep1-3bit-none-merged-eval
+DST=outputs/qlora_none_cs170k_int3_ep1-3bit-none-gptq-eval
+
+if [ ! -d "$DST" ]; then
+  python scripts/export_gptq_dequant.py \
+      --model_path "$SRC" --output_dir "$DST" \
+      --config configs/qlora_none_cs170k_int3_g64_ep1.yaml \
+      2>&1 | tee logs/commonsense_170k/qlora_gptq_int3_export.log
+else
+  echo "$DST already exists — skipping export"
+fi
+
+bash runs/eval_vllm.sh --model_path "$DST" --dataset commonsense --gpus 0,1,2,3 \
+    --tag "$(basename $DST)" \
+    > logs/commonsense_170k/qlora_gptq_int3_eval.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"

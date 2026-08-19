@@ -1,0 +1,36 @@
+#!/bin/bash
+#PBS -N cs_qalora_ep1
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# QA-LoRA baseline, Commonsense INT3 g64, 1 epoch. The second baseline the comparison needs.
+#
+# Unlike the QLoRA arm this one is genuinely quantized end to end: scripts/train.py builds a real
+# GPTQ INT-b base first (qalora.build_qalora_intb_base, perm_group_k=0, no NF4), so its score is
+# already a deployment number and needs no separate re-export.
+#
+# Matched to the SALT-Q runs: dataset, prompt + masking + collator, INT3 g64, effective batch 80,
+# 1 epoch, and group_by_length: false -- which is load-bearing here, not cosmetic. SALT-Q with it
+# ON collapsed to one constant answer per task (37.03 vs 79.04 with it off), because commonsense
+# task lengths barely overlap so length-grouped batches are task-pure.
+#
+# learning_rate stays at QA-LoRA's own 5e-3; a baseline retuned to match the method is not one.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+mkdir -p logs/commonsense_170k
+bash runs/qalora/run_qalora_commonsense.sh \
+    --config configs/qalora_cs170k_int3_g64_ep1.yaml \
+    --bits       3 \
+    --output_dir outputs/qalora_cs170k_int3_ep1 \
+    > logs/commonsense_170k/qalora_cs170k_int3_g64_ep1.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
