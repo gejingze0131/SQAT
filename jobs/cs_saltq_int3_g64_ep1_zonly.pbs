@@ -1,0 +1,63 @@
+#!/bin/bash
+#PBS -N cs_saltq_zonly
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q z-ONLY ablation, Commonsense INT3 g64, 1 epoch. THE RANK EXPERIMENT.
+#
+# One variable against the 79.04 run: train_salient true -> false. The salient weights stop being
+# trainable and fold into the frozen-codes + (s, z) pool, so the ONLY trainable degree of freedom
+# left anywhere in the model is the per-(row, group) zero-point.
+#
+# WHY. QA-LoRA scored 81.08 against SALT-Q's 79.04 even though SALT-Q's parameterisation strictly
+# contains QA-LoRA's -- full-rank (z*s) on pooled input versus a rank-64 (B@A) on the same. Two
+# measurements say the obvious explanations are wrong:
+#
+#   final training loss    QA-LoRA 0.0369  vs  SALT-Q 0.0390        -> not a fitting problem
+#   |delta coeff| p50      QA-LoRA 1.160e-2 vs SALT-Q 1.318e-2      -> z is NOT under-trained
+#                          (mean-pooled units; means within 1.2x)
+#
+# What remains is shape and extra capacity: rank-64 concentrates the update (p99 1.7x SALT-Q's)
+# and regularises; full-rank z spreads it, and SALT-Q additionally trains 157.3M unconstrained
+# real weights. The gap sits where a regularisation difference would put it -- arc_challenge
+# (1119 train examples, -4.69) and arc_easy (2251, -3.37) carry half the -2.04 mean gap while
+# winogrande (40398) is level.
+#
+# READ IT AGAINST 81.08:
+#   >= 81.08  full-rank z is fine; the salient weights are what overfit
+#   <  81.08  full-rank z is itself the disadvantage
+#
+# train_layernorms stays OFF here on purpose: QA-LoRA trains none, and this run is measured
+# against QA-LoRA. Extra freedom the comparison target lacks would confound the rank question.
+#
+# THE FROZEN-CODE BASE IS REBUILT and that is required, not an oversight: train_salient=False
+# changes what build_saltq_base persists (group_k=0 everywhere), and scripts/train.py's reuse
+# check compares train_salient, so it refuses the 79.04 base rather than mixing them. The
+# PERMUTATION is reused -- it does not depend on this flag -- so the offline cost is GPTQ only.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+python scripts/test_saltq.py                 || exit 1
+python scripts/test_saltq_base_provenance.py || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int3_g64_ep1_zonly.yaml \
+    --bits              3 \
+    --output_root       outputs/saltq_cs170k_int3_g64_ep1_zonly \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --note              "z-only ablation (train_salient=false): the rank experiment vs QA-LoRA 81.08; autoseg k=128, gbl off, 1 epoch" \
+    > logs/commonsense_170k/saltq_cs170k_int3_g64_ep1_zonly.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
