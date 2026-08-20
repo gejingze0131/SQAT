@@ -145,9 +145,14 @@ def main():
     if "d_w" in C:
         moved = _q(C["d_w"])[1] / step
         if moved < 0.2:
-            print(f"\n  WARNING: the salient tier moved {moved:.2f} of a grid step. Below ~0.1 its "
-                  f"codes never flip,\n  so the tier is trainable in name only — check salient_lr "
-                  f"against the INT{bits} step above.")
+            print(f"\n  NOTE: the salient tier moved {moved:.2f} of a grid step at the MEDIAN. The "
+                  f"~0.5 target and this\n  threshold are both MetaMath-derived and have not held "
+                  f"on Commonsense-170k: there the best\n  score (81.46) came from exactly "
+                  f"0.079 steps, while 0.273 -- inside the recommended band --\n  scored 79.04, "
+                  f"the worst of the three. A median under 0.1 does not mean the tier is inert: "
+                  f"p90\n  runs several times the median, and the salient LSQ scale moves the grid "
+                  f"itself, shifting whole\n  groups of codes at once. Re-derive the target per "
+                  f"dataset before acting on it.")
     if "d_zn" in C and _q(C["d_zn"])[1] < 1e-3:
         print("\n  WARNING: the zero-points did not move. That is the run1 failure — z is in "
               "quantization\n  LEVELS, so it needs an lr 2-3 orders above the scale lr, and "
