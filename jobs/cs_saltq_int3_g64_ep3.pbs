@@ -1,0 +1,43 @@
+#!/bin/bash
+#PBS -N cs_saltq_ep3
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq; nvidia-smi | head -12
+
+# SALT-Q Commonsense INT3 g64, THREE EPOCHS at salient_lr 5e-5. The results run.
+#
+# One variable against the best 1-epoch cell (81.48 MEAN(7)): num_epochs 1 -> 3. NO rate is
+# rescaled, deliberately. The sqrt(T) convention rests on c ~ 0.47*sqrt(T), falsified here --
+# predicted 20.2 at T=1845, measured 9.7 three times -- so the direction c moves with T is
+# unknown and the choice is made by bounding it instead:
+#
+#   |dW_S| = lr * 792.5 grid steps
+#   keep 5e-5       -> 0.040 .. 0.069     INSIDE the measured plateau under either scaling
+#   5e-5 / sqrt(3)  -> 0.023 .. 0.040     on or under its low edge
+#
+# Plateau at 1 epoch: 0.040 (81.48) and 0.079 (80.98) indistinguishable (z=1.05); 0.273 collapsed
+# to 78.76; z-only (0) at 80.53 is significantly BELOW 0.040, so low is the direction that hurts.
+#
+# AFTERWARDS: measure_saltq_displacement.py -- |dW_S| should land in 0.040-0.069. Ignore its
+# ~0.5-step target, which is MetaMath-derived and has been wrong here twice. Then read MEAN(7)
+# alongside MEAN(8): openbookqa has 500 test examples and once carried an entire apparent win.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine"; exit 1; }
+set -x
+python scripts/test_saltq_base_provenance.py || exit 1
+set +x
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int3_g64_ep3.yaml \
+    --bits              3 \
+    --output_root       outputs/saltq_cs170k_int3_g64_ep3 \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int3_g64_ep1/saltq_base_3bit_g64 \
+    --note              "3 epochs, salient_lr 5e-5 unscaled (lands inside the measured 0.040-0.079 plateau); autoseg k=128, gbl off, LN off" \
+    > logs/commonsense_170k/saltq_cs170k_int3_g64_ep3.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"

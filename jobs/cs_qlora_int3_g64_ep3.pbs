@@ -1,0 +1,44 @@
+#!/bin/bash
+#PBS -N cs_qlora_ep3
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq; nvidia-smi | head -12
+
+# QLoRA, Commonsense INT3 g64, THREE EPOCHS. Supplies BOTH ends of the table.
+#
+#   -merged-eval  FP16 LoRA merge, no quantization  -> upper bound
+#   -gptq-eval    GPTQ re-export of that merge      -> the real INT3 deployment floor
+#
+# The pipeline's own "dequant" arm is plain RTN -- src/export.py resolves GPTQ state only for
+# sqat_permute and silently drops gptq.enabled otherwise -- and at INT3 it produced
+# "riiriirii..." on all 22,419 prompts and 0.00 on every task. Do not report it as a floor.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine"; exit 1; }
+mkdir -p logs/commonsense_170k
+
+bash runs/qlora/run_qlora_commonsense.sh \
+    --config     configs/qlora_none_cs170k_int3_g64_ep3.yaml \
+    --bits       3 \
+    --output_dir outputs/qlora_none_cs170k_int3_ep3 \
+    > logs/commonsense_170k/qlora_none_cs170k_int3_g64_ep3.log 2>&1
+RC=$?; echo "pipeline rc=$RC"
+
+# The floor, through the same error-compensated quantizer SALT-Q's base uses.
+SRC=outputs/qlora_none_cs170k_int3_ep3-3bit-none-merged-eval
+DST=outputs/qlora_none_cs170k_int3_ep3-3bit-none-gptq-eval
+if [ -d "$SRC" ]; then
+    [ -d "$DST" ] || python scripts/export_gptq_dequant.py \
+        --model_path "$SRC" --output_dir "$DST" \
+        --config configs/qlora_none_cs170k_int3_g64_ep3.yaml \
+        > logs/commonsense_170k/qlora_ep3_gptq_export.log 2>&1
+    bash runs/eval_vllm.sh --model_path "$DST" --dataset commonsense --gpus 0,1,2,3 \
+        --tag "$(basename $DST)" >> logs/commonsense_170k/qlora_ep3_gptq_export.log 2>&1
+    echo "gptq floor rc=$?"
+else
+    echo "ERROR: no merged export at $SRC — the FP16 bound and the GPTQ floor are both missing"
+fi
+echo "End time: $(date)"
