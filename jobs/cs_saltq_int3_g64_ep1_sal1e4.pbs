@@ -1,0 +1,60 @@
+#!/bin/bash
+#PBS -N cs_saltq_sal1e4
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q Commonsense INT3 g64, 1 epoch. salient_lr 3.46e-4 -> 1.0e-4, one variable.
+#
+# The z-only ablation showed that REMOVING the 157.3M trainable salient weights makes the model
+# BETTER by 1.40 mean (79.04 -> 80.44), significant on 3 of 8 tasks and largest where training
+# data is scarcest: arc_challenge (1119 examples) +4.44, arc_easy (2251) +2.57. The same run
+# settled the rank question the other way -- full-rank z versus QA-LoRA's rank-64 z is -0.64 mean
+# and significant on 1 of 8, i.e. indistinguishable. So the salient tier is what loses, by
+# overfitting, and low-rank regularisation is not why QA-LoRA wins.
+#
+# THIS RUN ASKS: wrong tier, or merely over-driven? At 3.46e-4 it realised |dW_S| = 0.273 grid
+# steps; 1.0e-4 should land near 0.079. Three points on one curve:
+#
+#   salient_lr 0        (z-only)   80.44
+#   salient_lr 1.0e-4              this run
+#   salient_lr 3.46e-4             79.04
+#
+#   > 80.44   the tier helps once it stops overfitting; sweep further and keep it
+#   between   monotone, z-only is the limit, and the tier needs regularisation (weight decay,
+#             smaller group_k) rather than a smaller step
+#
+# train_layernorms stays OFF: both comparison points had it off, so this stays single-variable
+# against each.
+#
+# Reuses the certified base (permutation fingerprint + measured reconstruction error), same one
+# the 79.04 run used.
+#
+# AFTERWARDS: scripts/measure_saltq_displacement.py to confirm |dW_S| landed near 0.079, and the
+# dominant-output share from scripts/test_acc.py (>=95% on any task = collapsed).
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+python scripts/test_saltq_base_provenance.py || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int3_g64_ep1_sal1e4.yaml \
+    --bits              3 \
+    --output_root       outputs/saltq_cs170k_int3_g64_ep1_sal1e4 \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int3_g64_ep1/saltq_base_3bit_g64 \
+    --note              "salient_lr 3.46e-4 -> 1e-4 (single variable vs the 79.04 run); z-only scored 80.44, so this asks whether the salient tier is wrong or over-driven" \
+    > logs/commonsense_170k/saltq_cs170k_int3_g64_ep1_sal1e4.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
