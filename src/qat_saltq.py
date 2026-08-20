@@ -582,7 +582,15 @@ class SALTQLinear(nn.Module):
 
             codes  [out, in]     int (salient part = rounded trained weights, non-salient = frozen)
             scale  [out, ng]
-            zp     [out, ng]     integer-valued (zeros for the symmetric grid)
+            zp     [out, ng]     FRACTIONAL under the default continuous_z (zeros if symmetric);
+                                 integer only in the continuous_z=False ablation
+
+        The zero-point is deliberately NOT rounded here. It ships as fp16 metadata, which is what
+        makes the trained z survive export at all: the measured |dz| is ~0.017 levels at the
+        median, so rounding would discard the entire non-salient segment's adaptation -- 98-99%
+        of the weights -- and leave a checkpoint indistinguishable from plain GPTQ. (This
+        docstring previously claimed the zp was integer-valued, which the code has never done on
+        the default path; it cost a detour to re-derive that the export was in fact correct.)
 
         `group_dequantize`-style reconstruction of these equals `effective_weight()` exactly.
         """
