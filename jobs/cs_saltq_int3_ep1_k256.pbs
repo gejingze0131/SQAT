@@ -1,0 +1,50 @@
+#!/bin/bash
+#PBS -N cs_saltq_k256
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq; nvidia-smi | head -12
+
+# SALT-Q Commonsense INT3 g64, 1 epoch, group_k = 256. Capacity sweep, one variable.
+#
+# Against the best cell to date (group_k=128, salient_lr 5e-5, MEAN(7) 81.48). Back to 1 epoch:
+# 3 epochs moved SALT-Q 81.48 -> 82.06 and QA-LoRA 80.92 -> 81.57, i.e. it lifted both by about
+# the same amount and did NOT separate them (+0.48, z=1.02, 0/8 tasks significant), while costing
+# 3x the compute. The 1-epoch cell is where the comparisons are made.
+#
+# salient_lr is HELD at 5e-5 on purpose. It is calibrated against PER-WEIGHT displacement
+# (|dW_S| = lr * 792.5 grid steps, c measured 9.7 three times), and c depends on the optimizer
+# and the loss, not on how many columns are trainable. So every salient weight keeps the ~0.040
+# steps that scored best; what changes is how many weights have that freedom.
+#
+# The two effects this is weighing, with the 1-epoch evidence pointing both ways:
+#   more protected outlier energy helps -- at k=128 segment coverage runs 82.3/71.4/35.5/20.8%
+#     and 94 true outliers did not fit the protected buckets at all
+#   more unconstrained trainable weights hurt -- the tier at 0.273 steps LOST 1.40 to z-only,
+#     worst on the smallest tasks (arc_challenge, 1119 examples, -4.44): overfitting
+#
+# BOTH OFFLINE ARTEFACTS REBUILD, necessarily. group_k enters the segmentation DP (budget
+# 32 * group_k) and the salient/non-salient split of the frozen codes, so neither the permuted
+# base nor the GPTQ base from k=128 applies. scripts/train.py refuses to mix them anyway -- it
+# fingerprints the permutation the codes were built against. Offline cost ~2 GPU-hours.
+#
+# AFTERWARDS: read MEAN(7) alongside MEAN(8) (openbookqa is 500 examples, stderr 2.4, and once
+# carried an entire apparent win), and check the segmentation log's per-segment energy coverage
+# against k=128's 82.3/71.4/35.5/20.8%.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine"; exit 1; }
+set -x
+python scripts/test_saltq.py || exit 1
+set +x
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config           configs/saltq_cs170k_int3_ep1_k256.yaml \
+    --bits             3 \
+    --output_root      outputs/saltq_cs170k_int3_ep1_k256 \
+    --train_layernorms false \
+    --note             "group_k 256 (single variable vs k=128 / 81.48); salient_lr 5e-5 held, 1 epoch, autoseg, gbl off" \
+    > logs/commonsense_170k/saltq_cs170k_int3_ep1_k256.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
