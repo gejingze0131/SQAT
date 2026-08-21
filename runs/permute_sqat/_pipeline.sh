@@ -53,7 +53,7 @@ MODEL_NAME="meta-llama/Llama-2-7b-hf"
 VALIDATION_BOUNDARY_SIZES="2 30"  # optional legacy Stage-0 sanity check only
 VALIDATION_GROUP_K=128
 EVAL_GPU=0                # single GPU used for export
-EVAL_GPUS="0,1,2"       # GPUs used for evaluation; comma-separated. >1 id ⇒ data-parallel
+EVAL_GPUS="0,1,2,3"     # GPUs vLLM evaluates on; >1 id => tensor-parallel, matching runs/saltq
                           # eval via `accelerate launch` (each GPU holds a full model copy and
                           # the eval set is sharded across them). Set to a single id (e.g. "0")
                           # for legacy single-GPU eval.
@@ -225,34 +225,46 @@ if [ "$SKIP_TRAIN" = true ] && [ -n "$CHECKPOINT_DIR" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Stage 3: Benchmark evaluation (eval scripts auto-register the boundary gather)
+# Stage 3: Generative evaluation through vLLM (separate conda env)
+#
+# This engine was the last one still scoring through eval_benchmarks.py / eval_mmlu.py, i.e.
+# option ranking under teacher forcing. Every other method in the repo moved to generative eval
+# through runs/eval_vllm.sh, and results_saltq.csv separates the two with a `source` column
+# precisely because they are not comparable. Leaving this one behind made Permuted-SQAT
+# unusable as a comparison point at all.
+#
+# The eval dir is DERIVED FROM THE CONFIG, not globbed. It used to be a hardcoded
+# `outputs/qlora-sqat-permute-${BITS}bit*-dequant-eval`, which silently matched nothing whenever
+# training.output_dir was anything else -- the same class of bug that cost the QLoRA control a
+# finished epoch. src/export.py builds the name as
+# "<output_dir>-<bits>bit-<qat_mode>-dequant-eval" when --export_dequant is passed without an
+# explicit --merge_output_dir.
 # ---------------------------------------------------------------------------
 if [ "$SKIP_EVAL" = false ]; then
-    echo -e "\n>>> Stage 3: Evaluating exported models"
-    shopt -s nullglob
-    found=false
-    for eval_dir in outputs/qlora-sqat-permute-${BITS}bit*-dequant-eval; do
-        [ -d "$eval_dir" ] || continue
-        found=true
-        echo "  Evaluating $eval_dir"
-        if [ $DATASET_NAME = "commonsense" ]; then
-            # For commonsense, we run both benchmarks to see if the permutation has any effect on one but not the other.
-            $EVAL_LAUNCH scripts/eval_benchmarks.py eval \
-                --model_path "$eval_dir" \
-                --output_dir results/benchmarks
-            $EVAL_LAUNCH scripts/eval_mmlu.py \
-                --model_path  "$eval_dir" \
-                --num_fewshot 0 \
-                --output_dir  results/mmlu
-        elif [ $DATASET_NAME = "math" ]; then
-            $EVAL_LAUNCH scripts/eval_math.py \
-                --model_path  "$eval_dir" \
-                --num_fewshot 5 \
-                --output_dir  results/math
-        fi
-    done
-    shopt -u nullglob
-    [ "$found" = true ] || echo "  (no exported eval dirs found under outputs/qlora-sqat-permute*)"
+    echo -e "\n>>> Stage 3: Generative evaluation (vLLM)"
+    CFG_OUT=$(python - "$CONFIG" <<'PYCFG'
+import sys, yaml
+print(yaml.safe_load(open(sys.argv[1]))["training"]["output_dir"])
+PYCFG
+)
+    if [ -z "$CFG_OUT" ]; then
+        echo "  ERROR: could not read training.output_dir from $CONFIG" >&2
+        exit 1
+    fi
+    EVAL_DIR="${CFG_OUT}-${BITS}bit-sqat_permute-dequant-eval"
+    if [ ! -d "$EVAL_DIR" ]; then
+        echo "  ERROR: no exported eval dir at $EVAL_DIR" >&2
+        echo "  (stage 1/2 should have written it via --export_dequant)" >&2
+        exit 1
+    fi
+    # runs/eval_vllm.sh folds the residual permutation into the weights first: this export still
+    # carries sqat_permute_meta.pt and needs a boundary gather per segment, which vLLM cannot
+    # register.
+    bash runs/eval_vllm.sh \
+        --model_path "$EVAL_DIR" \
+        --dataset    "$DATASET_NAME" \
+        --gpus       "$EVAL_GPUS" \
+        --tag        "$(basename "$EVAL_DIR")"
 fi
 
 echo -e "\n============================================================"

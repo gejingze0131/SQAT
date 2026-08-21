@@ -1,0 +1,53 @@
+#!/bin/bash
+#PBS -N cs_psqat_ep1
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq; nvidia-smi | head -12
+
+# Permuted Selective-QAT, Commonsense INT3 g64, 1 epoch. THE DECOMPOSITION ARM.
+#
+# SALT-Q and Permuted-SQAT differ on two axes at once:
+#
+#                   salient columns                     non-salient columns
+#   PSQAT           full-width LoRA, merged before a    frozen GPTQ, nothing trainable
+#                   one-shot export that keeps them
+#                   on the canonical grid
+#   SALT-Q          trained directly as real weights    frozen codes + TRAINABLE (s, z)
+#                   under LSQ fakequant
+#
+# This measures the LoRA/frozen-GPTQ corner under the same conditions as everything else, so the
+# two axes can be attributed instead of confounded.
+#
+# ALIGNED to the SALT-Q cell: 1 epoch, autoseg + group_k=128, AWQ OFF (--awq_scale false),
+# group_by_length false, its own output_dir. Segmentation and AWQ are both measured immaterial
+# (0.17 and -0.11 respectively) and are matched anyway -- transported measurements have been
+# wrong repeatedly on this dataset. LoRA's own 2e-4 is kept.
+#
+# STAGE 3 NOW SCORES THROUGH vLLM. This engine was the last one still using eval_benchmarks.py,
+# i.e. option ranking under teacher forcing, which is not comparable to the generative numbers
+# every other method reports -- results_saltq.csv keeps them apart by a `source` column. The eval
+# dir is also derived from the config now instead of a hardcoded outputs/qlora-sqat-permute glob
+# that silently matched nothing for any other output_dir.
+#
+# READ AGAINST, MEAN(7) at 1 epoch:
+#   fp16 82.42 | SALT-Q 81.48 | QA-LoRA 80.92 | SALT-Q z-only 80.53
+# Above SALT-Q: the LoRA form of the salient update beats trainable (s,z) on the non-salient side.
+# Below: the reverse. Between z-only and SALT-Q: both halves contribute, neither dominates.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine"; exit 1; }
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+mkdir -p logs/commonsense_170k
+bash runs/permute_sqat/run_permute_sqat_commonsense.sh \
+    --config     configs/sqat_permute_cs170k_int3_ep1.yaml \
+    --bits       3 \
+    --num_gpus   4 \
+    --awq_scale  false \
+    --skip_validate \
+    > logs/commonsense_170k/psqat_cs170k_int3_ep1.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"

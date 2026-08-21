@@ -1,0 +1,200 @@
+# =============================================================================
+# Permuted Selective-QAT — Commonsense INT3 g64, 1 epoch. THE DECOMPOSITION ARM.
+#
+# SALT-Q and Permuted-SQAT differ on TWO axes at once, and the whole point of this run is to
+# separate them:
+#
+#                      salient columns              non-salient columns
+#   Permuted-SQAT      full-width LoRA, merged      frozen GPTQ, nothing trainable
+#                      before a one-shot export     (adaptation happens only via the LoRA)
+#                      that keeps them on the
+#                      canonical grid
+#   SALT-Q             trained directly as real     frozen codes + TRAINABLE (s, z)
+#                      weights under LSQ fakequant
+#
+# So the question "does SALT-Q's direct salient training lose more than its trainable zero-points
+# win?" needs this cell measured under the same conditions as everything else.
+#
+# ALIGNED TO configs/saltq_cs170k_int3_g64_ep1_sal5e5.yaml (81.48 MEAN(7)), so the only remaining
+# differences are the two axes above:
+#   num_epochs      3 -> 1
+#   boundary_sizes  [2, 30] -> autoseg + group_k=128
+#   awq_scale       enabled -> OFF (passed as --no_awq_scale by the job)
+#   output_dir      its own, so it cannot land on another run
+#
+# Both alignment changes are measured to be immaterial, which is why they are safe to make:
+# segmentation moved SALT-Q by 0.17 ([2,30] 78.87 vs autoseg 79.04), and this config family's own
+# header prices AWQ folding at -0.11 against a +-1.35 stderr. They are matched anyway rather than
+# argued away -- transported measurements have been wrong repeatedly on this dataset.
+#
+# learning_rate stays at LoRA's 2e-4 and group_by_length stays false, both already correct here.
+#
+# READ IT AGAINST, MEAN(7) at 1 epoch:
+#   fp16 upper bound            82.42 +- 0.33
+#   SALT-Q (full method)        81.48 +- 0.34
+#   QA-LoRA                     80.92 +- 0.34
+#   SALT-Q z-only               80.53 +- 0.34
+#   QLoRA INT3 GPTQ floor          --
+#
+# Above SALT-Q means the LoRA form of the salient update is worth more than trainable (s, z) on
+# the non-salient side. Below it means the reverse. Between z-only and SALT-Q is the interesting
+# case: it would say both halves contribute and neither dominates.
+#
+# (Header of the parent config follows.)
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 3
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  # All 7 projections participate in LoRA fine-tuning.
+  # QAT fakequant coverage differs by projection type:
+  #   q/k/v/gate/up_proj : residual-stream P_k permute → QAT on salient cols [0:group_k]
+  #   down_proj          : block-internal P4_l permute (salient-first) → QAT on [0:group_k]
+  #                        (arbitrary intermediate-dim permutation, no multi-head constraint)
+  #   o_proj             : per-head Hadamard fold (H into v_proj + H^T into o_proj), NO QAT
+  #                        (within-head permutation can't produce contiguous [0:group_k] slice)
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "sqat_permute"
+  symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
+  group_size: 64            # group_k % group_size == 0 required.
+                            # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
+                            # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
+                            # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
+
+  # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
+  # fakequant scale is replaced by a learnable nn.Parameter (asym → learn scale+zp, sym → learn
+  # scale only), initialized current_minmax so the initial grid matches the old min-max grid.
+  # Applies to full QAT and the sqat_permute salient slice. enabled=false → bit-identical to the
+  # original min-max path. scales_lr is a dedicated (small) optimizer lr for the scale/zp group.
+  lsq:
+    enabled: false
+    scales_lr: 1.0e-5
+
+  # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
+  sqat:
+    calibration_samples: 512
+    calibration_seq_len: 2048
+
+  sqat_permute:
+    # Legacy comparison mode: manual residual segments + fixed residual/down_proj group_k.
+    # With top_k_ratio present, residual salient channels are selected by per-source
+    # top_k_ratio union-first (old pipeline). num_runtime_permutes = len(boundary_sizes) - 1.
+    # [2,30] -> autoseg, matching the SALT-Q cell. Measured immaterial (SALT-Q moved 0.17
+    # between the two), matched anyway so the two axes under study are the only difference.
+    # boundary_sizes omitted + group_k set -> auto_segment_with_fixed_group_k.
+    max_segments: 4
+
+    # Global manual override. Every residual segment and every down_proj layer uses
+    # exactly this group_k. Outlier overflow is reported as a warning.
+    group_k: 128
+
+    # Per-source top-k fraction for legacy residual-stream salient selection.
+    top_k_ratio: 0.01
+
+    # Log-space z-score threshold for residual-stream outlier detection.
+    outlier_log_sigma: 3.0
+    # Separate log-space z-score threshold for per-layer down_proj group_k selection.
+    down_outlier_log_sigma: 3.0
+
+    # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
+    stage: 2
+
+    # gptq (Improvement 1): at export, quantize the ~97% NON-salient columns [group_k:] with
+    # GPTQ/OBS instead of plain RTN. The salient slice [0:group_k] keeps the EXACT canonical
+    # (training-consistent) grid; the non-salient block is GPTQ'd INDEPENDENTLY (no salient-error
+    # leakage — the QAT/LoRA was trained to tolerate the salient quant error, so the non-salient
+    # cols must approximate their fp16 weights, not compensate for the salient slice). Uses the
+    # SAME group_size and asym/sym as QAT. Dense (--export_dequant) only; o_proj has no salient
+    # slice → fully GPTQ. Composes with awq_scale. Calibrated on the training data in the permuted
+    # basis (boundary gathers active), sequential per decoder layer (memory-bounded).
+    gptq:
+      enabled: true
+      nsamples: 128          # calibration sequences for the Hessian
+      percdamp: 0.01         # Hessian diagonal damping (fraction of mean diag)
+      # blocksize is GPTQ's lazy-batch COMPUTE block (how many columns are error-compensated
+      # before one batched Hessian update). It is NOT the quantization group: the quant grid is
+      # group_size (=64 above). blocksize only must be a multiple of group_size (auto-aligned in
+      # code). 128 is the standard GPTQ default (= 2 groups of 64); larger=faster, smaller=exacter.
+      blocksize: 128
+      batch_size: 2          # calibration micro-batch (keeps activation memory low)
+
+    # awq_scale (Improvement 2): AWQ-style per-input-channel scaling of the salient slice
+    # [0:group_k]. Within each block, q/k/v share one scale S1 (they read the same input), gate/up
+    # share S2, down_proj uses its own S3 (on its P4 intermediate slice); o_proj is untouched (it
+    # keeps its per-head Hadamard, NO QAT). S_j = (E[x²]_j)^alpha normalized so min=1, clamped to
+    # [1, max]. Training fakequants in the amplified space W*S; export bakes 1/S into the dense
+    # weight (deployed = quant(W*S)/S), so it is purely a better quant grid — bit-identical output,
+    # no runtime scaling. Dense (--export_dequant) only; composes with gptq. false = original scheme.
+    awq_scale:
+      enabled: true
+      alpha: 0.5             # exponent on E[x²]; larger = stronger amplification of salient channels
+      max: 2.0              # clamp on S (S in [1, max])
+
+    # --- Stage-2 flow (handled automatically by scripts/train.py) ---------------------
+    # To avoid a dequant->permute->requant round-trip (double quantization), the permute/fold
+    # is applied to a CLEAN fp16 base, which is saved to <output_dir>/permuted_fp16_base and
+    # then reloaded through the standard load_in_4bit path so NF4 quantizes the permuted
+    # weights exactly ONCE. That directory (~13GB) is kept so `--export_only` later can reload
+    # the correct (permuted) base; delete it manually once you no longer need export-only.
+    #
+    # The per-segment residual permutation needs a runtime boundary gather (one index_select
+    # per segment boundary; num_segments-1 total). It is re-registered for training in the
+    # handler and for inference by the eval scripts (which read sqat_permute_meta.pt). Do not
+    # evaluate a permuted export with a loader that ignores that metadata.
+
+data:
+  # Local pissa-dataset JSON: datasets/commonsense/{train,test}.json, records of
+  # instruction / input / output / type covering BoolQ, PIQA, SIQA, ARC-e/c, HellaSwag,
+  # WinoGrande and OBQA. Rendered through src/data.PROMPT with the loss on the RESPONSE
+  # ONLY, which is what makes the trained model's output parseable by scripts/test_acc.py.
+  train_dataset: "datasets/commonsense"
+  train_split: "train"
+  # No in-loop eval: the test split is scored GENERATIVELY (vLLM + exact-match) by
+  # run_eval_vllm.sh, and a teacher-forced loss on it would not predict that score.
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null            # null = all 8 tasks; e.g. ["boolq", "piqa:2000"] to restrict
+  shuffle_dataset: true
+  num_proc: 32
+
+training:
+  # Its own directory: the shared one is used by several configs in this family.
+  output_dir: "outputs/psqat_cs170k_int3_ep1"
+  num_epochs: 1              # 3 -> 1: aligned to the 1-epoch comparison cell
+  per_device_train_batch_size: 5
+  per_device_eval_batch_size: 5
+  gradient_accumulation_steps: 4
+  group_by_length: false
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 200
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true
