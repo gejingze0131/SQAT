@@ -31,8 +31,53 @@ from safetensors import safe_open
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+class Hist:
+    """Streaming quantiles/mean over tensors too large to concatenate.
+
+    The previous version cat'ed every projection into one tensor and called kthvalue on it. At
+    INT2 g32 that is ~200M zero-points per list and four lists; the process was OOM-killed, and
+    because the call site piped through `tail` the pipeline still exited 0 with the buffered
+    stdout lost — the script looked like it had succeeded and printed nothing. Accumulate
+    instead: one fixed histogram per series, plus an exact running mean/max/count.
+    """
+
+    def __init__(self, lo=0.0, hi=1.0, nbins=20000):
+        self.lo, self.hi, self.nb = float(lo), float(hi), int(nbins)
+        self.h = torch.zeros(self.nb, dtype=torch.float64)
+        self.n = 0
+        self.total = 0.0
+        self.mx = float("-inf")
+        self.mn = float("inf")
+        self.over = 0                      # mass above hi, so p99 cannot silently clip
+
+    def add(self, t):
+        t = t.detach().flatten().float()
+        self.h += torch.histc(t.clamp(self.lo, self.hi), self.nb, self.lo, self.hi).double()
+        self.n += t.numel()
+        self.total += t.sum().item()
+        self.mx = max(self.mx, t.max().item())
+        self.mn = min(self.mn, t.min().item())
+        self.over += int((t > self.hi).sum())
+        return self
+
+    def quantile(self, p):
+        c = torch.cumsum(self.h, 0) / max(self.h.sum().item(), 1.0)
+        i = int(torch.searchsorted(c, float(p)).item())
+        i = min(i, self.nb - 1)
+        return self.lo + (i + 1) * (self.hi - self.lo) / self.nb
+
+    def mean(self):
+        return self.total / max(self.n, 1)
+
+    def frac_at_most(self, v):
+        c = torch.cumsum(self.h, 0) / max(self.h.sum().item(), 1.0)
+        i = min(int((v - self.lo) / (self.hi - self.lo) * self.nb), self.nb - 1)
+        return float(c[max(i, 0)].item())
+
+
 def q(t, p):
-    return t.flatten().kthvalue(max(1, int(p * t.numel()))).values.item()
+    return t.quantile(p) if isinstance(t, Hist) else \
+        t.flatten().kthvalue(max(1, int(p * t.numel()))).values.item()
 
 
 def main() -> int:
@@ -41,6 +86,9 @@ def main() -> int:
     ap.add_argument("--saltq_base", default="outputs/saltq_cs170k_int3_g64_ep1/saltq_base_3bit_g64")
     ap.add_argument("--saltq_ckpt", default="outputs/saltq_cs170k_int3_g64_ep1_nogbl-3bit-saltq/final")
     ap.add_argument("--group_size", type=int, default=64)
+    ap.add_argument("--bits", type=int, default=3,
+                    help="sets the zero-point clamp [0, 2^bits - 1]; it is [0,3] at INT2 and "
+                         "[0,7] at INT3, which is why the same |dz| means different things")
     args = ap.parse_args()
     GS = args.group_size
 
@@ -82,41 +130,42 @@ def main() -> int:
 
     print(f"\nprojections: QA-LoRA {len(qa)}, SALT-Q base {len(zb)}, SALT-Q trained {len(zt)}")
 
-    qa_all, sq_all, sq_dz, z0_all = [], [], [], []
+    Qp = float(2 ** args.bits - 1)
+    sq = Hist(0.0, 1.0); qav = Hist(0.0, 1.0)      # coefficients on the mean-pooled input
+    dz = Hist(0.0, Qp); z0 = Hist(0.0, Qp)         # zero-point, in levels
     matched = 0
     for name, z1 in zt.items():
         if name not in zb:
             continue
-        dz = (z1 - zb[name])
-        s = sb[name]
-        sq_all.append((dz * s * GS).abs().flatten())
-        sq_dz.append(dz.abs().flatten())
-        z0_all.append(zb[name].flatten())
+        d = z1 - zb[name]
+        sq.add((d * sb[name] * GS).abs())
+        dz.add(d.abs())
+        z0.add(zb[name])
         matched += 1
+        del d
     for name, d in qa.items():
-        qa_all.append(d.abs().flatten())
-
-    sq = torch.cat(sq_all); qav = torch.cat(qa_all)
-    dz = torch.cat(sq_dz);  z0 = torch.cat(z0_all)
+        qav.add(d.abs())
     print(f"matched SALT-Q projections: {matched}")
 
     print("\n=== |delta coefficient| on the MEAN-pooled input (the shared function space) ===")
     print(f"{'':22}{'p50':>12}{'p90':>12}{'p99':>12}{'max':>12}{'mean':>12}")
     for lab, t in (("QA-LoRA  (B@A)*sc", qav), ("SALT-Q   -dz*s*g", sq)):
         print(f"{lab:22}{q(t,.5):12.3e}{q(t,.9):12.3e}{q(t,.99):12.3e}"
-              f"{t.max().item():12.3e}{t.mean().item():12.3e}")
-    r = qav.mean().item() / max(sq.mean().item(), 1e-30)
+              f"{t.mx:12.3e}{t.mean():12.3e}")
+    r = qav.mean() / max(sq.mean(), 1e-30)
     print(f"\n  QA-LoRA moves the shared coefficient {r:.1f}x further than SALT-Q on average.")
 
     print("\n=== SALT-Q zero-point, in its own units ===")
-    print(f"  |dz| levels      p50={q(dz,.5):.4f}  p90={q(dz,.9):.4f}  max={dz.max().item():.4f}")
-    print(f"  z_init          p50={q(z0,.5):.3f}  min={z0.min().item():.3f}  max={z0.max().item():.3f}")
-    # The clamp is [Qn, Qp]; saturated groups cannot move outward at all.
-    for lo, hi in ((0.0, 7.0),):
-        at_lo = (z0 <= lo + 1e-6).float().mean().item()
-        at_hi = (z0 >= hi - 1e-6).float().mean().item()
-        print(f"  fraction of groups initialised AT the clamp: low {100*at_lo:.2f}%  "
-              f"high {100*at_hi:.2f}%   (clamp [{lo:.0f}, {hi:.0f}])")
+    print(f"  |dz| levels      p50={q(dz,.5):.4f}  p90={q(dz,.9):.4f}  max={dz.mx:.4f}")
+    print(f"  z_init          p50={q(z0,.5):.3f}  min={z0.mn:.3f}  max={z0.mx:.3f}")
+    # The clamp is [0, 2^b - 1] and it MOVES with the bit width: [0,7] at INT3 but only [0,3] at
+    # INT2, so the same |dz| is a much larger share of the available travel. Groups initialised
+    # at an edge cannot move outward at all.
+    at_lo = z0.frac_at_most(1e-6)
+    at_hi = 1.0 - z0.frac_at_most(Qp - 1e-6)
+    print(f"  fraction of groups initialised AT the clamp: low {100*at_lo:.2f}%  "
+          f"high {100*at_hi:.2f}%   (clamp [0, {Qp:.0f}] at INT{args.bits})")
+    print(f"  |dz| p50 as a share of the half-range {Qp/2:.1f}: {q(dz,.5)/(Qp/2)*100:.2f}%")
     return 0
 
 
