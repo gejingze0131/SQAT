@@ -1,0 +1,72 @@
+#!/bin/bash
+#PBS -N cs_mixedprec
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# MIXED-PRECISION SALIENT ABLATION, INT3 g64, group_k swept. NO TRAINING ANYWHERE IN THIS JOB.
+#
+# This measures the thing SALT-Q claims to replace. "Training the salient slice can stand in for
+# keeping it in fp16" has been an assertion in every writeup so far; the fp16-salient alternative
+# has never actually been run on this pipeline, so there was no curve to compare against.
+#
+# Take the QLoRA merged fp16 checkpoint (82.42 -- task adaptation already in the weights), replay
+# SALT-Q's exact permutation onto it, then keep columns [0:k) in fp16 and GPTQ the rest at INT3
+# g64. Same segmentation, same salient channels, same gptq_quantize_model_sequential that builds
+# SALT-Q's frozen base and QA-LoRA's base, with keep_salient_fp16 flipped on. The only difference
+# between this curve and SALT-Q is WHAT MADE THE SALIENT SLICE GOOD: full precision, or training.
+#
+# BOTH ENDPOINTS ARE ALREADY MEASURED, so the sweep only fills the interior:
+#   k=0      GPTQ everything          78.38   (qlora ... -3bit-none-gptq-eval)
+#   k=inf    nothing quantized        82.42   (qlora ... -3bit-none-merged-eval)
+# and the point to beat sits between them:
+#   SALT-Q k=128, a REAL 3.00-bit model     81.48
+#
+# READ THE CURVE IN EFFECTIVE BITS, NOT IN k. Keeping k columns of every non-o_proj target in
+# fp16 costs real memory, and at the top of this sweep it is not a low-bit model at all:
+#      k     fp16 share   effective bits
+#     64        1.21%         3.16
+#    128        2.43%         3.32
+#    256        4.86%         3.63
+#    512        9.72%         4.26
+#   1024       19.43%         5.53
+#   2048       38.86%         8.05
+# The claim this job can support or destroy is therefore a BIT-WIDTH claim: find the k where the
+# fp16-salient curve first reaches SALT-Q's 81.48, and the gap between its effective bits and
+# 3.00 is exactly what training buys. If that k is 512, SALT-Q saves 1.26 bits. If the curve
+# passes 81.48 already at k=64 (3.16 bits), training bought ~0.16 bits and the honest conclusion
+# is that mixed precision is simply the better engineering answer at INT3.
+#
+# k=32 IS NOT IN THE SWEEP AND CANNOT BE. group_k must be a whole number of quant groups
+# (src/gptq.py asserts group_k % group_size == 0); at g64 a k=32 slice would put half a quant
+# group on each side of the salient boundary, which the scale/zp layout cannot represent. Running
+# it would mean moving to g32, which changes the quantizer as well as k and stops being a sweep.
+# k=64 is 1.21% of the target weights, so the low end is barely affected by starting there.
+set -e
+mkdir -p logs/commonsense_170k outputs/mixedprec_int3_g64
+
+python scripts/export_mixed_precision_sweep.py \
+    --model_path    outputs/qlora_none_cs170k_int3_ep1-3bit-none-merged-eval \
+    --perm_meta_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --config        configs/saltq_cs170k_int3_g64_ep1_sal5e5.yaml \
+    --bits 3 --group_size 64 \
+    --group_k 64 128 256 512 1024 2048 \
+    --output_root   outputs/mixedprec_int3_g64 \
+    2>&1 | tee logs/commonsense_170k/mixedprec_int3_g64_export.log
+
+for K in 64 128 256 512 1024 2048; do
+    DIR=outputs/mixedprec_int3_g64/k${K}
+    [ -d "$DIR" ] || { echo "MISSING $DIR — export failed for k=$K"; continue; }
+    echo ">>> eval k=$K"
+    bash runs/eval_vllm.sh --model_path "$DIR" --dataset commonsense --gpus 0,1,2,3 \
+        --tag "mixedprec_int3_g64_k${K}" \
+        > logs/commonsense_170k/mixedprec_int3_g64_k${K}_eval.log 2>&1 \
+        || echo "eval failed for k=$K (rc=$?), continuing"
+done
+echo "End time: $(date)"
