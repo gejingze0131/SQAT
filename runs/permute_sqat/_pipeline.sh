@@ -200,7 +200,11 @@ if [ "$SKIP_TRAIN" = false ]; then
         --export_dequant \
         --report_to wandb
 
-    CHECKPOINT_DIR=$(ls -td outputs/qlora-sqat-permute*/final 2>/dev/null | head -1 || true)
+    # Derived from the config, not globbed: a hardcoded outputs/qlora-sqat-permute* prefix
+    # matched nothing for any other output_dir and killed the run AFTER a finished epoch
+    # and a successful export. See config_output_dir in runs/lib/common.sh.
+    CHECKPOINT_DIR="$(config_output_dir "$CONFIG")-${BITS}bit-sqat_permute/final"
+    [ -d "$CHECKPOINT_DIR" ] || CHECKPOINT_DIR=""
     if [ -z "$CHECKPOINT_DIR" ]; then
         echo "ERROR: could not locate training output dir; pass --checkpoint_dir for export/eval."
         exit 1
@@ -242,15 +246,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$SKIP_EVAL" = false ]; then
     echo -e "\n>>> Stage 3: Generative evaluation (vLLM)"
-    CFG_OUT=$(python - "$CONFIG" <<'PYCFG'
-import sys, yaml
-print(yaml.safe_load(open(sys.argv[1]))["training"]["output_dir"])
-PYCFG
-)
-    if [ -z "$CFG_OUT" ]; then
-        echo "  ERROR: could not read training.output_dir from $CONFIG" >&2
-        exit 1
-    fi
+    CFG_OUT="$(config_output_dir "$CONFIG")" || exit 1
     EVAL_DIR="${CFG_OUT}-${BITS}bit-sqat_permute-dequant-eval"
     if [ ! -d "$EVAL_DIR" ]; then
         echo "  ERROR: no exported eval dir at $EVAL_DIR" >&2

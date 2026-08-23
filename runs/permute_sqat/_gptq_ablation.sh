@@ -74,7 +74,9 @@ if [ "$SKIP_EVAL" = false ]; then
 fi
 
 if [ -z "$CHECKPOINT_DIR" ]; then
-    CHECKPOINT_DIR=$(ls -td outputs/qlora-sqat-permute*/final 2>/dev/null | head -1 || true)
+    # Same fix as runs/permute_sqat/_pipeline.sh: read the path, do not guess it.
+    CHECKPOINT_DIR="$(config_output_dir "$CONFIG")-${BITS}bit-sqat_permute/final"
+    [ -d "$CHECKPOINT_DIR" ] || CHECKPOINT_DIR=""
 fi
 if [ -z "$CHECKPOINT_DIR" ] || [ ! -d "$CHECKPOINT_DIR" ]; then
     echo "ERROR: no sqat_permute checkpoint found; pass --checkpoint_dir <path>/final."

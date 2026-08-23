@@ -60,3 +60,23 @@ PY
         exit 1
     fi
 }
+
+# Read training.output_dir out of a config. Every artefact a run produces is named from it --
+# src/export.py builds "<output_dir>-<bits>bit-<qat_mode>-dequant-eval" and the Trainer writes
+# "<output_dir>-<bits>bit-<qat_mode>/final" -- so a pipeline that GUESSES this path instead of
+# reading it breaks the moment a config uses a different output_dir.
+#
+# That guess was written three times under runs/permute_sqat/ as a hardcoded
+# `outputs/qlora-sqat-permute*` glob. Two of the three fail LOUDLY (empty match -> "could not
+# locate training output dir" after a completed epoch) and the third failed SILENTLY, under
+# `shopt -s nullglob`, printing "(no exported eval dirs found)" and exiting 0.
+config_output_dir() {
+    local cfg="$1" out
+    out="$(python - "$cfg" <<'PYCFG'
+import sys, yaml
+print(yaml.safe_load(open(sys.argv[1]))["training"]["output_dir"])
+PYCFG
+)" || return 1
+    [ -n "$out" ] || { echo "ERROR: no training.output_dir in $cfg" >&2; return 1; }
+    echo "$out"
+}

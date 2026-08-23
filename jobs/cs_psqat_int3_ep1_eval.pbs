@@ -1,0 +1,26 @@
+#!/bin/bash
+#PBS -N cs_psqat_eval
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=4:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+
+# Evaluation only. PSQAT trained and exported fine -- the export even verified the salient
+# train<->export grid at max|delta| = 0 -- and the pipeline then died on
+#   ERROR: could not locate training output dir; pass --checkpoint_dir for export/eval.
+# a hardcoded `ls -td outputs/qlora-sqat-permute*/final` that matched nothing for this config's
+# output_dir. Third instance of that bug family; now routed through config_output_dir in
+# runs/lib/common.sh. No retraining needed.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine"; exit 1; }
+mkdir -p logs/commonsense_170k
+bash runs/eval_vllm.sh \
+    --model_path outputs/psqat_cs170k_int3_ep1-3bit-sqat_permute-dequant-eval \
+    --dataset    commonsense \
+    --gpus       0,1,2,3 \
+    --tag        psqat_cs170k_int3_ep1-3bit-sqat_permute-dequant-eval \
+    > logs/commonsense_170k/psqat_cs170k_int3_ep1_eval.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
