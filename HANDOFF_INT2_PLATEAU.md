@@ -240,6 +240,50 @@ That band is MetaMath-derived and this is the **third** time a MetaMath displace
 been wrong on Commonsense-170k (`|dW_S| ~0.5` was the first two). Do not treat any of them as a
 target here; they are descriptions of a different dataset.
 
+## 5b. The strongest mechanism candidate: SALT-Q's update is too UNIFORM
+
+`scripts/compare_qalora_saltq_capacity.py`, both methods' coefficient on the shared mean-pooled
+input, end of training:
+
+| | p50 | p90 | p99 | mean | **p99/p50** |
+|---|---|---|---|---|---|
+| INT2 QA-LoRA | 9.950e-3 | 5.665e-2 | 1.527e-1 | 2.187e-2 | **15.3** |
+| INT2 SALT-Q | **1.125e-2** | 3.285e-2 | 6.370e-2 | 1.502e-2 | **5.7** |
+| INT3 QA-LoRA | 1.165e-2 | 6.065e-2 | 1.628e-1 | 2.387e-2 | 14.0 |
+| INT3 SALT-Q | **1.215e-2** | 4.385e-2 | 9.095e-2 | 1.858e-2 | 7.5 |
+
+Two things fall out, and they reframe the problem.
+
+**The zero-point clamp is NOT the limiter.** `0.00%` of groups sit at either boundary, at both bit
+widths (`z_init` p50 is 2.000 of `[0,3]` at INT2 and 3.000 of `[0,7]` at INT3, and `|dz|` p50 is
+0.95% of the half-range). The registered alternative hypothesis is dead: raising `zp_lr` does not
+run into a wall, it simply does not help.
+
+**At the MEDIAN, SALT-Q moves the shared coefficient slightly MORE than QA-LoRA** -- at both bit
+widths. QA-LoRA only wins on the mean because its **tail** is far heavier: p99/p50 is 15.3 vs 5.7
+at INT2. So the two methods do not differ in how much they adapt; they differ in **how the
+adaptation is distributed**.
+
+Low rank forces concentration -- a rank-<=64 update on an `[out, G]` matrix is a sum of 64 outer
+products, so it *must* pile onto a few directions. Full-rank `z` under Adam gets the opposite:
+Adam normalizes per parameter, so every coefficient takes about the same small step and nothing
+can concentrate. Quantitatively SALT-Q's update is **2.7x flatter than QA-LoRA's at INT2** and
+1.9x flatter at INT3 -- and note SALT-Q got *flatter still* going 3->2 bits (7.5 -> 5.7) while
+QA-LoRA held its shape (14.0 -> 15.3).
+
+Hypothesis: **leaving the plateau needs a few large targeted corrections, and a full-rank
+per-coefficient parameterization under Adam can only produce uniformly small ones.** It explains
+everything observed: raising `zp_lr` scales every coefficient equally and adds no concentration,
+which is why x5 was *worse*; at INT3 the frozen codes are good enough that uniform small
+corrections suffice, which is where full-rank `z` becomes an advantage and SALT-Q wins.
+
+Caveat, stated because it matters: this is an **end-of-training snapshot**, not a measurement
+taken during the plateau, and `save_total_limit: 1` means there are no intermediate checkpoints to
+look at. Confirming it properly needs the coefficient distribution logged *while* the model is on
+the plateau.
+
+---
+
 ## 6. In flight right now
 
 | job | what | read it how |
@@ -270,6 +314,10 @@ Read rule, fixed before the run — **read the escape epoch from the loss curve,
   salient slice is trained, and no learning rate will do it.
 - escape still near **0.75** → the salient tier is exonerated; the delay lives in the frozen-code
   / (s,z) path, and the base is the next thing to look at.
+
+§5b shifts the prior toward the second outcome: if the plateau is about the update being too
+uniform, removing the salient tier should not move the escape at all, and z-only is then a
+CONTROL for §5b rather than a test of the STE story.
 
 Extract the curve with:
 
