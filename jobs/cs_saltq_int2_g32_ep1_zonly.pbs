@@ -1,0 +1,57 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_zonly
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q Commonsense INT2 g32, autoseg k=128, 1 epoch. ANCHOR OF THE INT2 CELL.
+#
+# WHY. The INT3 table is too compressed to settle anything: fp16 82.42, SALT-Q 81.48,
+# QA-LoRA 80.92, GPTQ floor 78.38 — a +0.56 lead against +/-0.48 pairwise resolution. INT2 is
+# where the frozen GPTQ non-salient columns actually hurt, so it is where trainable (s,z) should
+# be worth points instead of fractions. See the config header for the full derivation.
+#
+# THIS RUN BUILDS saltq_base_2bit_g32 (~7 GB) AND EVERY OTHER INT2 CELL REUSES IT. Do not launch
+# the bracket / z-only jobs until this one has written it, or three jobs will GPTQ the same base
+# concurrently. The permuted fp16 base IS reused from the INT3 run: the segmentation DP never
+# sees bits or group_size, and scripts/train.py's permutation fingerprint refuses the reuse if
+# that reasoning is wrong.
+#
+# ONE VARIABLE PAIR against configs/saltq_cs170k_int3_g64_ep1_sal5e5.yaml (81.48): bits 3->2 and
+# group_size 64->32. salient_lr moves 5e-5 -> 1.25e-4 only to hold displacement constant at 0.040
+# GRID steps across the 2.33x coarser INT2 grid; zp_lr and scales_lr are HELD at the validated
+# INT3 values rather than taking the *_by_bits 2-bit entries, which are MetaMath-derived, 5x
+# larger, and inside the band that already blew up here (grad_norm 288.5 vs max_grad_norm 0.3).
+#
+# READ THESE THREE NUMBERS FROM THIS LOG BEFORE TRUSTING ANY SCORE:
+#   1. _assert_codes_reconstruct error   (INT3 was 26.4%; a value near 100% means broken codes)
+#   2. untrained loss                    (fp16 2.84, INT3 3.06)
+#   3. warmup grad_norm                  (>~3 sustained against max_grad_norm 0.3 = zp_lr too big)
+# And in the eval json, beats_majority / dominant_output_share: at 2 bits a collapsed model can
+# still post a plausible-looking mean.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_zonly.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_zonly \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              "INT2 g32 anchor; salient_lr 1.25e-4 (0.040 grid steps), zp_lr held at the INT3 1.73e-3" \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_zonly.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
