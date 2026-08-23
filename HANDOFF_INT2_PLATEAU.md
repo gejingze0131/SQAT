@@ -221,12 +221,40 @@ lever (autoseg 79.04 vs manual `[2,30]` 78.87). 3 epochs at INT3 gave no clear g
 
 ---
 
+### The x5 zp_lr point closed the lr question by confirming its own prediction
+
+The job stated the falsifiable version in advance: Adam displacement is ~linear in lr, so x5
+should put `|dz|` near 0.07. Measured on the finished checkpoint:
+
+| | zp_lr | `\|dz\|` p50 (levels) | MEAN(7) |
+|---|---|---|---|
+| anchor | 1.73e-3 | 0.0143 | 65.77 |
+| x5 | 8.66e-3 | **0.0670** | **38.28** |
+
+4.8x displacement for 5x lr — the mechanism worked exactly as predicted, and z is demonstrably
+neither clamp-limited (0.007% of zero-points sit at the `[0,3]` boundary) nor lr-starved. It moved
+INTO the documented `0.1-0.3` band and the model lost 27.5 points, with all 8 tasks below majority
+while still emitting well-formed answers ("the correct answer is true" on every boolq item).
+
+That band is MetaMath-derived and this is the **third** time a MetaMath displacement target has
+been wrong on Commonsense-170k (`|dW_S| ~0.5` was the first two). Do not treat any of them as a
+target here; they are descriptions of a different dataset.
+
 ## 6. In flight right now
 
 | job | what | read it how |
 |---|---|---|
 | `15239837` | SALT-Q INT2, zp_lr ×5 | closes the falsified zp_lr direction; measure `\|Δz\|` |
-| `15240314` | **SALT-Q INT2 z-only** (`train_salient: false`) | **the live diagnostic** |
+| `15240708` | **SALT-Q INT2 z-only** (`train_salient: false`) | **the live diagnostic** |
+
+> `15240314` was the first attempt at this run and it **failed after 5 minutes**, so nothing was
+> in flight between 00:31 and the relaunch. It passed `--saltq_base_dir` at the anchor's
+> `saltq_base_2bit_g32`, and `scripts/train.py`'s reuse guard compares `train_salient` along with
+> `(bits, group_size, symmetric)` — a z-only run folds the salient columns into the frozen-code
+> pool, so its codes are genuinely different and the guard was right to refuse. The guard's
+> message listed only the other three fields, which is why the failure read as inexplicable; it
+> now names the field that actually differs. The job no longer passes `--saltq_base_dir` and
+> builds its own base under its own `output_root`.
 
 **The z-only run is the current hypothesis test.** The one structural thing SALT-Q carries through
 the plateau that QA-LoRA does not is the salient QAT tier: 157.3M real weights trained through a

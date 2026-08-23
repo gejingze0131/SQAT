@@ -636,10 +636,35 @@ def main():
         elif os.path.exists(_sq_meta_pt) and _sq_match is None:
             # An existing base under this path was built for a DIFFERENT grid. Never overwrite it
             # silently: some checkpoint elsewhere still points at those codes.
+            # Name the field that actually differs. The message used to list only
+            # (bits, group_size, symmetric) while _saltq_base_matches ALSO compares
+            # train_salient, so a z-only run pointed at a train_salient=True base failed with a
+            # reason that was not among the three it printed and looked inexplicable.
+            _sq_want = {
+                "bits": int(cfg["model"]["quant_bits"]),
+                "group_size": int(cfg["qat"].get("group_size", 128)),
+                "symmetric": bool(cfg["qat"].get("symmetric", False)),
+                "train_salient": bool((cfg["qat"].get("saltq", {}) or {})
+                                      .get("train_salient", True)),
+            }
+            try:
+                _sq_have_meta = torch.load(_sq_meta_pt, map_location="cpu", weights_only=False)
+            except Exception:
+                _sq_have_meta = {}
+            _sq_have = {
+                "bits": int(_sq_have_meta.get("q_bits", -1)),
+                "group_size": int(_sq_have_meta.get("group_size", -1)),
+                "symmetric": bool(_sq_have_meta.get("symmetric", False)),
+                "train_salient": bool(_sq_have_meta.get("train_salient", True)),
+            }
+            _sq_diff = ", ".join(f"{k}: base={_sq_have[k]} vs config={_sq_want[k]}"
+                                 for k in _sq_want if _sq_have[k] != _sq_want[k]) or "unknown"
             raise RuntimeError(
-                f"[SALT-Q] {saltq_base_dir} 里已有一份 frozen-code base，但它的 (bits, group_size, "
-                f"symmetric) 与本次配置不一致。codes 是一次性的离散选择，覆盖它会让指向它的 "
-                f"checkpoint 永久失效。请换一个 --saltq_base_dir，或先把旧的移开。"
+                f"[SALT-Q] {saltq_base_dir} 里已有一份 frozen-code base，但它与本次配置不一致。\n"
+                f"  不一致的字段: {_sq_diff}\n"
+                f"codes 是一次性的离散选择，覆盖它会让指向它的 checkpoint 永久失效。\n"
+                f"请换一个 --saltq_base_dir，或先把旧的移开；train_salient 不同必须重建 base，"
+                f"因为 salient 列是否进入冻结码池会改变码本身。"
             )
         elif _sq_match is not None:
             if accelerator.is_main_process:

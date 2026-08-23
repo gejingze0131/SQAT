@@ -44,7 +44,11 @@ nvidia-smi | head -12
 # The MEAN(7) is secondary here -- at INT3 z-only cost 0.95 points, so a lower score is expected
 # and does not settle anything. READ THE ESCAPE EPOCH FROM THE LOSS CURVE.
 #
-# Reuses saltq_base_2bit_g32; train_salient does not change the base.
+# BUILDS ITS OWN FROZEN-CODE BASE, and must. train_salient=False folds the salient columns into
+# the frozen-code pool, so the codes are not the anchor's codes. The first attempt (15240314)
+# passed --saltq_base_dir at the anchor's base and died in 5 minutes on scripts/train.py's reuse
+# guard, which compares train_salient along with (bits, group_size, symmetric). The guard was
+# right; the job was wrong. Its base lands under this run's own output_root, so nothing collides.
 conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
   || { echo "vllm env cannot import the engine on this node"; exit 1; }
 
@@ -59,7 +63,6 @@ bash runs/saltq/run_saltq_commonsense.sh \
     --output_root       outputs/saltq_cs170k_int2_g32_ep1_zonly \
     --train_layernorms  false \
     --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
-    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
     --note              'INT2 z-only: does removing the salient QAT tier move the plateau escape earlier than epoch 0.75' \
     > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_zonly.log 2>&1
 echo "rc=$?"
