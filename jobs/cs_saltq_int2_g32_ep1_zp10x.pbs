@@ -1,0 +1,72 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_zp10x
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32, 1 epoch. zp_lr RAISED. The direct fix for the anchor's 65.77.
+#
+# WHAT THE ANCHOR MEASURED. scripts/measure_saltq_displacement.py, INT2 against the INT3 run it
+# was derived from:
+#
+#                          INT2 g32     INT3 g64 (81.48)   target
+#   dW_S   [grid steps]      0.041          0.041            --      salient scaling WORKED
+#   dz_N   [levels]          0.014          0.014          0.1-0.3   z BARELY MOVED, at both
+#
+# The salient tier is fine: holding displacement at 0.041 GRID steps across the 2.33x coarser INT2
+# grid is exactly what raising salient_lr 5e-5 -> 1.25e-4 was for, and it landed on the number.
+# The zero-points are not. z moved the SAME 0.014 levels at both bit widths -- 7 to 20x under the
+# documented band -- while the error it must correct went from a 26.4% reconstruction error at
+# INT3 to 54.1% at INT2, with 97.6% of the columns frozen and z the only thing that can fix them.
+#
+# THE ANCHOR HELD zp_lr AT THE INT3 VALUE FOR TWO REASONS AND BOTH WERE WRONG.
+#
+#   (1) "5x zp_lr is inside the band that already blew up here" cited two runs, NEITHER of which
+#       isolated zp_lr. zp3x ran zp_lr 5.19e-3 together with salient_lr 3.46e-4; the lr run ran
+#       zp_lr 1.73e-2 together with salient_lr 6.34e-4, scales_lr x1.88 AND train_layernorms on.
+#       The salient sweep separately shows 3.46e-4 alone costs 2.7 points (81.48 -> 78.76), so
+#       those failures are attributable to salient_lr and the layernorms, not to zp_lr. There has
+#       never been a clean zp_lr experiment on this dataset. This job is it.
+#
+#   (2) "dz*s*group_size changes by 1.17x going INT3 g64 -> INT2 g32, so hold zp_lr fixed" is
+#       arithmetically right and measurement confirmed it (dz*s = 3.41e-4 vs 1.75e-4 = 1.95x,
+#       times group_size 0.5 = 0.98x). It was the wrong TARGET. Holding the correction constant
+#       while the error to correct doubles is under-correction by construction.
+#
+# QA-LoRA, whose LoRA folds into the SAME zero-points and which was not retuned either, scores
+# 71.90 against this cell's 65.77 -- z=-11.0, 0/8 tasks. A 6-point loss to a strictly weaker
+# parameterization is not a tuning nuance; it is the symptom this job tests.
+#
+# PREDICTION, so this is falsifiable. Adam displacement is ~linear in lr for a fixed gradient
+# sequence, so x5 should give dz ~ 0.07 (still under the band) and x10 ~ 0.14 (inside it). If the
+# measured dz does NOT move roughly in proportion, the zero-points are limited by something other
+# than lr -- the [0, 2^b-1] clamp is the first suspect at INT2, where the range is [0,3] not
+# [0,7] -- and no further lr point is worth running. Measure it before reading the score.
+#
+# Reuses saltq_base_2bit_g32 from the anchor; nothing about the base changes with an lr.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_zp10x.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_zp10x \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 zp_lr 1.73e-2 (x10); the anchor left z at 0.014 levels vs the 0.1-0.3 band; predicted dz ~ 0.14' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_zp10x.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
