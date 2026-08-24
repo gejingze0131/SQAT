@@ -1,6 +1,6 @@
 # Handoff: the INT2 loss plateau, and why SALT-Q leaves it late
 
-Repo `/home/users/nus/jingzege/projects/SQAT`, branch `saltq/int2-decomposition-and-awq`, head `f7837a3`.
+Repo `/home/users/nus/jingzege/projects/SQAT`, branch `saltq/int2-decomposition-and-awq`, head `e48ea93`.
 
 ---
 
@@ -9,20 +9,26 @@ Repo `/home/users/nus/jingzege/projects/SQAT`, branch `saltq/int2-decomposition-
 At INT2 g32 on Commonsense-170k, **every** method parks on a loss plateau near 0.13 for a large
 fraction of the single training epoch. What separates them is only **when they leave it**:
 
-| epoch | 0.10 | 0.30 | 0.45 | 0.60 | 0.75 | 1.00 | final | MEAN(7) |
+| epoch | 0.10 | 0.30 | 0.45 | 0.60 | 0.75 | 1.00 | **escape** | MEAN(7) |
 |---|---|---|---|---|---|---|---|---|
-| **QA-LoRA INT2** | 0.1315 | 0.1273 | **0.0836** | 0.0638 | 0.0578 | 0.0541 | 0.0518 | **71.90** |
-| **SALT-Q INT2** | 0.1332 | 0.1298 | 0.1280 | 0.1231 | **0.0837** | 0.0680 | 0.0665 | **65.77** |
-| SALT-Q, zp_lr ×5 | 0.1332 | 0.1306 | 0.1385 | 0.1258 | — | — | — | running |
-| QA-LoRA **INT3** | 0.0703 | 0.0473 | 0.0427 | 0.0373 | 0.0372 | 0.0369 | 0.0355 | 80.92 |
+| **QA-LoRA INT2** | 0.1315 | 0.1273 | **0.0836** | 0.0638 | 0.0578 | 0.0541 | **0.347** | **71.90** |
+| **SALT-Q INT2** | 0.1332 | 0.1298 | 0.1280 | 0.1231 | **0.0837** | 0.0680 | **0.672** | **65.77** |
+| SALT-Q z-only | 0.1321 | 0.1294 | 0.1266 | 0.1236 | 0.1215 | 0.1151 | **0.938** | 48.54 |
+| SALT-Q zp_lr x5 | 0.1332 | 0.1306 | 0.1385 | 0.1258 | 0.1281 | 0.1287 | **never** | 38.28 |
+| QLoRA INT2 floor (PTQ) | — | — | — | — | — | — | — | 50.35 |
+| QA-LoRA **INT3** | 0.0703 | 0.0473 | 0.0427 | 0.0373 | 0.0372 | 0.0369 | <0.10 | 80.92 |
 
-QA-LoRA escapes around epoch **0.45**, SALT-Q around **0.75**. SALT-Q loses ~0.3 of an epoch and
-ends **6.13 points behind** (z = −11.0, 0/8 tasks won). At INT3 the plateau does not exist at all.
+(escape = first logged step under loss 0.110. All are 1 epoch, INT2 g32, group_k=128 unless noted.)
 
-**Find out why SALT-Q escapes late, and fix it.** That is the deliverable. The 6-point loss to
-QA-LoRA is the symptom to explain; do not treat the score as the target directly.
+**The score is monotone in the escape epoch across every run.** QA-LoRA escapes at 0.347 and
+scores 71.90; SALT-Q at 0.672 and 65.77; z-only at 0.938 and 48.54; the x5 run never escapes and
+collapses to 38.28 with all eight tasks degenerate. At INT3 no plateau exists at all.
 
-This matters because SALT-Q's parameterization *strictly contains* QA-LoRA's (see §3), so a
+**Explain the escape ordering and you have explained the 6.13-point loss.** That is the
+deliverable. Do not chase the score directly — every run that tried to raise it by turning a
+learning rate up made the escape later, not earlier.
+
+This matters because SALT-Q's parameterization *strictly contains* QA-LoRA's (see §2), so a
 6-point loss cannot be an expressiveness result. It is an optimization result.
 
 ---
@@ -131,7 +137,7 @@ plausible-looking mean.
 | script | what it gives |
 |---|---|
 | `scripts/measure_saltq_displacement.py --base <base> --ckpt <final> --salient_lr .. --scales_lr .. --zp_lr ..` | how far each tier moved, in its own unit: `\|ΔW_S\|` in grid steps, `\|Δz\|` in levels, `\|Δs\|` relative |
-| `scripts/compare_qalora_saltq_capacity.py --qalora_dir .. --saltq_base .. --saltq_ckpt .. --group_size .. --bits ..` | both methods' coefficient on the shared mean-pooled input, same units |
+| `scripts/compare_qalora_saltq_capacity.py --qalora_dir .. --saltq_base .. --saltq_ckpt .. --group_size .. --bits ..` | both methods' coefficient on the shared mean-pooled input, same units. Handles both checkpoint layouts: a z-only run's `saltq_z` spans every group while the base's `z_n` spans only the non-salient ones (344 vs 340 for down_proj at g32/k=128), so the base is rebuilt as `[z_s \| z_n]` |
 | `scripts/test_saltq_base_provenance.py` | 5 checks that stale frozen codes cannot reach training |
 | `scripts/test_runs_wiring.sh` | every entry script's documented flags are actually parsed |
 | `scripts/plot_mixedprec_curve.py` | the fp16-salient sweep figure |
@@ -201,19 +207,22 @@ lever (autoseg 79.04 vs manual `[2,30]` 78.87). 3 epochs at INT3 gave no clear g
 
 ## 5. Ruled out — do not re-run these
 
-1. **`zp_lr` is not the lever at INT2.** ×5 (8.66e-3) sits on the *same* plateau and escapes
-   *later* than the anchor, with more instability (8 grad_norm spikes over 3.0 vs 3, last at epoch
-   0.439 vs 0.043). ×10 was killed while queued. Inside the plateau grad_norm is **0.10–0.17**,
-   comfortably under `max_grad_norm = 0.3` — **nothing is being clipped, the gradient really is
-   that small.** `|Δz| = 0.014 levels` (vs a documented 0.1–0.3 target) is a *symptom* of the
-   plateau, not its cause.
-2. **`salient_lr` scaling is correct.** `|ΔW_S| = 0.041` grid steps at *both* INT2 and INT3 — the
+1. **`zp_lr` is not the lever at INT2 — it is actively harmful.** ×5 (8.66e-3) never leaves the
+   plateau at all and collapses to 38.28 with all eight tasks degenerate. ×10 was killed while
+   queued. Inside the plateau grad_norm is **0.10–0.17**, comfortably under `max_grad_norm = 0.3`
+   — **nothing is being clipped, the gradient really is that small.** `|Δz| = 0.0143 levels` is a
+   *symptom* of the plateau, not its cause; ×5 moved it to 0.0707, INTO the documented 0.1–0.3
+   band's neighbourhood, and the model got 27.5 points worse. See §5b: the deficit is not
+   magnitude.
+2. **The salient QAT tier is not the problem — removing it costs 17.23 points** (§6). The
+   straight-through-estimator hypothesis is falsified; do not re-test it.
+3. **`salient_lr` scaling is correct.** `|ΔW_S| = 0.041` grid steps at *both* INT2 and INT3 — the
    grid-step-matched 5e-5 → 1.25e-4 landed exactly on target. The INT3 sweep is sharply unimodal:
    0 → 80.53, 5e-5 → **81.48**, 1e-4 → 80.98, 2e-4 → 80.26, 3.46e-4 → 78.76.
-3. **`group_k` is unlikely to be it.** QA-LoRA's INT2 base is `perm_group_k=0` — *zero* protected
+4. **`group_k` is unlikely to be it.** QA-LoRA's INT2 base is `perm_group_k=0` — *zero* protected
    columns — and still reaches 71.90 against SALT-Q's 2.43% protection and 65.77. At INT3 the
    sweep 64/128/256 spans 0.52 over a 4× range, all inside noise.
-4. **Two historical runs prove nothing about `zp_lr`** even though earlier notes cited them: `zp3x`
+5. **Two historical runs prove nothing about `zp_lr`** even though earlier notes cited them: `zp3x`
    paired zp_lr 5.19e-3 with salient_lr 3.46e-4, and the `lr` run paired zp_lr 1.73e-2 with
    salient_lr 6.34e-4, scales_lr ×1.88 **and** `train_layernorms: true`. Both failures are
    attributable to salient_lr (3.46e-4 alone costs 2.7 points). **There has never been a clean
@@ -229,10 +238,10 @@ should put `|dz|` near 0.07. Measured on the finished checkpoint:
 | | zp_lr | `\|dz\|` p50 (levels) | MEAN(7) |
 |---|---|---|---|
 | anchor | 1.73e-3 | 0.0143 | 65.77 |
-| x5 | 8.66e-3 | **0.0670** | **38.28** |
+| x5 | 8.66e-3 | **0.0707** | **38.28** |
 
-4.8x displacement for 5x lr — the mechanism worked exactly as predicted, and z is demonstrably
-neither clamp-limited (0.007% of zero-points sit at the `[0,3]` boundary) nor lr-starved. It moved
+4.94x displacement for 5x lr (all 224 projections) — the mechanism worked exactly as predicted, and z is demonstrably
+neither clamp-limited (0.00% of zero-points sit at the `[0,3]` boundary) nor lr-starved. It moved
 INTO the documented `0.1-0.3` band and the model lost 27.5 points, with all 8 tasks below majority
 while still emitting well-formed answers ("the correct answer is true" on every boolq item).
 
@@ -240,91 +249,109 @@ That band is MetaMath-derived and this is the **third** time a MetaMath displace
 been wrong on Commonsense-170k (`|dW_S| ~0.5` was the first two). Do not treat any of them as a
 target here; they are descriptions of a different dataset.
 
-## 5b. The strongest mechanism candidate: SALT-Q's update is too UNIFORM
+## 5b. What actually separates them: SHAPE, not size
 
-`scripts/compare_qalora_saltq_capacity.py`, both methods' coefficient on the shared mean-pooled
-input, end of training:
+`scripts/compare_qalora_saltq_capacity.py` puts both methods' update in one unit -- the
+coefficient each applies to the mean-pooled input (`(B@A)*scaling` for QA-LoRA,
+`-dz*s*group_size` for SALT-Q). End of training, INT2 g32:
 
-| | p50 | p90 | p99 | mean | **p99/p50** |
-|---|---|---|---|---|---|
-| INT2 QA-LoRA | 9.950e-3 | 5.665e-2 | 1.527e-1 | 2.187e-2 | **15.3** |
-| INT2 SALT-Q | **1.125e-2** | 3.285e-2 | 6.370e-2 | 1.502e-2 | **5.7** |
-| INT3 QA-LoRA | 1.165e-2 | 6.065e-2 | 1.628e-1 | 2.387e-2 | 14.0 |
-| INT3 SALT-Q | **1.215e-2** | 4.385e-2 | 9.095e-2 | 1.858e-2 | 7.5 |
+| run | p50 | p90 | p99 | mean | **p99/p50** | \|dz\| levels | escape | MEAN(7) |
+|---|---|---|---|---|---|---|---|---|
+| QA-LoRA | 9.950e-3 | 5.665e-2 | 1.527e-1 | 2.187e-2 | **15.3** | — | 0.347 | 71.90 |
+| SALT-Q anchor | 1.125e-2 | 3.285e-2 | 6.370e-2 | 1.502e-2 | **5.7** | 0.0143 | 0.672 | 65.77 |
+| SALT-Q z-only | 6.600e-3 | 1.885e-2 | 3.790e-2 | 8.792e-3 | **5.7** | 0.0084 | 0.938 | 48.54 |
+| SALT-Q zp_lr x5 | 5.605e-2 | 1.537e-1 | 2.763e-1 | 7.156e-2 | **4.9** | 0.0707 | never | 38.28 |
+| (INT3 QA-LoRA | 1.165e-2 | 6.065e-2 | 1.628e-1 | 2.387e-2 | 14.0 | — | <0.10 | 80.92) |
+| (INT3 SALT-Q | 1.215e-2 | 4.385e-2 | 9.095e-2 | 1.858e-2 | 7.5 | 0.0158 | — | 81.48) |
 
-Two things fall out, and they reframe the problem.
+Four things are now settled by measurement rather than argued.
 
-**The zero-point clamp is NOT the limiter.** `0.00%` of groups sit at either boundary, at both bit
-widths (`z_init` p50 is 2.000 of `[0,3]` at INT2 and 3.000 of `[0,7]` at INT3, and `|dz|` p50 is
-0.95% of the half-range). The registered alternative hypothesis is dead: raising `zp_lr` does not
-run into a wall, it simply does not help.
+**1. The zero-point clamp is not the limiter.** 0.00% of groups sit at either boundary at both bit
+widths (`z_init` p50 is 2.000 of `[0,3]` at INT2, 3.000 of `[0,7]` at INT3). That hypothesis is
+dead; `zp_lr` does not run into a wall.
 
-**At the MEDIAN, SALT-Q moves the shared coefficient slightly MORE than QA-LoRA** -- at both bit
-widths. QA-LoRA only wins on the mean because its **tail** is far heavier: p99/p50 is 15.3 vs 5.7
-at INT2. So the two methods do not differ in how much they adapt; they differ in **how the
-adaptation is distributed**.
+**2. `|dz|` is exactly lr-linear, and the registered prediction held.** 5x `zp_lr` moved `|dz|`
+from 0.0143 to 0.0707 levels -- **4.94x**, against a predicted ~5x. z is fully lr-controllable.
 
-Low rank forces concentration -- a rank-<=64 update on an `[out, G]` matrix is a sum of 64 outer
-products, so it *must* pile onto a few directions. Full-rank `z` under Adam gets the opposite:
-Adam normalizes per parameter, so every coefficient takes about the same small step and nothing
-can concentrate. Quantitatively SALT-Q's update is **2.7x flatter than QA-LoRA's at INT2** and
-1.9x flatter at INT3 -- and note SALT-Q got *flatter still* going 3->2 bits (7.5 -> 5.7) while
-QA-LoRA held its shape (14.0 -> 15.3).
+**3. The deficit is therefore NOT magnitude.** The x5 run's mean coefficient is **3.3x LARGER than
+QA-LoRA's**, and it never escaped and scored 38.28 with every task degenerate. Across the three
+SALT-Q runs the magnitude spans **8.1x** while the score falls monotonically. More update is worse.
 
-Hypothesis: **leaving the plateau needs a few large targeted corrections, and a full-rank
-per-coefficient parameterization under Adam can only produce uniformly small ones.** It explains
-everything observed: raising `zp_lr` scales every coefficient equally and adds no concentration,
-which is why x5 was *worse*; at INT3 the frozen codes are good enough that uniform small
-corrections suffice, which is where full-rank `z` becomes an advantage and SALT-Q wins.
+**4. What does not change is the SHAPE.** `p99/p50` is 4.9-5.7 for every SALT-Q variant, across
+that entire 8.1x magnitude range, while QA-LoRA sits at 15.3 (and 14.0 at INT3 -- QA-LoRA holds
+its shape across bit widths too). **SALT-Q's update is uniform and no learning rate makes it less
+so.** Rank <= 64 on an `[out, G]` matrix is a sum of 64 outer products and *must* pile onto a few
+directions; full-rank `z` under Adam gets per-parameter normalisation, so every coefficient takes
+about the same step and nothing can concentrate.
 
-Caveat, stated because it matters: this is an **end-of-training snapshot**, not a measurement
-taken during the plateau, and `save_total_limit: 1` means there are no intermediate checkpoints to
-look at. Confirming it properly needs the coefficient distribution logged *while* the model is on
-the plateau.
+**Working hypothesis: leaving the plateau needs a few large targeted corrections, and a full-rank
+per-coefficient parameterization under Adam can only produce uniformly small ones.**
+
+It accounts for every run: raising `zp_lr` scales all coefficients equally and adds no
+concentration, which is why x5 was catastrophic rather than merely unhelpful; and at INT3 the
+frozen codes are good enough that uniform small corrections suffice, which is exactly where
+full-rank `z` becomes an advantage and SALT-Q wins (81.48 vs 80.92).
+
+### The gap in it, stated plainly
+
+`p99/p50` is **identical (5.7) for the anchor and for z-only**, yet they escape 0.27 epochs apart
+and differ by 17.23 points. So the per-group coefficient's shape does not explain that pair. What
+separates them is the salient tier, and that tier's update is **a different kind of object** --
+per-element on 128 real-weight columns, which no per-group coefficient can express and which this
+measurement does not capture at all. There are plausibly two concentration mechanisms in play and
+SALT-Q has the weaker version of each. A measurement that covers the salient tier in the same
+units would settle it.
+
+Also: these are **end-of-training snapshots**, not measurements taken on the plateau, and
+`save_total_limit: 1` leaves no intermediate checkpoints. Logging the coefficient distribution
+*during* the plateau is the obvious next instrument, and nothing here is causal until that exists.
 
 ---
 
-## 6. In flight right now
+## 6. The salient tier is EXONERATED -- and it was helping
 
-| job | what | read it how |
-|---|---|---|
-| `15239837` | SALT-Q INT2, zp_lr ×5 | closes the falsified zp_lr direction; measure `\|Δz\|` |
-| `15240708` | **SALT-Q INT2 z-only** (`train_salient: false`) | **the live diagnostic** |
+The z-only run (`train_salient: false`) was submitted to test whether the salient QAT tier holds
+the model on the plateau: 157.3M real weights trained through a 2-bit straight-through estimator
+on a grid so coarse that `|dW_S| = 0.041` steps can never flip a code (0.5 is needed). A biased
+gradient from a tier that cannot act seemed a plausible culprit.
 
-> `15240314` was the first attempt at this run and it **failed after 5 minutes**, so nothing was
-> in flight between 00:31 and the relaunch. It passed `--saltq_base_dir` at the anchor's
-> `saltq_base_2bit_g32`, and `scripts/train.py`'s reuse guard compares `train_salient` along with
-> `(bits, group_size, symmetric)` — a z-only run folds the salient columns into the frozen-code
-> pool, so its codes are genuinely different and the guard was right to refuse. The guard's
-> message listed only the other three fields, which is why the failure read as inexplicable; it
-> now names the field that actually differs. The job no longer passes `--saltq_base_dir` and
-> builds its own base under its own `output_root`.
+**The opposite is true.** Removing it pushed the escape from 0.672 to **0.938** and cost **17.23
+points** (65.77 -> 48.54, boolq and winogrande both degenerate). The salient tier is not what
+pins SALT-Q to the plateau; it is the main thing dragging it off. The STE hypothesis is dead.
 
-**The z-only run is the current hypothesis test.** The one structural thing SALT-Q carries through
-the plateau that QA-LoRA does not is the salient QAT tier: 157.3M real weights trained through a
-**2-bit straight-through estimator** on a grid so coarse that `|ΔW_S| = 0.041` steps **can never
-flip a code** (0.5 would be needed). A biased STE gradient from a tier that cannot act is a
-plausible thing to hold the model on the plateau. `train_salient: false` removes exactly that tier
-and nothing else, and makes SALT-Q the full-rank version of QA-LoRA.
+That also reorders the whole picture by how *concentrated* an update each configuration can make:
 
-Read rule, fixed before the run — **read the escape epoch from the loss curve, not the score**
-(z-only cost 0.95 points at INT3, so a lower score is expected and settles nothing):
+| | can it concentrate? | escape | MEAN(7) |
+|---|---|---|---|
+| QA-LoRA | low rank — **forced** to | 0.347 | 71.90 |
+| SALT-Q anchor | uniform z **+ 128 real-weight columns** | 0.672 | 65.77 |
+| SALT-Q z-only | uniform z only — **maximally flat** | 0.938 | 48.54 |
+| SALT-Q zp_lr x5 | uniform z, scaled up — noise, no targeting | never | 38.28 |
 
-- escape near **0.45**, like QA-LoRA → the salient tier delays the escape; the fix is in how the
-  salient slice is trained, and no learning rate will do it.
-- escape still near **0.75** → the salient tier is exonerated; the delay lives in the frozen-code
-  / (s,z) path, and the base is the next thing to look at.
+Perfectly monotone, and it is the ordering §5b predicts.
 
-§5b shifts the prior toward the second outcome: if the plateau is about the update being too
-uniform, removing the salient tier should not move the escape at all, and z-only is then a
-CONTROL for §5b rather than a test of the STE story.
+### One piece of history worth keeping
 
-Extract the curve with:
+`15240314` was the first attempt at the z-only run and it **failed after 5 minutes**; `15240708`
+is the one that produced the numbers above. The first passed `--saltq_base_dir` pointing at the
+anchor's `saltq_base_2bit_g32`, and `scripts/train.py`'s reuse guard compares `train_salient`
+along with `(bits, group_size, symmetric)` — a z-only run folds the salient columns into the
+frozen-code pool, so its codes really are different and the guard was right to refuse. The guard's
+message listed only the other three fields, which is why the refusal read as inexplicable; it now
+names the field that actually differs. **A z-only cell must build its own base under its own
+`output_root`** — do not hand it a `train_salient: true` base.
 
-```bash
-grep -oE "\{'loss': '[0-9.eE+-]+', 'grad_norm': '[0-9.eE+-]+',[^}]*'epoch': '[0-9.]+'\}" \
-  logs/commonsense_170k/<run>.log
-```
+### Nothing is in flight
+
+All INT2 jobs have finished. `15239838` (zp_lr x10) was killed while queued once x5 falsified that
+direction. The open question in §1 is unanswered.
+
+### The two instruments worth building next
+
+1. **Log the coefficient distribution during training**, not just at the end. `save_total_limit: 1`
+   currently destroys the evidence. Without this every claim in §5b stays correlational.
+2. **Put the salient tier into the same units as the per-group coefficient**, so the anchor-vs-
+   z-only gap (§5b, "the gap in it") can be attributed instead of assumed.
 
 ---
 
@@ -343,3 +370,12 @@ grep -oE "\{'loss': '[0-9.eE+-]+', 'grad_norm': '[0-9.eE+-]+',[^}]*'epoch': '[0-
   stdout lost, so it looked like it had succeeded and printed nothing. Fixed in `f7837a3`.
 - Write the rationale **and the read rule** into the `.pbs` header before submitting, so the
   interpretation is fixed before the number arrives.
+- **Read the trajectory, not just the final score.** Every INT2 conclusion in this document came
+  from aligning loss curves by epoch. The scores alone say "SALT-Q is worse"; the curves say
+  "SALT-Q leaves the plateau 0.3 epochs later", which is a different and answerable question.
+- **Separate magnitude from shape before blaming a learning rate.** SALT-Q's update magnitude
+  spans 8.1x across three runs while its `p99/p50` never leaves 4.9-5.7. Two of those runs were
+  submitted on the theory that magnitude was the deficit; both made things worse.
+- **State the falsifiable prediction in the `.pbs` header.** The x5 zp_lr job predicted
+  `|dz| ~ 0.07` and measured 0.0707, which is what let a bad score be read as "the mechanism works
+  and the hypothesis is wrong" instead of "something broke".
