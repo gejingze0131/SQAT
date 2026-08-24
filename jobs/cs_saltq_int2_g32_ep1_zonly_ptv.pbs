@@ -1,0 +1,135 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_zonly_ptv
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32 Z-ONLY, 1 epoch. ONE VARIABLE vs configs/saltq_cs170k_int2_g32_ep1_zonly.yaml:
+# the zero-point group's Adam second moment goes PER-COORDINATE -> PER-TENSOR.
+# (zp_lr x3.15 rides along only to hold the median step fixed — see the config, and READ RULE 0.)
+#
+# ---------------------------------------------------------------------------------------------
+# THE QUESTION THIS CELL EXISTS TO ANSWER. QA-LoRA is also nothing but zero-point training — a
+# rank-64 group-pooled adapter that folds into z at deploy. SALT-Q z-only trains the SAME object
+# at FULL rank, so its reachable set strictly contains QA-LoRA's. It should be an upper bound.
+# It is not:
+#
+#   QA-LoRA INT2            escapes 0.347   final 0.0541   MEAN(7) 71.90
+#   SALT-Q  INT2 anchor     escapes 0.672   final 0.0680   MEAN(7) 65.77   (salient tier does it)
+#   SALT-Q  z-only          escapes 0.938   final 0.1151   MEAN(7) 48.54  <- THIS CELL'S BASELINE
+#   SALT-Q  zp_lr x5        NEVER           final 0.1287   MEAN(7) 38.28  7/7 below majority
+#   SALT-Q  zp_eps 1e-10    NEVER           final 0.1286   MEAN(7) 38.57  7/7 below majority
+#
+# ---------------------------------------------------------------------------------------------
+# WHAT IS ACTUALLY WRONG — measured, not inferred.
+#
+# Read the baseline's own optimizer state and separate the GRADIENT from the UPDATE APPLIED TO IT
+# (scripts/measure_adam_conditioning.py plus the spectrum probe; 40 projections of [11008,128]):
+#
+#   exp_avg m           (the gradient)        stable rank 1.83   top-1 direction 54.9%
+#   m / (sqrt(v) + eps) (what Adam applies)   stable rank 6.87   top-1 direction 15.5%
+#                                             ---------------- FLATTENED 3.8x
+#
+# dL/dC = -gy^T @ pool_g(x) is a sum of T outer products, so z's gradient is NATURALLY low rank —
+# and it has statistically the SAME shape as QA-LoRA's successful update (1.62 / 61.9%). The
+# realised end-of-run update, though, came out 5.67 / 17.7%: it tracks the flattened update, not
+# the gradient. Dynamic range says the same thing: raw gradient p99/p50 = 13.1x, QA-LoRA's
+# realised update 15.3x, Adam-on-z 4.6x, SALT-Q's realised update 5.7x.
+#
+# So the gradient is right and the optimizer throws the concentration away. QA-LoRA is immune not
+# because of its optimizer but because B@A is rank-constrained BY CONSTRUCTION — Adam can flatten
+# B and A entrywise all it likes, the product is still rank <= 64, in practice 1.6.
+#
+# AND NO SCALAR zp_lr CAN FIX IT. Matching QA-LoRA's dominant singular direction needs x4.73,
+# which is the x5 already run for -27.5 points, because the same scalar multiplies the ~5
+# directions that carry only noise. Direction 1 wants an lr 4.7x larger than directions 2-128.
+# That is the whole reason the superset loses, and it is a property of the OPTIMIZER, not of the
+# parameterisation, the lr, the clamp, the base, or the salient tier.
+#
+# ---------------------------------------------------------------------------------------------
+# WHAT PER-TENSOR v DOES.  src/trainer.py:SALTQAdamW, this group only:
+#     per-coordinate  u_i = m_i / (sqrt(v_i) + eps)          <- denominator varies within a tensor
+#     per-tensor      u_i = m_i / (sqrt(mean_j v_j) + eps)   <- one scalar per projection
+# Constant within a tensor => the update keeps the gradient's relative structure, while still
+# being normalised per tensor, so it stays scale-free across tensors and across training phases.
+# A plain SGD group would surrender that: z's gradient scale moves ~10x between the plateau and
+# after the escape, and ~95x between this cell and train_salient=true.
+#
+# VERIFIED BEFORE SUBMITTING:
+#   - with per_tensor_v=False, SALTQAdamW reproduces torch.optim.AdamW to 6e-17 relative in
+#     float64, for weight_decay 0 and 0.01 — the default path is untouched;
+#   - exp_avg_sq becomes a 0-dim tensor (202M floats -> 224 scalars, ~810 MB/rank saved) and
+#     survives state_dict save/load;
+#   - on synthetic gradients it flattens nothing under HOMOSCEDASTIC noise (1.49 vs 1.40) and
+#     reproduces the measured flattening under HETEROSCEDASTIC noise (per-coordinate 2.61 =
+#     1.9x the signal's stable rank; per-tensor 1.45 = 1.1x). Heteroscedastic is the real case —
+#     that is exactly why sqrt(v) is large where |m| is large and the division cancels the
+#     concentration.
+#
+# ---------------------------------------------------------------------------------------------
+# HOW TO READ IT. Fixed before the run. Escape epoch comes from the LOSS CURVE, not MEAN(7).
+# The baseline for THIS cell is z-only: escape 0.938, final loss 0.1151, MEAN(7) 48.54.
+#
+#  0. FIRST, before any conclusion: confirm the median step really was held. At checkpoint-200,
+#     median_i(u_i) must be within ~20% of the baseline's. If it is not, x3.15 mis-set the scale
+#     and this run moved two variables — read nothing else until that is settled.
+#  1. escape materially before 0.938        -> the concentration IS the mechanism. z-only becoming
+#                                              able to leave the plateau at full rank is the direct
+#                                              proof of the superset claim. Then repeat on the
+#                                              anchor (train_salient=true).
+#  2. escape near 0.347, like QA-LoRA       -> the mechanism is not just present but sufficient:
+#                                              full-rank z with a shape-preserving optimizer
+#                                              matches the low-rank adapter. Best possible outcome.
+#  3. NO escape, but checkpoint-200 shows
+#     the update's stable rank near 1.8     -> the optimizer fix worked and concentration was NOT
+#                                              enough. Kills the concentration family; what is left
+#                                              is the 2.3% salient engine (group_k, train_scale)
+#                                              and the low-rank Delta-z reparameterisation, which
+#                                              also fixes the bf16 issue below.
+#  4. NO escape and stable rank still ~6.9  -> per-tensor v did not do what the offline algebra
+#                                              says. Suspect the wiring, not the hypothesis.
+#  5. diverges / loss climbs                -> the concentrated directions are now over-driven.
+#                                              Re-run at zp_lr 1.73e-3 (drop the x3.15) before
+#                                              concluding anything about the shape.
+#
+# Measure the spectrum inside the plateau — this is why save_steps is 200 and nothing is deleted:
+#   python scripts/measure_adam_conditioning.py \
+#       outputs/saltq_cs170k_int2_g32_ep1_zonly_ptv-2bit-saltq/checkpoint-200/optimizer.pt \
+#       --label "z-only per-tensor v, step 200"
+# (with a per-tensor group its sqrt(v) column is one scalar per tensor — that is expected.)
+#
+# ---------------------------------------------------------------------------------------------
+# KNOWN, DELIBERATELY NOT FIXED HERE (would be a second variable):
+#   qat_saltq.py:567  zs = (z*s).to(x.dtype) casts z0*s + dz*s TOGETHER to bf16, so one step moves
+#   the forward by 0.0218 ulp. Real, but not the cause — the salient tier trains through a 2-bit
+#   fakequant, far coarser, and works. The fix (fold z0*s into wq so only the DELTA is cast, which
+#   is QA-LoRA's numerical structure) belongs with the low-rank Delta-z work.
+#
+# BASE REUSE. train_salient=false, bits, group_size and the permutation are unchanged, so the
+# frozen codes are bit-identical to the z-only baseline this is compared against.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_zonly_ptv.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_zonly_ptv \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1_zonly/saltq_base_2bit_g32 \
+    --note              'INT2 z-only, per-TENSOR second moment for z: does preserving the gradient spectrum let full-rank z leave the plateau at all' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_zonly_ptv.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

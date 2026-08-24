@@ -67,9 +67,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("optimizer_pt")
     ap.add_argument("--label", default="")
-    ap.add_argument("--eps", type=float, default=1e-8,
-                    help="the eps the run actually used (HF's adam_epsilon default is 1e-8; a "
-                         "per-group override in trainer.py would make this per-group too)")
+    ap.add_argument("--eps", type=float, default=None,
+                    help="report the damping AT THIS eps instead of the one the group actually "
+                         "used. sqrt(v) is what is measured, so a run trained with zp_eps=1e-10 "
+                         "can be asked '--eps 1e-8' to print the damping the OLD default WOULD "
+                         "have inflicted at this step — which is how a plateau checkpoint of the "
+                         "fixed run also measures the baseline it replaced. Omit to use each "
+                         "group's own stored eps.")
     ap.add_argument("--subsample", type=int, default=20000,
                     help="values kept per tensor for the sqrt(v) percentiles; the percentiles are "
                          "stable well below this and it keeps a 200M-parameter group in RAM")
@@ -82,15 +86,22 @@ def main() -> int:
     print(f"\n{'=' * 118}")
     print(f"{args.label or args.optimizer_pt}")
     print(f"{'=' * 118}")
+    if args.eps is not None:
+        print(f"damping reported at eps={args.eps:g} for EVERY group (--eps overrides what each "
+              f"group was actually trained with)")
     print(f"{'grp':>3} {'initial_lr':>11} {'numel':>13} {'r=|m|/sqrt(v)':>14} {'rho(SNR)':>9}"
-          f" {'sqrt(v) p10':>12}{'p50':>12}{'p90':>12} {'%<eps':>7} {'damp p50':>9} {'damp p10':>9}",
-          flush=True)
+          f" {'sqrt(v) p10':>12}{'p50':>12}{'p90':>12} {'eps used':>10} {'%<eps':>7}"
+          f" {'damp p50':>9} {'damp p10':>9}", flush=True)
 
     for gi, g in enumerate(sd["param_groups"]):
         idxs = [i for i in g["params"] if i in state]
         if not idxs:
             continue
-        eps = float(g.get("eps", args.eps))
+        # An explicit --eps WINS over the group's stored value. Without this the flag would be
+        # dead for exactly the case it exists for: src/trainer.py now writes a per-group "eps"
+        # into the zero-point group, so g["eps"] is 1e-10 on a fixed run and the damping would
+        # print as ~1.0 no matter what was asked for.
+        eps = args.eps if args.eps is not None else float(g.get("eps", 1e-8))
 
         n = 0
         rs = []                       # per-tensor r, so one huge tensor cannot dominate the median
@@ -119,7 +130,7 @@ def main() -> int:
 
         print(f"{gi:>3} {g.get('initial_lr', float('nan')):>11.3e} {n:>13,} "
               f"{r_med:>14.4f} {rho_from_r(r_med):>9.3f} "
-              f"{p10:>12.3e}{p50:>12.3e}{p90:>12.3e} {below:>6.1f}% "
+              f"{p10:>12.3e}{p50:>12.3e}{p90:>12.3e} {eps:>10.1e} {below:>6.1f}% "
               f"{p50 / (p50 + eps):>9.3f} {p10 / (p10 + eps):>9.3f}", flush=True)
 
     print(f"\n  pure-noise floor r = {NOISE_FLOOR:.4f} (rho = 0, the parameter diffuses); "
