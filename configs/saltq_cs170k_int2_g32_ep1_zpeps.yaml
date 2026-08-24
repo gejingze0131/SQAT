@@ -393,7 +393,7 @@ qat:
     # thing. The measurement below is real but the DIRECTION read off it was wrong — eps at
     # 26% of the denominator was partially DE-NORMALISING the tier, and lowering it made Adam
     # normalise harder. The real defect is that per-coordinate normalisation destroys the
-    # gradient's concentration (the applied update's stable rank is 2.92x the gradient's); see
+    # gradient's concentration (stable rank 1.83 -> 6.87); see
     # configs/saltq_cs170k_int2_g32_ep1_zonly_ptv.yaml, which changes the denominator's SHAPE
     # instead of its size. Kept as the record of a clean negative.
     #

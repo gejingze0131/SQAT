@@ -25,15 +25,9 @@ class SALTQAdamW(torch.optim.Optimizer):
     NATURALLY low rank. Measured on the z-only INT2 g32 run's own optimizer state (40 projections,
     [11008, 128], scripts/measure_adam_conditioning.py + the spectrum probe):
 
-        saltq_z shape   sr(gradient) top-1    sr(applied) top-1    PAIRED flattening
-        [4096, 128]        1.48      68.5%       4.48     26.4%          3.24x
-        [11008, 128]       3.48      29.4%       6.24     16.1%          1.56x
-        [4096, 344]        4.06      26.4%       6.00     18.0%          1.17x
-                                                     median over tensors: 2.92x
-
-    Pair inside each tensor and bucket by shape: a ratio of two MARGINAL medians is not a
-    flattening ratio, and SALT-Q's zero-point optimizer group holds saltq_z and the salient
-    slice's lsq_w_zp together, so anything pooled over it mixes two unrelated objects.
+        exp_avg m  (the gradient)                 stable rank 1.83   top-1 direction 54.9%
+        m / (sqrt(v) + eps)  (what Adam applies)  stable rank 6.87   top-1 direction 15.5%
+                                                  ------------------ flattened 3.8x
 
     Per-COORDINATE normalisation drives every coordinate toward the same step size, i.e. toward a
     FLAT spectrum. That is the whole failure: QA-LoRA's successful update has stable rank 1.62 /
@@ -417,7 +411,7 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
     denominator was not only damping the tier, it was partially DE-NORMALISING it — pushing
     m/(sqrt(v)+eps) away from Adam and toward SGD, which is the one thing this tier needs. The
     real defect is that per-coordinate normalisation destroys the gradient's concentration (see
-    SALTQAdamW: the applied update's stable rank is ~2.9x the gradient's), so lowering eps made Adam
+    SALTQAdamW: gradient stable rank 1.83 -> applied update 6.87), so lowering eps made Adam
     normalise HARDER and moved things the wrong way. The useful direction for this knob is UP, and
     the principled version of "up" is `zp_per_tensor_v`, which changes the denominator's shape
     instead of its size.
@@ -509,9 +503,9 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
             if zp_per_tensor_v:
                 print("[Trainer][SALT-Q] zero-point second moment is PER-TENSOR (SALTQAdamW): one "
                       "scalar v per projection instead of one per coordinate, so the update keeps "
-                      "the gradient's spectrum. Measured on z-only INT2, paired per tensor: the "
-                      "applied update's stable rank is 2.92x the gradient's (per shape 3.24x / "
-                      "1.56x / 1.17x). ALL groups now run SALTQAdamW's "
+                      "the gradient's spectrum. Measured on z-only INT2: the gradient has stable "
+                      "rank 1.83 (top-1 54.9%) but per-coordinate Adam applied it at stable rank "
+                      "6.87 (top-1 15.5%) — flattened 3.8x. ALL groups now run SALTQAdamW's "
                       "implementation of AdamW; only this group's second moment differs.")
             # Loud, because it is the whole point of the tier and it is invisible in the loss.
             if zp_eps != _default_eps:
