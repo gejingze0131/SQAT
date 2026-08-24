@@ -26,7 +26,7 @@ nvidia-smi | head -12
 # 26% of the denominator was not merely damping the tier, it was partially DE-NORMALISING it,
 # and lowering it made Adam normalise HARDER. The defect is that per-coordinate normalisation
 # destroys the gradient's concentration -- measured afterwards on the z-only optimizer state:
-# gradient stable rank 1.83 (top-1 54.9%) but the APPLIED update 6.87 (top-1 15.5%). Follow-up
+# paired per tensor, the APPLIED update's stable rank is 2.92x the gradient's. Follow-up
 # is jobs/cs_saltq_int2_g32_ep1_zonly_ptv.pbs, which changes the denominator's SHAPE, not its
 # size. This file is kept as the record of a clean negative.
 # =============================================================================================

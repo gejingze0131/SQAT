@@ -390,9 +390,15 @@ qat:
     # NATURALLY low rank. Measured on this cell's own baseline optimizer state (z-only,
     # checkpoint-1845, 40 projections of [11008, 128]):
     #
-    #   exp_avg m           (the gradient)          stable rank 1.83   top-1 direction 54.9%
-    #   m / (sqrt(v) + eps) (what Adam applies)     stable rank 6.87   top-1 direction 15.5%
-    #                                               ---------------- FLATTENED 3.8x
+    #   saltq_z shape   sr(gradient) top-1    sr(applied) top-1    PAIRED flattening
+    #   [4096, 128]        1.48      68.5%       4.48     26.4%          3.24x
+    #   [11008, 128]       3.48      29.4%       6.24     16.1%          1.56x
+    #   [4096, 344]        4.06      26.4%       6.00     18.0%          1.17x
+    #                                                    median over tensors: 2.92x
+    #
+    # Pair INSIDE each tensor and bucket by shape: a ratio of two marginal medians is not a
+    # flattening (an earlier read of this quoted 1.83 -> 6.87 = 3.8x from medians taken over
+    # different tensors), and this optimizer group holds saltq_z and lsq_w_zp together.
     #
     # and the realised end-of-run update came out at 5.67 / 17.7%, matching the applied update,
     # not the gradient. QA-LoRA's SUCCESSFUL update is 1.62 / 61.9% — statistically the same shape

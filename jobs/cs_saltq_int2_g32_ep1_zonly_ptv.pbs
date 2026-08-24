@@ -30,18 +30,28 @@ nvidia-smi | head -12
 # ---------------------------------------------------------------------------------------------
 # WHAT IS ACTUALLY WRONG — measured, not inferred.
 #
-# Read the baseline's own optimizer state and separate the GRADIENT from the UPDATE APPLIED TO IT
-# (scripts/measure_adam_conditioning.py plus the spectrum probe; 40 projections of [11008,128]):
+# Read the baseline's own optimizer state and separate the GRADIENT from the UPDATE APPLIED TO IT.
+# PAIR INSIDE EACH TENSOR and bucket by shape — a ratio of two marginal medians is not a
+# flattening (an earlier read of this quoted 1.83 -> 6.87 = 3.8x; those two medians came from
+# different tensors and the real paired figure is 2.92x):
 #
-#   exp_avg m           (the gradient)        stable rank 1.83   top-1 direction 54.9%
-#   m / (sqrt(v) + eps) (what Adam applies)   stable rank 6.87   top-1 direction 15.5%
-#                                             ---------------- FLATTENED 3.8x
+#   saltq_z shape   sr(gradient) top-1    sr(applied) top-1    PAIRED flattening
+#   [4096, 128]        1.48      68.5%       4.48     26.4%          3.24x
+#   [11008, 128]       3.48      29.4%       6.24     16.1%          1.56x
+#   [4096, 344]        4.06      26.4%       6.00     18.0%          1.17x
+#                                                    median over tensors: 2.92x
 #
 # dL/dC = -gy^T @ pool_g(x) is a sum of T outer products, so z's gradient is NATURALLY low rank —
 # and it has statistically the SAME shape as QA-LoRA's successful update (1.62 / 61.9%). The
 # realised end-of-run update, though, came out 5.67 / 17.7%: it tracks the flattened update, not
 # the gradient. Dynamic range says the same thing: raw gradient p99/p50 = 13.1x, QA-LoRA's
 # realised update 15.3x, Adam-on-z 4.6x, SALT-Q's realised update 5.7x.
+#
+# REGISTERED IN ADVANCE, because it bears on whether this transfers to the real method: in the
+# ANCHOR (train_salient=true) the NON-SALIENT z gradient is NOT concentrated -- sr 11.25, top-1
+# 9.9%, and Adam flattens it only 1.09x. The salient tier appears to take the concentrated part
+# of the error signal and leave z a high-rank residual. If that holds on the plateau and not just
+# at convergence, per-tensor v should help THIS cell and do almost nothing for the anchor.
 #
 # So the gradient is right and the optimizer throws the concentration away. QA-LoRA is immune not
 # because of its optimizer but because B@A is rank-constrained BY CONSTRUCTION — Adam can flatten
@@ -88,12 +98,13 @@ nvidia-smi | head -12
 #                                              full-rank z with a shape-preserving optimizer
 #                                              matches the low-rank adapter. Best possible outcome.
 #  3. NO escape, but checkpoint-200 shows
-#     the update's stable rank near 1.8     -> the optimizer fix worked and concentration was NOT
+#     the PAIRED ratio near 1.0x            -> the optimizer fix worked and concentration was NOT
 #                                              enough. Kills the concentration family; what is left
 #                                              is the 2.3% salient engine (group_k, train_scale)
 #                                              and the low-rank Delta-z reparameterisation, which
 #                                              also fixes the bf16 issue below.
-#  4. NO escape and stable rank still ~6.9  -> per-tensor v did not do what the offline algebra
+#  4. NO escape and the PAIRED ratio is
+#     still ~2.9x                           -> per-tensor v did not do what the offline algebra
 #                                              says. Suspect the wiring, not the hypothesis.
 #  5. diverges / loss climbs                -> the concentrated directions are now over-driven.
 #                                              Re-run at zp_lr 1.73e-3 (drop the x3.15) before
