@@ -2,7 +2,6 @@
 Training loop builder using HuggingFace Trainer + QAT callbacks.
 """
 
-import math
 import os
 from typing import Optional
 
@@ -18,112 +17,8 @@ from .data import build_data_collator
 from .qat_base import QATHandler
 
 
-class SALTQAdamW(torch.optim.Optimizer):
-    """AdamW with an optional PER-TENSOR second moment, selected per param group.
-
-    WHY. The zero-point gradient is dL/dC = -gy^T @ pool_g(x): a sum of T outer products, so it is
-    NATURALLY low rank. Measured on the z-only INT2 g32 run's own optimizer state (40 projections,
-    [11008, 128], scripts/measure_adam_conditioning.py + the spectrum probe):
-
-        exp_avg m  (the gradient)                 stable rank 1.83   top-1 direction 54.9%
-        m / (sqrt(v) + eps)  (what Adam applies)  stable rank 6.87   top-1 direction 15.5%
-                                                  ------------------ flattened 3.8x
-
-    Per-COORDINATE normalisation drives every coordinate toward the same step size, i.e. toward a
-    FLAT spectrum. That is the whole failure: QA-LoRA's successful update has stable rank 1.62 /
-    top-1 61.9% -- statistically the same shape as z's own gradient -- while SALT-Q's realised
-    update came out at 5.67 / 17.7%. QA-LoRA is immune not because of its optimizer but because
-    B@A is rank-constrained BY CONSTRUCTION: Adam may flatten B and A entrywise all it likes, the
-    product is still rank <= 64 and in practice 1.6.
-
-    Raising zp_lr cannot fix this. Matching QA-LoRA's dominant singular direction needs x4.73,
-    which is the x5 that was already run and lost 27.5 points, because the same scalar also
-    multiplies the ~5 directions that carry only noise.
-
-    WHAT per_tensor_v=True DOES. Keep ONE scalar v per parameter tensor, the EMA of mean(g^2),
-    instead of one per coordinate:
-
-        per-coordinate   u_i = m_i / (sqrt(v_i) + eps)
-        per-tensor       u_i = m_i / (sqrt(mean_j v_j) + eps)
-
-    The denominator is now constant WITHIN a tensor, so the update keeps the gradient's relative
-    structure -- its concentration survives -- while still being normalised per tensor, so the
-    optimizer stays scale-free across tensors and across training phases. That last property is
-    what a plain SGD group would give up: z's gradient scale moves ~10x between the plateau and
-    after the escape (logged grad_norm p50 0.144 vs 1.557), and ~95x between the z-only and
-    train_salient configurations, so a fixed SGD lr cannot serve both.
-
-    Side effect worth having: the z tier's exp_avg_sq drops from 202M floats to 224 scalars,
-    about 810 MB per rank.
-
-    Groups WITHOUT per_tensor_v take the ordinary AdamW path, so this class is a drop-in and the
-    default configuration is mathematically identical to what ran before.
-    """
-
-    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0,
-                 per_tensor_v=False):
-        if not 0.0 <= betas[0] < 1.0 or not 0.0 <= betas[1] < 1.0:
-            raise ValueError(f"invalid betas: {betas}")
-        super().__init__(params, dict(lr=lr, betas=betas, eps=eps,
-                                      weight_decay=weight_decay, per_tensor_v=per_tensor_v))
-
-    @torch.no_grad()
-    def step(self, closure=None):
-        loss = None
-        if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
-
-        for group in self.param_groups:
-            beta1, beta2 = group["betas"]
-            lr, eps, wd = group["lr"], group["eps"], group["weight_decay"]
-            per_tensor = bool(group.get("per_tensor_v", False))
-
-            for p in group["params"]:
-                if p.grad is None:
-                    continue
-                grad = p.grad
-                if grad.is_sparse:
-                    raise RuntimeError("SALTQAdamW does not support sparse gradients")
-
-                state = self.state[p]
-                if len(state) == 0:
-                    state["step"] = 0
-                    state["exp_avg"] = torch.zeros_like(p)
-                    # A 0-dim tensor, not a python float: it has to live on the parameter's device
-                    # and be carried by state_dict() across save/resume like any other state.
-                    state["exp_avg_sq"] = (torch.zeros((), dtype=torch.float32, device=p.device)
-                                           if per_tensor else torch.zeros_like(p))
-
-                state["step"] += 1
-                t = state["step"]
-                m, v = state["exp_avg"], state["exp_avg_sq"]
-
-                m.mul_(beta1).add_(grad, alpha=1.0 - beta1)
-                if per_tensor:
-                    # mean over the WHOLE tensor -> the denominator is constant within it, which
-                    # is precisely what leaves the update's spectrum alone.
-                    v.mul_(beta2).add_(grad.float().pow(2).mean(), alpha=1.0 - beta2)
-                else:
-                    v.mul_(beta2).addcmul_(grad, grad, value=1.0 - beta2)
-
-                if wd != 0.0:
-                    p.mul_(1.0 - lr * wd)                      # decoupled, as in AdamW
-
-                bc1 = 1.0 - beta1 ** t
-                bc2_sqrt = math.sqrt(1.0 - beta2 ** t)
-                denom = v.sqrt().div_(bc2_sqrt).add_(eps)
-                p.addcdiv_(m, denom, value=-lr / bc1)          # denom broadcasts when 0-dim
-
-        return loss
-
-
 def saltq_lr(cfg: dict, key: str, fallback: float) -> float:
-    """Resolve one per-bit SALT-Q hyperparameter for the bit width actually being trained.
-
-    Named for its first use (the three learning rates) but the body is generic — `zp_eps` goes
-    through it too, for the same reason: it is an absolute quantity whose right value depends on
-    the unit its parameter tier lives in, and that unit is a function of the bit width.
+    """Resolve one SALT-Q learning rate for the bit width actually being trained.
 
     Every SALT-Q lr is set against the unit its parameter lives in, and two of those units are
     the quantization step s(b) = range / (2^b - 1) — so the right lr is a function of the bit
@@ -275,11 +170,6 @@ def build_trainer(
             scales_lr=saltq_lr(cfg, "scales_lr",
                                cfg["qat"].get("lsq", {}).get("scales_lr", 1e-5)),
             zp_lr=saltq_lr(cfg, "zp_lr", 1e-3),
-            # 1e-8 == HF's adam_epsilon == the previous behaviour. Lowering it is opt-in per
-            # config so it costs exactly one variable; see _make_saltq_trainer_cls's docstring.
-            zp_eps=saltq_lr(cfg, "zp_eps", 1e-8),
-            # false == the ordinary per-coordinate Adam every run so far used.
-            zp_per_tensor_v=bool(sq_cfg.get("zp_per_tensor_v", False)),
             saltq_base_dir=saltq_base_dir,
         )
     elif enable_lsq:
@@ -359,8 +249,7 @@ def _make_lsq_trainer_cls(scales_lr: float):
 
 
 def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
-                            saltq_base_dir: str = None, zp_eps: float = 1e-8,
-                            zp_per_tensor_v: bool = False):
+                            saltq_base_dir: str = None):
     """
     Trainer subclass for SALT-Q.
 
@@ -368,62 +257,12 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
       1. `weight_salient`                   real weights, weight units, `salient_lr`
       2. `lsq_w_scale` / `saltq_s`          scales, weight units (~1e-2), `scales_lr`, no decay
       3. `lsq_w_zp` / `saltq_z`             zero-points, QUANTIZATION LEVEL units (step 1.0),
-                                            `zp_lr`, no decay, `zp_eps`
+                                            `zp_lr`, no decay
       4. everything else trainable (e.g. LayerNorms if opted in), base lr
 
     Groups 2 and 3 used to share one lr. They must not: a zero-point measured in levels needs an
     lr two to three orders of magnitude larger than a scale measured in weight units, and sharing
     the scale's lr left every zero-point in the model at 0.0000% change over a full run.
-
-    THE SAME ARGUMENT APPLIES TO ADAM'S eps, AND USED NOT TO BE APPLIED.
-    configs/saltq*.yaml derive every lr from "under Adam the update is lr * m/(sqrt(v)+eps), so a
-    constant factor on the gradient CANCELS — only lr matters". That holds exactly when
-    eps << sqrt(v). But eps is an ABSOLUTE floor while each tier's gradient magnitude is set by the
-    unit it lives in: dL/dz = -s * sum_g(dL/dW) is numerically ~1e-8 at INT2 g32 precisely because
-    z is measured in LEVELS. So the assumption fails for the one tier that derivation calls "the
-    entire freedom of the non-salient 98%". Measured on the INT2 g32 anchor's own optimizer state
-    (scripts/measure_adam_conditioning.py, checkpoint-1845):
-
-        tier              sqrt(v) p50   % below eps=1e-8   sqrt(v)/(sqrt(v)+eps) at p50 / p10
-        salient weights     6.945e-7           7.7%                 0.986 / 0.741
-        LSQ scales          2.880e-7           2.8%                 0.966 / 0.808
-        ZERO-POINTS         2.784e-8          31.5%                 0.736 / 0.150
-        (QA-LoRA's adapter  8.233e-7           0.8%                 0.988 / 0.915)
-
-    A third of all zero-points sit below the eps floor; the median loses 26% of its Adam step and
-    the bottom decile 85%. No other tier in either method is within an order of magnitude of that.
-    And because v is an EMA with beta2=0.999 read off the END of an 1845-step epoch, it is
-    dominated by the post-escape phase where gradients are ~10x larger than on the plateau (logged
-    grad_norm p50 0.144 on the plateau vs 1.557 late) — so those numbers are a LOWER BOUND on the
-    damping during the plateau, which is when it matters.
-
-    This also undercuts the transportability of the displacement constant c ~= 0.47*sqrt(T) the
-    configs use to predict |Δz| from zp_lr: c only carries across datasets while sqrt(v) >> eps in
-    both. It was measured on MetaMath, and a MetaMath |Δz| target has now missed on
-    Commonsense-170k three times (0.039 and 0.0143 levels realized against a 0.1-0.3 band).
-
-    LOWERING IT WAS TRIED AND IT FAILED. configs/saltq_cs170k_int2_g32_ep1_zpeps.yaml took the
-    anchor to zp_eps 1e-10 and never left the plateau: final loss 0.1286, MEAN(7) 38.57 with 7 of
-    7 tasks below their majority class. That is the SAME failure as zp_lr x5 (0.1287, 38.28, the
-    same 7/7 degenerate), which is the tell: both knobs do the same thing.
-
-    The measurement above is real; the DIRECTION read off it was wrong. eps sitting at 26% of the
-    denominator was not only damping the tier, it was partially DE-NORMALISING it — pushing
-    m/(sqrt(v)+eps) away from Adam and toward SGD, which is the one thing this tier needs. The
-    real defect is that per-coordinate normalisation destroys the gradient's concentration (see
-    SALTQAdamW: gradient stable rank 1.83 -> applied update 6.87), so lowering eps made Adam
-    normalise HARDER and moved things the wrong way. The useful direction for this knob is UP, and
-    the principled version of "up" is `zp_per_tensor_v`, which changes the denominator's shape
-    instead of its size.
-
-    THE DEFAULT IS 1e-8 = HF's adam_epsilon, i.e. exactly the previous behaviour. It is NOT
-    lowered by default: that would silently change what every existing config means, including the
-    validated INT3 anchor at 81.48. Set `qat.saltq.zp_eps` (or `zp_eps_by_bits`) to spend it as
-    one explicit variable of one run. Groups 1 and 2 keep 1e-8 deliberately — at 1.4% and 3.4%
-    median damping they are not worth a variable, and moving them would break that INT3 anchor.
-
-    `adam_epsilon` in the yaml would NOT do this: build_trainer's TrainingArguments(...) call never
-    passes it, so a config-level value is silently ignored — and it would hit all four groups.
 
     _save — writes ONLY the trainable tensors. The frozen int8 codes are several GB, never change,
     and live in the saltq_base dir; a checkpoint records a pointer to it instead of a copy.
@@ -462,61 +301,25 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
             param_groups = [
                 {"params": salient, "weight_decay": self.args.weight_decay, "lr": salient_lr},
                 {"params": scales, "weight_decay": 0.0, "lr": scales_lr},
-                # "eps" is a per-group AdamW option exactly like "lr" and "weight_decay" (torch
-                # fills missing keys from the optimizer defaults, so an explicit value here beats
-                # the adam_epsilon that get_optimizer_cls_and_kwargs passes as the default). See
-                # the docstring for why the zero-point tier needs its own.
-                {"params": zps, "weight_decay": 0.0, "lr": zp_lr, "eps": zp_eps,
-                 "per_tensor_v": zp_per_tensor_v},
+                {"params": zps, "weight_decay": 0.0, "lr": zp_lr},
                 {"params": other, "weight_decay": 0.0},
             ]
             param_groups = [g for g in param_groups if g["params"]]
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
                 self.args, opt_model)
-            if zp_per_tensor_v:
-                # SALTQAdamW is a plain-python AdamW, so switching to it changes the IMPLEMENTATION
-                # for every group, not just the zero-points. That is mathematically a no-op (same
-                # decoupled-AdamW update, fp32 either way) and on the z-only cell there is no other
-                # group at all, but say so in the log rather than leave it implicit.
-                kw = {k: optimizer_kwargs[k] for k in ("lr", "betas", "eps")
-                      if k in optimizer_kwargs}
-                self.optimizer = SALTQAdamW(param_groups, **kw)
-            else:
-                # Untouched default path: bit-identical to every run before per_tensor_v existed.
-                param_groups = [{k: val for k, val in g.items() if k != "per_tensor_v"}
-                                for g in param_groups]
-                self.optimizer = optimizer_cls(param_groups, **optimizer_kwargs)
-            _default_eps = optimizer_kwargs.get("eps", self.args.adam_epsilon)
+            self.optimizer = optimizer_cls(param_groups, **optimizer_kwargs)
             print(
                 f"[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):\n"
                 f"  salient weights  {sum(p.numel() for p in salient) / 1e6:7.1f}M  lr={salient_lr:g}"
-                f"   eps={_default_eps:g}   (weight units)\n"
+                f"   (weight units)\n"
                 f"  scales           {sum(p.numel() for p in scales) / 1e6:7.1f}M  lr={scales_lr:g}"
-                f"   eps={_default_eps:g}   (weight units, wd=0)\n"
+                f"   (weight units, wd=0)\n"
                 f"  zero-points      {sum(p.numel() for p in zps) / 1e6:7.1f}M  lr={zp_lr:g}"
-                f"   eps={zp_eps:g}   (QUANTIZATION LEVELS, wd=0, second moment="
-                f"{'PER-TENSOR' if zp_per_tensor_v else 'per-coordinate'})\n"
+                f"   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)\n"
                 f"  other            {sum(p.numel() for p in other) / 1e6:7.1f}M  "
-                f"lr={self.args.learning_rate:g}   eps={_default_eps:g}"
+                f"lr={self.args.learning_rate:g}"
             )
-            if zp_per_tensor_v:
-                print("[Trainer][SALT-Q] zero-point second moment is PER-TENSOR (SALTQAdamW): one "
-                      "scalar v per projection instead of one per coordinate, so the update keeps "
-                      "the gradient's spectrum. Measured on z-only INT2: the gradient has stable "
-                      "rank 1.83 (top-1 54.9%) but per-coordinate Adam applied it at stable rank "
-                      "6.87 (top-1 15.5%) — flattened 3.8x. ALL groups now run SALTQAdamW's "
-                      "implementation of AdamW; only this group's second moment differs.")
-            # Loud, because it is the whole point of the tier and it is invisible in the loss.
-            if zp_eps != _default_eps:
-                print(f"[Trainer][SALT-Q] zero-point eps OVERRIDDEN: {_default_eps:g} -> "
-                      f"{zp_eps:g}. At INT2 g32 the measured sqrt(v) p50 of this tier is 2.8e-8, "
-                      f"so the default floor damped the median Adam step by 26% and the bottom "
-                      f"decile by 85% (scripts/measure_adam_conditioning.py).")
-            else:
-                print(f"[Trainer][SALT-Q] zero-point eps at the shared default {zp_eps:g}. This "
-                      f"tier's gradient is ~1e-8 because z is in LEVELS; see the docstring before "
-                      f"reading any |dz| number as evidence about zp_lr.")
             if not salient:
                 print("[Trainer][SALT-Q] WARNING: no salient weight params found!")
             if not zps:
