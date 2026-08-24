@@ -86,6 +86,9 @@ def main() -> int:
     ap.add_argument("--saltq_base", default="outputs/saltq_cs170k_int3_g64_ep1/saltq_base_3bit_g64")
     ap.add_argument("--saltq_ckpt", default="outputs/saltq_cs170k_int3_g64_ep1_nogbl-3bit-saltq/final")
     ap.add_argument("--group_size", type=int, default=64)
+    ap.add_argument("--max_projections", type=int, default=0,
+                    help="evenly sample at most this many projections; 0 = all. Percentiles are "
+                         "stable well before 224 layers and this keeps the run to seconds.")
     ap.add_argument("--bits", type=int, default=3,
                     help="sets the zero-point clamp [0, 2^bits - 1]; it is [0,3] at INT2 and "
                          "[0,7] at INT3, which is why the same |dz| means different things")
@@ -113,37 +116,90 @@ def main() -> int:
             qa[name] = (B @ A) * scaling                      # [out, G], mean-pooled units
 
     # ---- SALT-Q: delta on mean-pooled input = -(z_trained - z_base) * s * group_size ---------
+    #
+    # Everything below is streamed. Materialising z_base, s_base and z_trained together is ~2.4 GB
+    # of fp32 at INT2 g32 (197M zero-points each); on a login node that swaps, and an earlier
+    # version of this block sat for two hours with no output before it was killed. Keep only the
+    # (file, key) address of every tensor, decide which projections to visit, and fetch each one
+    # inside the loop.
     from src.qat_saltq import SALTQ_BASE_FILENAME
-    zb, sb = {}, {}
-    with safe_open(os.path.join(args.saltq_base, SALTQ_BASE_FILENAME), "pt") as f:
+    base_pt = os.path.join(args.saltq_base, SALTQ_BASE_FILENAME)
+    # z_s / s_s are the SALIENT slice's (scale, zero-point). They are normally irrelevant here --
+    # under train_salient=true the salient columns are trainable REAL WEIGHTS and their z is not
+    # what adapts. But a z-only run (train_salient=false) folds the salient slice into the
+    # frozen-code pool, so its saltq_z spans EVERY group while the base's z_n spans only the
+    # non-salient ones: 344 vs 340 for down_proj at g32 with group_k=128. Without the salient
+    # halves the comparison raised "size of tensor a (344) must match tensor b (340)" and no
+    # z-only checkpoint could be read at all.
+    zb_at, sb_at, zs_at, ss_at = {}, {}, {}, {}
+    with safe_open(base_pt, "pt") as f:
         for k in f.keys():
             if k.endswith(".z_n"):
-                zb[k[: -len(".z_n")]] = f.get_tensor(k).float()
+                zb_at[k[: -len(".z_n")]] = k
             elif k.endswith(".s_n"):
-                sb[k[: -len(".s_n")]] = f.get_tensor(k).float()
-    zt = {}
-    for p in sorted(glob.glob(os.path.join(args.saltq_ckpt, "*.safetensors"))):
-        with safe_open(p, "pt") as f:
+                sb_at[k[: -len(".s_n")]] = k
+            elif k.endswith(".z_s"):
+                zs_at[k[: -len(".z_s")]] = k
+            elif k.endswith(".s_s"):
+                ss_at[k[: -len(".s_s")]] = k
+
+    zt_at = {}
+    for path in sorted(glob.glob(os.path.join(args.saltq_ckpt, "*.safetensors"))):
+        with safe_open(path, "pt") as f:
             for k in f.keys():
                 if k.endswith(".saltq_z"):
-                    zt[k[: -len(".saltq_z")].replace("base_model.model.", "")] = f.get_tensor(k).float()
+                    zt_at[k[: -len(".saltq_z")].replace("base_model.model.", "")] = (path, k)
 
-    print(f"\nprojections: QA-LoRA {len(qa)}, SALT-Q base {len(zb)}, SALT-Q trained {len(zt)}")
+    print(f"\nprojections: QA-LoRA {len(qa)}, SALT-Q base {len(zb_at)}, "
+          f"SALT-Q trained {len(zt_at)}")
 
     Qp = float(2 ** args.bits - 1)
     sq = Hist(0.0, 1.0); qav = Hist(0.0, 1.0)      # coefficients on the mean-pooled input
     dz = Hist(0.0, Qp); z0 = Hist(0.0, Qp)         # zero-point, in levels
+
+    names = sorted(n for n in zt_at if n in zb_at and n in sb_at)
+    if args.max_projections and len(names) > args.max_projections:
+        step = max(1, len(names) // args.max_projections)
+        names = names[::step][: args.max_projections]
+        print(f"sampling {len(names)} of {len(zt_at)} projections (--max_projections); "
+              f"percentiles are stable well before all 224")
+
     matched = 0
-    for name, z1 in zt.items():
-        if name not in zb:
-            continue
-        d = z1 - zb[name]
-        sq.add((d * sb[name] * GS).abs())
-        dz.add(d.abs())
-        z0.add(zb[name])
-        matched += 1
-        del d
-    for name, d in qa.items():
+    with safe_open(base_pt, "pt") as fb:
+        for i, name in enumerate(names):
+            path, key = zt_at[name]
+            with safe_open(path, "pt") as ft:
+                z1 = ft.get_tensor(key).float()
+            zbase = fb.get_tensor(zb_at[name]).float()
+            sbase = fb.get_tensor(sb_at[name]).float()
+            if z1.shape[1] != zbase.shape[1]:
+                # z-only layout: the trained z covers the salient groups too. Rebuild the base as
+                # [salient | non-salient] so the two line up group for group.
+                n_extra = z1.shape[1] - zbase.shape[1]
+                if n_extra <= 0 or name not in zs_at or name not in ss_at:
+                    raise RuntimeError(
+                        f"{name}: trained z has {z1.shape[1]} groups, base z_n has "
+                        f"{zbase.shape[1]}, and no salient (z_s, s_s) is available to reconcile "
+                        f"them. This is not the z-only layout; the base and checkpoint disagree.")
+                zsal = fb.get_tensor(zs_at[name]).float()
+                ssal = fb.get_tensor(ss_at[name]).float()
+                if zsal.shape[1] != n_extra:
+                    raise RuntimeError(
+                        f"{name}: salient slice has {zsal.shape[1]} groups but the trained z has "
+                        f"{n_extra} more than z_n; the checkpoint does not match this base.")
+                zbase = torch.cat([zsal, zbase], dim=1)
+                sbase = torch.cat([ssal, sbase], dim=1)
+                del zsal, ssal
+            d = z1 - zbase
+            sq.add((d * sbase * GS).abs())
+            dz.add(d.abs())
+            z0.add(zbase)
+            matched += 1
+            del d, z1, zbase, sbase
+            if (i + 1) % 20 == 0:
+                print(f"  ... {i+1}/{len(names)}", flush=True)
+
+    for _name, d in qa.items():
         qav.add(d.abs())
     print(f"matched SALT-Q projections: {matched}")
 
