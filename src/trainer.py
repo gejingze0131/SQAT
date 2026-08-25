@@ -341,17 +341,24 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
                 {"params": zplora, "weight_decay": 0.0, "lr": zplora_lr},
                 {"params": other, "weight_decay": 0.0},
             ]
-            # A zp-LoRA run must NOT also be training the full-rank z: the adapter REPLACES it.
-            # This exact combination ran once, undetected, because build_saltq_model re-enabled
-            # saltq_z after SALTQLinear.__init__ froze it. Fail loudly instead.
-            if zplora and zps:
+            # A zp-LoRA run must NOT also be training the full-rank NON-SALIENT z: the adapter
+            # REPLACES it. This exact combination ran once, undetected, because build_saltq_model
+            # re-enabled saltq_z after SALTQLinear.__init__ froze it. Fail loudly instead.
+            #
+            # Only saltq_z is checked — the zp GROUP also holds lsq_w_zp, the SALIENT tier's LSQ
+            # grid zero-point, which trains at zp_lr in every run including this one (the salient
+            # tier is unchanged by the adapter). The first version of this guard tested the whole
+            # group and killed the first clean zp-LoRA run over those 4.9M salient params.
+            fullrank_z = [n for n in named if "saltq_z" in n]
+            if zplora and fullrank_z:
                 raise RuntimeError(
                     f"[SALT-Q] zp-LoRA is active ({sum(p.numel() for p in zplora)/1e6:.1f}M "
-                    f"factors) but the zero-point group is ALSO trainable "
-                    f"({sum(p.numel() for p in zps)/1e6:.1f}M params). The adapter replaces the "
-                    f"full-rank z; training both means the run is not the experiment its config "
-                    f"describes. Check SALTQLinear.param_is_trainable and the freedom-allocation "
-                    f"loop in build_saltq_model."
+                    f"factors) but the full-rank non-salient z is ALSO trainable "
+                    f"({sum(named[n].numel() for n in fullrank_z)/1e6:.1f}M params, e.g. "
+                    f"{fullrank_z[0]}). The adapter replaces the full-rank z; training both means "
+                    f"the run is not the experiment its config describes. Check "
+                    f"SALTQLinear.param_is_trainable and the freedom-allocation loop in "
+                    f"build_saltq_model."
                 )
 
             param_groups = [g for g in param_groups if g["params"]]
