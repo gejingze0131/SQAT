@@ -221,6 +221,12 @@ def _rows_from_vllm_json(payload: dict, path: str, cfg: Optional[dict],
 
     rows: List[Dict[str, object]] = []
     for task, metrics in (payload.get("results", {}) or {}).items():
+        if not isinstance(metrics, dict):
+            # eval_vllm.sh also writes "_degenerate_tasks": [names] next to the per-task dicts.
+            # One list entry used to abort the WHOLE file, so every INT2 SALT-Q result since the
+            # degenerate-task check was added was silently skipped ("'list' object has no
+            # attribute 'get'") and results_saltq.csv never saw the cell.
+            continue
         row = dict(ctx)
         row["task"] = task
         row["metric"] = "acc"
