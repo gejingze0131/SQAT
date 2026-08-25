@@ -1,0 +1,34 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_slora_eval
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=4:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+
+# Export + evaluation only for the salient-LoRA run (jobs/cs_saltq_int2_slora.pbs). Training and
+# the in-process export completed (deploy == train exact on 8 layers); the pipeline then skipped
+# evaluation with "(no exported eval dir at outputs/saltq_cs170k_int2_g32_ep1_slora-2bit-saltq-
+# deploy-eval)": the yaml still carried the zplora output_dir when the job loaded it (fixed in
+# a9bc07b, after launch), so the trainer wrote under the zplora name. Artifacts renamed by hand:
+#   outputs/saltq_cs170k_int2_g32_ep1_slora-2bit-saltq/final           (trainable checkpoint)
+#   outputs/saltq_cs170k_int2_g32_ep1_slora-2bit-saltq-deploy-eval     (live export)
+# Same --checkpoint_dir route as the 1+3 rerun: Stage 2 rebuilds from base + checkpoint and
+# re-exports (a consistency test of the slora_a save/load path -- the live export's sha256 is in
+# the scratch note recal_export_live.sha256's sibling slora_export_live.sha256), Stage 3 evaluates.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine"; exit 1; }
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_slora.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_slora \
+    --checkpoint_dir    outputs/saltq_cs170k_int2_g32_ep1_slora-2bit-saltq/final \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 salient-LoRA: one adapter (B shared), A_S unpooled on salient cols through LSQ fakequant, A_N pooled into z; W_S and z frozen; QA-LoRA settings r64 a16 lr5e-3; export+eval rerun after output_dir mixup' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_slora_eval.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
