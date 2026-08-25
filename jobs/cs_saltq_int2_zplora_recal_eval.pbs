@@ -1,0 +1,45 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_zplora_recal_eval
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=4:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+
+# Export + evaluation only for the 1+3 run (jobs/cs_saltq_int2_zplora_recal.pbs). Training and
+# the in-process export completed (deploy == train exact on 8 layers, cast error 5.9e-4), then
+# the pipeline died on
+#   ERROR: could not locate training output dir; pass --checkpoint_dir for export/eval.
+# because configs/saltq_cs170k_int2_g32_ep1_zplora_recal.yaml was copied from the zplora yaml
+# with training.output_dir left at outputs/saltq_cs170k_int2_g32_ep1_zplora, while --output_root
+# named the recal dir. The trainer wrote to the yaml's dir; the pipeline looked under
+# --output_root. (Fourth instance of the output-dir family; the yaml is now fixed.)
+#
+# The artifacts were rescued by hand BEFORE the salient-LoRA job, which inherited the same
+# yaml bug and writes into the same zplora dir, could overwrite them:
+#   final/  -> outputs/saltq_cs170k_int2_g32_ep1_zplora_recal-2bit-saltq/final   (23:08 save)
+#   export  -> outputs/saltq_cs170k_int2_g32_ep1_zplora_recal-2bit-saltq-deploy-eval
+#
+# This job goes through the pipeline's own --checkpoint_dir route: Stage 2 REBUILDS the model
+# from the frozen base + the trainable checkpoint and re-exports, Stage 3 evaluates. The rebuild
+# is also a free consistency test of the save/load path that carries recal_dz and the adapter:
+# the live export's model.safetensors hashed to
+#   b00ec333efc14e5c3421a33122c042bf252ed90ee60e2ddab3a52212e754703f
+# and the re-export must reproduce it (compare after this job; a mismatch means a checkpoint
+# round-trip dropped part of the deployed zero-point).
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine"; exit 1; }
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_zplora_recal.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_zplora_recal \
+    --checkpoint_dir    outputs/saltq_cs170k_int2_g32_ep1_zplora_recal-2bit-saltq/final \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 1+3: zp-LoRA r=64 (task A) + closed-form mean recalibration every 50 steps (task B), z frozen, salient tier unchanged; export+eval rerun after output_dir mixup' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_zplora_recal_eval.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"

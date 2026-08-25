@@ -526,7 +526,7 @@ data:
 
 
 training:
-  output_dir: "outputs/saltq_cs170k_int2_g32_ep1_zplora"
+  output_dir: "outputs/saltq_cs170k_int2_g32_ep1_slora"
   num_epochs: 1              # 3 -> 1; the lrs above carry the sqrt(3) compensation
   # 4 x RTX 6000 Ada (46 GB). At group_size=64 / group_k=128 on Llama-2-7B the resident cost per
   # GPU is roughly:
