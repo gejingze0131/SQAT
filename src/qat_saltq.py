@@ -423,6 +423,7 @@ class SALTQLinear(nn.Module):
         zplora_rank: int = 0,
         zplora_alpha: float = 16.0,
         salient_lora: bool = False,
+        slora_alpha: Optional[float] = None,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -551,6 +552,14 @@ class SALTQLinear(nn.Module):
             self.slora_a = nn.Parameter(
                 torch.empty(self.zplora_rank, self.group_k, dtype=torch.float32))
             nn.init.kaiming_uniform_(self.slora_a, a=math.sqrt(5))
+            # The salient branch's OWN scaling. B is shared, so lowering A_S's lr cannot bound the
+            # salient delta: scaling * B @ A_S keeps growing with B from A_S's non-zero init. Adam
+            # makes the parameter trajectories ~invariant to the scaling, so alpha_S is a clean
+            # linear knob on |dW_S|. Measured at alpha_S = 16 (= the adapter's): |dW_S|/s p50 0.371
+            # grid steps, 39% of the salient codes flipped, loss spikes to 2.4 from step 60 on
+            # and no escape -- 9x the anchor's validated 0.040. None = inherit zplora_alpha.
+            self.slora_scaling = float(slora_alpha if slora_alpha is not None else zplora_alpha) \
+                / self.zplora_rank
 
         if bias is not None:
             self.register_buffer("bias", bias.clone(), persistent=True)
@@ -566,7 +575,7 @@ class SALTQLinear(nn.Module):
         would have silently exported the salient slice WITHOUT its trained delta."""
         W = self.weight_salient.float()
         if self.salient_lora:
-            W = W + self.zplora_scaling * (self.zplora_b.float() @ self.slora_a.float())
+            W = W + self.slora_scaling * (self.zplora_b.float() @ self.slora_a.float())
         return W
 
     def _salient_effective(self) -> torch.Tensor:
@@ -861,6 +870,7 @@ def build_saltq_model(
     zplora_rank: int = 0,
     zplora_alpha: float = 16.0,
     salient_lora: bool = False,
+    slora_alpha: Optional[float] = None,
     device=None,
 ):
     """
@@ -922,6 +932,7 @@ def build_saltq_model(
                 zplora_rank=zplora_rank,
                 zplora_alpha=zplora_alpha,
                 salient_lora=salient_lora,
+                slora_alpha=slora_alpha,
             )
             # BACKSTOP. The codes are integers at fixed column positions of the permuted
             # weight; nothing in the file format says which permutation produced those
@@ -1277,6 +1288,7 @@ def export_saltq(
             zplora_rank=int((cfg["qat"].get("saltq", {}) or {}).get("zplora_rank", 0)),
             zplora_alpha=float((cfg["qat"].get("saltq", {}) or {}).get("zplora_alpha", 16.0)),
             salient_lora=bool((cfg["qat"].get("saltq", {}) or {}).get("salient_lora", False)),
+            slora_alpha=(cfg["qat"].get("saltq", {}) or {}).get("slora_alpha", None),
         )
         load_saltq_trainable(model, checkpoint_dir)
     else:

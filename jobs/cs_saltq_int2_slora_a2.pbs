@@ -1,0 +1,76 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_slora_a2_a2
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32, 1 epoch: salient-LoRA with the salient branch's OWN scaling alpha_S = 2. ONE
+# KEY vs the slora config (slora_alpha: 2.0). Everything else identical: one adapter, B shared,
+# A_S unpooled on the salient columns through the LSQ grid, A_N pooled into z, W_S and z frozen,
+# QA-LoRA's r=64 / alpha=16 / lr 5e-3 on the adapter, no recalibration.
+#
+# ---------------------------------------------------------------------------------------------
+# WHY. The alpha_S = 16 run (40.93, never escaped) was NOT a test of the design: its salient
+# slice moved 9.3x further than the anchor's validated 0.040 grid steps (p50 0.371, p90 1.28,
+# 39.3% of salient codes flipped vs 0.0%), and the loss spiked to 2.37 / grad_norm 105 from
+# step 60 (= warmup putting B at 5e-3) through step 140, recovering within ~20 steps each time
+# -- mass code flips on the highest-activation columns. QA-LoRA at identical hyperparameters
+# (5e-3, wd 0.01, cosine, warmup 3%, clip 0.3, bf16, eff. batch 80; its A init is even 2x
+# larger) has no such branch and no spikes. The 1+3 run's salient displacement is the anchor's
+# (0.039, 0% flipped), so its milder spikes are a different, still-open interaction.
+# alpha_S = 16 * (0.040 / 0.371) = 1.7 -> 2 targets the anchor's displacement; Adam makes the
+# LoRA trajectories ~invariant to the scaling, so dW_S should scale linearly.
+#
+# VERIFIED BEFORE SUBMITTING: scratch test_slora.py check 8 -- alpha_S = 2 gives exactly 1/8 of
+# the alpha_S = 16 salient delta for the same (B, A_S) and leaves the non-salient branch
+# untouched; checks 1-7 (step-0 identity, freedom allocation, STE grads, exact deploy
+# equivalence, checkpoint contents) unchanged and passing.
+#
+# ---------------------------------------------------------------------------------------------
+# HOW TO READ IT. Fixed before the run. FIRST the salient displacement off the final checkpoint
+# (scratch salient_disp.py): p50 must land near 0.04 grid steps with ~0% flips, else alpha_S must
+# be re-derived before the score means anything. THEN the early loss (steps 50-150): no spikes
+# above ~0.25 is the expected signature. THEN escape epoch (loss < 0.110 sustained), MEAN(7),
+# beats_majority.
+#
+#   no spikes, escape ~0.35, MEAN(7) > 71.9  -> the design works and the salient tier adds on
+#                                               top of QA-LoRA: SALT-Q's INT2 form.
+#   no spikes, escape ~0.35, MEAN(7) ~ 71.9  -> benign, no gain at this alpha_S; sweep alpha_S
+#                                               up (4, 8) -- the displacement/score curve is the
+#                                               INT3 salient_lr sweep in a new parameterisation.
+#   no spikes, escape 0.4-0.7                -> the low-rank STE salient tier still delays the
+#                                               adapter even at the anchor's displacement; the
+#                                               STE-existence hypothesis is back on the table
+#                                               and the adapter-only control decides it.
+#   spikes persist                           -> displacement is not the spike mechanism; check
+#                                               the measured p50 first, then suspect the adapter
+#                                               path itself (clamp, numerics) via the
+#                                               adapter-only control.
+#
+# BASE REUSE. Unchanged; the anchor's frozen codes are reused bit-identically.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_slora_a2.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_slora_a2 \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 salient-LoRA alpha_S=2: one adapter (B shared), A_S unpooled on salient cols through LSQ fakequant, A_N pooled into z; W_S and z frozen; QA-LoRA settings r64 a16 lr5e-3' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_slora_a2.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

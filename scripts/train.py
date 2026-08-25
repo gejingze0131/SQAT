@@ -774,6 +774,8 @@ def main():
             # false (default) = the salient slice is 157M free weights through the LSQ fakequant.
             # true = the adapter's unpooled half on the salient columns, weight_salient frozen.
             salient_lora=bool(cfg["qat"]["saltq"].get("salient_lora", False)),
+            # None = the salient branch shares the adapter's alpha. See SALTQLinear.__init__.
+            slora_alpha=cfg["qat"]["saltq"].get("slora_alpha", None),
         )
         base_model_ref = model
     else:
