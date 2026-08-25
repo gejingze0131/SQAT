@@ -1,0 +1,100 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_slora
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32, 1 epoch: "QA-LoRA with group size 1 on the salient columns". ONE KEY vs the
+# zplora config (salient_lora: true). The whole trainable model is now ONE adapter at QA-LoRA's
+# settings (r=64, alpha=16, lr 5e-3) plus the salient LSQ grid:
+#
+#     y += scaling * B @ [ A_S x_S  |  A_N pool_g(x_N) ]
+#                          unpooled     QA-LoRA's half, folds into z
+#     W_S^eff = LSQ_fakequant(W_S + scaling * B @ A_S ; s_S, z_S)   -> deploys as 2-bit codes
+#
+# weight_salient FROZEN (157.3M Adam moments gone), z frozen, no recalibration callback.
+#
+# ---------------------------------------------------------------------------------------------
+# WHY. INT2 record so far, all MEAN(7):
+#   QA-LoRA (adapter only, no salient tier)                escapes 0.347   71.90   <- target
+#   anchor  (157M free salient + full-rank z SGD)          escapes 0.672   65.77
+#   1+3     (157M free salient + adapter + closed-form
+#            mean recalibration, z frozen)                 escapes 0.77    (eval pending)
+# In the 1+3 run the recalibration was healthy all epoch (median|c| 4e-3 -> 1.5e-2, clamp
+# 0.05%), so the salient tier's MEAN drift was cancelled -- and the adapter STILL could not
+# escape where it does alone. The 157M-free-weight STE tier is therefore the toxin, and not
+# through its mean. This run replaces it with a tier that has the adapter's own structure:
+#   - low-rank by construction (the free tier's realised update had stable rank 5.67 vs
+#     QA-LoRA's 1.62, and every attempt to concentrate it by lr failed);
+#   - its output-mean drift B (A_S mu_S) lies in span(B), the same span A_N compensates in, so
+#     the compensation is an r-dim constraint SGD meets on its own -- no callback.
+# What it does NOT remove: the STE fakequant on the salient columns (2.3% of columns, but the
+# highest-activation ones). That is the one ingredient QA-LoRA does not have and the one this
+# run is a test of.
+#
+# VERIFIED BEFORE SUBMITTING (scratch test_slora.py, 7 checks, all pass):
+#   - salient_lora without a shared B is refused;
+#   - step 0 is bit-identical to the plain layer (B = 0): same effective_weight, same forward;
+#   - the builder's freedom allocation leaves exactly {lsq_w_scale, lsq_w_zp, zplora_a,
+#     zplora_b, slora_a} trainable; weight_salient and saltq_z frozen;
+#   - grads reach B, A_S, A_N and the grid through the STE; none reach the frozen tensors;
+#   - after a real move of (B, A_S): deployed salient == effective_weight EXACTLY (max|d| = 0)
+#     and the salient codes actually flip -- deployed_tensors now reads _salient_preq(), the
+#     single pre-grid definition; reading weight_salient directly (as it used to) would have
+#     exported the salient slice WITHOUT its trained delta;
+#   - fast forward == effective_weight to bf16 precision;
+#   - the trainable checkpoint carries the adapter and not the frozen weight.
+#
+# ---------------------------------------------------------------------------------------------
+# HOW TO READ IT. Fixed before the run. Escape epoch from the LOSS CURVE (loss < 0.110
+# sustained), MEAN(7) second, beats_majority before believing any INT2 score.
+#
+#   escape ~0.35 AND MEAN(7) > 71.9     -> the low-rank STE salient tier is benign AND adds on
+#                                          top of QA-LoRA. This is the method's INT2 form.
+#   escape ~0.35, MEAN(7) ~ 71.9        -> benign, adds nothing at r=64 / lr 5e-3 on A_S; sweep
+#                                          A_S's lr separately (it acts on raw columns, A_N on
+#                                          pooled ones) before concluding the slice is useless.
+#   escape 0.4-0.7                      -> the salient STE code-flip noise delays the adapter
+#                                          even at low rank; next: freeze the salient grid
+#                                          (s_S, z_S) or lower A_S's lr -- flip rate is what
+#                                          to measure.
+#   no escape                           -> STE on the salient columns is incompatible with the
+#                                          adapter's dynamics regardless of rank. Then the
+#                                          salient tier needs a CONTINUOUS training path (a
+#                                          different method), and INT2 SALT-Q's honest form is
+#                                          QA-LoRA + a better base.
+#   diverges                            -> A_S at 5e-3 on raw columns is too hot (kaiming over
+#                                          fan_in 128 vs A_N's pooled input). Rerun with a
+#                                          separate, lower A_S lr before concluding.
+#
+# Read alongside: the 1+3 run's eval (same base, same adapter, free salient tier + recal) is
+# the direct comparison for what swapping the salient tier's parameterisation is worth.
+#
+# BASE REUSE. bits, group_size, group_k, train_salient and the permutation are all unchanged, so
+# the anchor's frozen codes are reused bit-identically.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_slora.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_slora \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 salient-LoRA: one adapter (B shared), A_S unpooled on salient cols through LSQ fakequant, A_N pooled into z; W_S and z frozen; QA-LoRA settings r64 a16 lr5e-3' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_slora.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

@@ -771,6 +771,9 @@ def main():
             # 0 (default) = the full-rank trainable z every run so far used.
             zplora_rank=int(cfg["qat"]["saltq"].get("zplora_rank", 0)),
             zplora_alpha=float(cfg["qat"]["saltq"].get("zplora_alpha", 16.0)),
+            # false (default) = the salient slice is 157M free weights through the LSQ fakequant.
+            # true = the adapter's unpooled half on the salient columns, weight_salient frozen.
+            salient_lora=bool(cfg["qat"]["saltq"].get("salient_lora", False)),
         )
         base_model_ref = model
     else:

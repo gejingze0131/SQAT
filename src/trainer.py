@@ -374,7 +374,7 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
                 f"   (weight units, wd=0)\n"
                 f"  zero-points      {sum(p.numel() for p in zps) / 1e6:7.1f}M  lr={zp_lr:g}"
                 f"   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)\n"
-                f"  zp-LoRA (B, A)   {sum(p.numel() for p in zplora) / 1e6:7.1f}M  lr={zplora_lr:g}"
+                f"  LoRA (B, A_N, A_S) {sum(p.numel() for p in zplora) / 1e6:7.1f}M  lr={zplora_lr:g}"
                 f"   (sqrt of a LEVEL - a fourth unit, wd=0)\n"
                 f"  other            {sum(p.numel() for p in other) / 1e6:7.1f}M  "
                 f"lr={self.args.learning_rate:g}"

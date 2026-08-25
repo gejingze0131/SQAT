@@ -110,7 +110,9 @@ ZEROPOINT_PARAM_FRAGMENTS = ("lsq_w_zp", "saltq_z")
 # NOT named "saltq_z*": the fragments above are matched by SUBSTRING, so `saltq_zlora_a` would
 # silently land in the zero-point group and train at zp_lr, which is a level-units rate and wrong
 # for a factor whose square is a level.
-ZPLORA_PARAM_FRAGMENTS = ("zplora_a", "zplora_b")
+# slora_a is the SALIENT half of the same adapter (unpooled A columns sharing B, see
+# SALTQLinear.salient_lora) and trains at the same rate, so it lives in the same group.
+ZPLORA_PARAM_FRAGMENTS = ("zplora_a", "zplora_b", "slora_a")
 QUANT_PARAM_FRAGMENTS = SCALE_PARAM_FRAGMENTS + ZEROPOINT_PARAM_FRAGMENTS
 assert not any(f in n for f in ZEROPOINT_PARAM_FRAGMENTS + SCALE_PARAM_FRAGMENTS
                for n in ZPLORA_PARAM_FRAGMENTS), "zp-LoRA names collide with another tier"
@@ -420,6 +422,7 @@ class SALTQLinear(nn.Module):
         wq_dtype: torch.dtype = torch.bfloat16,
         zplora_rank: int = 0,
         zplora_alpha: float = 16.0,
+        salient_lora: bool = False,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -526,6 +529,29 @@ class SALTQLinear(nn.Module):
                 assert z_s is not None
                 self.lsq_w_zp = nn.Parameter(z_s.float().contiguous())
 
+        # ---- salient LoRA: the adapter's UNPOOLED half ---------------------------------------
+        # "QA-LoRA with group size 1 on the salient columns." One adapter, one B:
+        #     y += scaling * B @ [ A_S x_S  |  A_N pool_g(x_N) ]
+        # A_N (zplora_a) is QA-LoRA's pooled half and folds into z. A_S (slora_a) acts on the raw
+        # salient columns, so B @ A_S is a DENSE [out, group_k] delta that folds into nothing but
+        # the weight itself -- hence it goes through the LSQ fakequant with W_S and deploys as
+        # 2-bit codes: W_S^eff = fakequant(W_S + scaling * B @ A_S ; s_S, z_S). The salient
+        # WEIGHT is frozen; the salient tier is a low-rank, STE-quantized delta instead of 157M
+        # free weights. Two things this buys, both measured on the INT2 cell:
+        #   - the update is low-rank by construction (the full-rank tier's realised update had
+        #     stable rank 5.67 vs QA-LoRA's 1.62, and every attempt to concentrate it by lr failed);
+        #   - the salient delta's output-mean drift, B (A_S mu_S), lies in span(B) -- the SAME
+        #     span the non-salient half compensates in, so the compensation that full-rank
+        #     salient needed a closed-form callback for is an r-dim constraint SGD meets itself.
+        # B is zero-initialised, so step 0 is still bit-identical to the frozen base.
+        self.salient_lora = bool(salient_lora) and self.group_k > 0
+        if bool(salient_lora) and self.zplora_rank <= 0:
+            raise ValueError("[SALT-Q] salient_lora=True needs zplora_rank > 0: it shares B.")
+        if self.salient_lora:
+            self.slora_a = nn.Parameter(
+                torch.empty(self.zplora_rank, self.group_k, dtype=torch.float32))
+            nn.init.kaiming_uniform_(self.slora_a, a=math.sqrt(5))
+
         if bias is not None:
             self.register_buffer("bias", bias.clone(), persistent=True)
         else:
@@ -533,9 +559,19 @@ class SALTQLinear(nn.Module):
 
     # ------------------------------------------------------------------ pieces
 
+    def _salient_preq(self) -> torch.Tensor:
+        """The salient weight BEFORE the grid, fp32 [out, group_k]: W_S plus the unpooled adapter
+        delta when salient_lora is on. The single definition both the training fakequant and the
+        export quantizer read -- deployed_tensors used to read weight_salient directly, which
+        would have silently exported the salient slice WITHOUT its trained delta."""
+        W = self.weight_salient.float()
+        if self.salient_lora:
+            W = W + self.zplora_scaling * (self.zplora_b.float() @ self.slora_a.float())
+        return W
+
     def _salient_effective(self) -> torch.Tensor:
         """LSQ fake-quantized salient weights, fp32 [out, group_k]. STE through the rounding."""
-        W = self.weight_salient.float()
+        W = self._salient_preq()
         if self.symmetric:
             return groupwise_lsq_symmetric_fakequant(
                 W, self.lsq_w_scale.float(), self.group_size, self.q_bits
@@ -590,6 +626,8 @@ class SALTQLinear(nn.Module):
         now refuses that combination outright.
         """
         if name == "saltq_z" and self.zplora_rank > 0:
+            return False
+        if name == "weight_salient" and self.salient_lora:
             return False
         return True
 
@@ -715,7 +753,7 @@ class SALTQLinear(nn.Module):
         codes: List[torch.Tensor] = []
 
         if self.group_k > 0:
-            W = self.weight_salient.float()
+            W = self._salient_preq()          # NOT weight_salient: must include the LoRA delta
             # SAME clamp the training fakequant applies (qat_base.groupwise_lsq_asym_fakequant does
             # `scale.clamp(min=eps)`). Without it, a salient scale that the optimizer has driven to
             # <= 0 makes the export quantizer and the training forward disagree, and the
@@ -822,6 +860,7 @@ def build_saltq_model(
     continuous_z: bool = True,
     zplora_rank: int = 0,
     zplora_alpha: float = 16.0,
+    salient_lora: bool = False,
     device=None,
 ):
     """
@@ -882,6 +921,7 @@ def build_saltq_model(
                 wq_dtype=dtype,
                 zplora_rank=zplora_rank,
                 zplora_alpha=zplora_alpha,
+                salient_lora=salient_lora,
             )
             # BACKSTOP. The codes are integers at fixed column positions of the permuted
             # weight; nothing in the file format says which permutation produced those
@@ -1236,6 +1276,7 @@ def export_saltq(
             # tensors" — a deployed model silently missing its trained delta.
             zplora_rank=int((cfg["qat"].get("saltq", {}) or {}).get("zplora_rank", 0)),
             zplora_alpha=float((cfg["qat"].get("saltq", {}) or {}).get("zplora_alpha", 16.0)),
+            salient_lora=bool((cfg["qat"].get("saltq", {}) or {}).get("salient_lora", False)),
         )
         load_saltq_trainable(model, checkpoint_dir)
     else:
