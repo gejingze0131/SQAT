@@ -1,0 +1,100 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_zplora_recal
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32, 1 epoch: the 1+3 DECOMPOSITION experiment. TWO KEY EDITS vs the zplora config
+# (recal_interval 50, recal_capture_steps 8); vs the ANCHOR (65.77) the non-salient tier is
+# re-architected in one move:
+#
+#     task A (low-rank adaptation)      -> rank-64 adapter on the coefficient, lr 5e-3 (QA-LoRA's
+#                                          own settings), z frozen for SGD
+#     task B (salient-drift tracking)   -> CLOSED FORM: every 50 steps recal_dz is set to cancel
+#                                          the output-mean drift c = (W_fq - W_fq^0) . E[x_sal],
+#                                          exact in expectation, zero gradient noise
+#     salient tier                      -> LSQ 2-bit QAT, unchanged, salient_lr 1.25e-4
+#
+# ---------------------------------------------------------------------------------------------
+# WHY. The INT2 2x2 is strongly SUPER-additive: floor 50.35, z-only 48.54, salient-only 41.55,
+# both 65.77 — each tier alone is worse than training nothing. So z's role at INT2 is
+# COMPENSATORY (absorbing the drift the salient tier induces), and the zp_lr response being a
+# sharp unimodal peak (0 -> 41.55, /5 -> 63.56, 1.73e-3 -> 65.77, x5 -> 38.28) is what SGD
+# tracking a per-step-moving target looks like: every lr either lags the drift or amplifies its
+# noise. Meanwhile z's OWN adaptation value measured <= 0 (z-only 48.54 < floor), while the same
+# function space through QA-LoRA's rank-64 adapter is worth +21.6 (71.90). Hence: give each
+# signal the mechanism it is shaped for, and take the tracking job away from SGD entirely.
+#
+# NB THE FIRST zplora RUN WAS CONFOUNDED. saltq_cs170k_int2_g32_ep1_zplora predates the
+# requires_grad fix: its log shows zero-points 202.4M lr=0.00173, i.e. the FULL-RANK z trained
+# alongside the adapter — the max-authority corner, not the clean adapter arm. It never escaped
+# (final loss 0.122). This run is the first clean test of low-rank-on-SALT-Q at all, plus the
+# recalibration. The trainer now hard-refuses recal_interval > 0 with a trainable z.
+#
+# VERIFIED BEFORE SUBMITTING (scratch test_recal.py, 7 checks, all pass):
+#   - captured means match the fed batch exactly; DDP all-reduce path present;
+#   - after perturbing weight_salient, recalibration cancels the E[y] drift 3.2e-2 -> 3.7e-8;
+#   - fast forward == effective_weight to bf16 precision; recal_dz rides the SEPARATELY-cast
+#     delta term, so it does not suffer the 0.0218-ulp joint-cast swallowing;
+#   - deployed_tensors == effective_weight EXACTLY (max|d| = 0) with recal_dz active, and the
+#     exported zp provably contains it (deployed_tensors -> _z_eff, the single definition);
+#   - recal_dz is not a parameter, stays OUT of the HF state_dict, and IS carried by
+#     saltq_trainable_state_dict / load_saltq_trainable (else an export-from-checkpoint would
+#     silently drop the whole compensation — same trap class as the adapter's, also now fixed:
+#     export-only rebuilds pass zplora_rank through);
+#   - grads flow to (adapter, salient), none to (z, recal_dz);
+#   - the rank-0 (no-adapter) + recal path works, for the follow-up salient-only diagnostic.
+#
+# ---------------------------------------------------------------------------------------------
+# HOW TO READ IT. Fixed before the run. Escape epoch from the LOSS CURVE (loss < 0.110
+# sustained), MEAN(7) second, beats_majority before believing any INT2 score. ALSO read the
+# [SALT-Q][recal] lines: median|c| is the first direct measurement of how much output-mean drift
+# the salient tier actually induces — if it sits near 0 all epoch, the compensation story is
+# moot regardless of the score. z-clamp% exploding means the LS direction is ill-conditioned;
+# diagnose before attributing anything to the theory.
+#
+#   escape <= ~0.4 AND MEAN(7) > 71.9   -> decomposition confirmed AND the salient tier adds on
+#                                          top of the adapter. The method's INT2 story is fixed:
+#                                          QA-LoRA's adapter + a trained salient slice + free
+#                                          closed-form recalibration.
+#   escape <= ~0.4, MEAN(7) ~ 71.9      -> decomposition works, salient adds nothing at INT2.
+#   escape 0.4-0.7, MEAN(7) 66-72       -> compensation works but adapter and salient tier
+#                                          compete; re-tune salient_lr DOWN or zplora_lr to 1e-3
+#                                          before further conclusions.
+#   no escape, recal lines healthy      -> mean-drift compensation is NOT sufficient: the
+#                                          harmful drift is token-dependent (variance, not
+#                                          mean), or the adapter+salient combination is the
+#                                          problem. Next: rank-0 + recal on the salient-only
+#                                          cell (41.55) to isolate task B's value directly.
+#   collapse with z-clamp% exploding    -> ill-conditioned mu_pool or wrong reference — an
+#                                          implementation pathology, NOT evidence against the
+#                                          decomposition. Fix before rerunning.
+#
+# BASE REUSE. bits, group_size, group_k, train_salient and the permutation are all unchanged, so
+# the anchor's frozen codes are reused bit-identically.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_zplora_recal.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_zplora_recal \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 1+3: zp-LoRA r=64 (task A) + closed-form mean recalibration every 50 steps (task B), z frozen, salient tier unchanged' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_zplora_recal.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

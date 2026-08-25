@@ -106,7 +106,14 @@ SALTQ_CKPT_META_FILENAME = "saltq_ckpt_meta.pt"
 SALIENT_WEIGHT_PARAM = "weight_salient"
 SCALE_PARAM_FRAGMENTS = ("lsq_w_scale", "saltq_s")
 ZEROPOINT_PARAM_FRAGMENTS = ("lsq_w_zp", "saltq_z")
+# The zp-LoRA factors are a FOURTH unit and need their own group and lr. They are deliberately
+# NOT named "saltq_z*": the fragments above are matched by SUBSTRING, so `saltq_zlora_a` would
+# silently land in the zero-point group and train at zp_lr, which is a level-units rate and wrong
+# for a factor whose square is a level.
+ZPLORA_PARAM_FRAGMENTS = ("zplora_a", "zplora_b")
 QUANT_PARAM_FRAGMENTS = SCALE_PARAM_FRAGMENTS + ZEROPOINT_PARAM_FRAGMENTS
+assert not any(f in n for f in ZEROPOINT_PARAM_FRAGMENTS + SCALE_PARAM_FRAGMENTS
+               for n in ZPLORA_PARAM_FRAGMENTS), "zp-LoRA names collide with another tier"
 
 
 def _lsq_levels(q_bits: int, symmetric: bool) -> Tuple[int, int]:
@@ -411,6 +418,8 @@ class SALTQLinear(nn.Module):
         train_scale: bool = False,
         continuous_z: bool = True,
         wq_dtype: torch.dtype = torch.bfloat16,
+        zplora_rank: int = 0,
+        zplora_alpha: float = 16.0,
     ):
         super().__init__()
         assert group_k % group_size == 0, \
@@ -447,6 +456,54 @@ class SALTQLinear(nn.Module):
             self.register_buffer("saltq_s", s_n.float().contiguous(), persistent=False)
         if not self.symmetric:
             self.saltq_z = nn.Parameter(z_n.float().contiguous())
+
+        # ---- zp-LoRA: QA-LoRA's adapter, expressed inside SALT-Q's own zero-point --------------
+        # The two methods add the SAME object to y, a per-(output, group) coefficient on a pooled
+        # input:
+        #     QA-LoRA   y += scaling * (B @ A) @ mean_g(x)
+        #     SALT-Q    y -= (z * s)           @ sum_g(x)   =  -(z * s * group_size) @ mean_g(x)
+        # so the low rank has to sit on the COEFFICIENT, not on z. Factoring z itself would give
+        # dC = dz * s * group_size, a Hadamard product of a low-rank matrix with s, which is NOT
+        # low rank -- it would spend the parameters and not buy the concentration.
+        #
+        # dC = scaling * (B @ A) is therefore the trained object, and z is frozen at its GPTQ init
+        # and deploys as z_eff = z0 + dC / (s * group_size). That is exactly what QA-LoRA folds in
+        # at deploy (z - c/s), so this is its adapter with SALT-Q's salient tier still attached.
+        #
+        # B is zero-initialised, so training starts EXACTLY at the frozen base -- the same reason
+        # LoRA does it, and here it also means the run's step 0 is bit-identical to plain GPTQ.
+        self.zplora_rank = int(zplora_rank) if not self.symmetric else 0
+        if self.zplora_rank > 0:
+            # The delta's contribution to the deployed weight is -dC/group_size, with s cancelling:
+            #   (q - z_eff) * s = (q - z0) * s - (dC / (s * group_size)) * s
+            # That cancellation is what makes the adapter s-free, as QA-LoRA's is. It only holds
+            # while s is frozen; with a trainable s the two s's belong to different graph nodes and
+            # the delta would start depending on the scale. Untested combination, so refuse it
+            # rather than let it run and quietly mean something else.
+            if self.train_scale:
+                raise ValueError(
+                    "[SALT-Q] zplora_rank > 0 with train_scale=True is not supported: the "
+                    "adapter is defined on the coefficient and relies on s cancelling out."
+                )
+            r = self.zplora_rank
+            self.zplora_scaling = float(zplora_alpha) / r
+            self.zplora_a = nn.Parameter(torch.empty(r, self.n_nonsal_g, dtype=torch.float32))
+            nn.init.kaiming_uniform_(self.zplora_a, a=math.sqrt(5))
+            self.zplora_b = nn.Parameter(torch.zeros(self.out_features, r, dtype=torch.float32))
+            # z is no longer trained: the low-rank branch REPLACES the full-rank update rather
+            # than sitting on top of it. Left as a Parameter (not a buffer) so every existing
+            # path that reads it keeps working; requires_grad=False is what removes it from the
+            # optimizer groups and from saltq_trainable_state_dict, both of which filter on it.
+            self.saltq_z.requires_grad_(False)
+
+        # ---- mean recalibration (src/recalibration.py) ------------------------------------------
+        # A per-(row, group) zero-point offset in LEVEL units, written by CLOSED FORM (not SGD):
+        # every recal_interval steps the callback sets it to cancel the output-mean drift the
+        # salient tier's movement has induced since capture. None until the callback enables it,
+        # so every existing config is bit-identical to before. Non-persistent: it must not enter
+        # the HF state_dict machinery, but it IS part of the deployed z, so
+        # saltq_trainable_state_dict / load_saltq_trainable carry it explicitly.
+        self.register_buffer("recal_dz", None, persistent=False)
 
         # Precompute the frozen part of the deployed weight. Only valid while s is frozen.
         # Salient columns are left at zero: their contribution comes from weight_salient.
@@ -508,9 +565,50 @@ class SALTQLinear(nn.Module):
         move at all, and adapts only in whole quantization steps.
         """
         z = self.saltq_z.float()
+        if self.zplora_rank > 0:
+            z = z + self._zplora_dz()
+        if self.recal_dz is not None:
+            # Closed-form mean-drift compensation (src/recalibration.py). A buffer, so it is a
+            # constant to autograd: the adapter's gradients are unchanged by it.
+            z = z + self.recal_dz
         if not self.continuous_z:
             z = round_ste(grad_scale(z, self._z_gfactor))
         return z.clamp(self.Qn, self.Qp)
+
+    def param_is_trainable(self, name: str) -> bool:
+        """Which of THIS layer's parameters the optimizer may touch. `name` is unqualified.
+
+        build_saltq_model does a blanket `model.requires_grad_(False)` and then re-enables every
+        parameter inside a SALTQLinear, so a freeze applied in __init__ does NOT survive model
+        construction and has to be declared here instead.
+
+        Learned the expensive way: the first zp-LoRA run set saltq_z.requires_grad_(False) in
+        __init__, the builder turned it straight back on, and the run trained the full-rank z at
+        zp_lr AND the adapter at zplora_lr at the same time. Nothing failed; the config simply
+        described a different experiment from the one that ran. The only visible symptom was the
+        optimizer-group print still reporting 202.4M zero-points, which is why _make_saltq_trainer_cls
+        now refuses that combination outright.
+        """
+        if name == "saltq_z" and self.zplora_rank > 0:
+            return False
+        return True
+
+    def _zplora_dC(self) -> torch.Tensor:
+        """The trained coefficient delta on the MEAN-pooled input, [out, n_nonsal_g].
+
+        Identical in form to QA-LoRA's `scaling * (B @ A)`, and identical in units.
+        """
+        return self.zplora_scaling * (self.zplora_b.float() @ self.zplora_a.float())
+
+    def _zplora_dz(self) -> torch.Tensor:
+        """The same delta expressed in zero-point LEVELS, so it can be added to z and deployed.
+
+        SALT-Q pools with a SUM and QA-LoRA with a MEAN, hence the group_size:
+            dC @ mean_g(x)  ==  (dC / group_size) @ sum_g(x)  ==  (dz * s) @ sum_g(x)
+        so dz = dC / (s * group_size). s is the frozen per-(output, group) scale, so this is an
+        exact elementwise rescale, not an approximation.
+        """
+        return self._zplora_dC() / (self._s_eff() * self.group_size)
 
     def _s_eff(self) -> torch.Tensor:
         s = self.saltq_s.float().clamp(min=1e-8)
@@ -564,9 +662,27 @@ class SALTQLinear(nn.Module):
         # Zero-point correction. (q - z)*s = q*s - z*s and z*s is constant within a group, so the
         # whole correction is one pooled-input GEMM instead of a full [out, in] reconstruction.
         if not self.symmetric:
-            zs = (self._z_eff() * self._s_eff()).to(x.dtype)            # [out, n_nonsal_g]
             xp = x.reshape(*x.shape[:-1], self.ng, self.group_size).sum(-1)
-            out = out - F.linear(xp[..., self.n_sal_g:], zs)
+            if self.zplora_rank > 0 or self.recal_dz is not None:
+                # SPLIT THE FROZEN BASE FROM THE TRAINED DELTA BEFORE CASTING. z0*s ~ 4.9e-2 at
+                # INT2 g32 while one step of the delta is ~1e-5, so casting their SUM to bf16
+                # (8 mantissa bits, 3.9e-3 relative) would quantise every update away: measured
+                # 0.0218 ulp per step on the full-rank path. Cast separately and each term is
+                # represented to its OWN relative precision -- which is the numerical structure
+                # QA-LoRA gets for free, because its delta is never added to a large base.
+                #
+                # The clamp is applied in fp32 BEFORE the split, so the delta that reaches the
+                # GEMM is the post-clamp one and the forward stays exactly equal to what
+                # deployed_tensors() writes out. Without that, saturating z would silently break
+                # the merge-free guarantee.
+                z0 = self.saltq_z.float()
+                s = self._s_eff()
+                d = (self._z_eff() - z0) * s                            # [out, n_nonsal_g], fp32
+                out = out - F.linear(xp[..., self.n_sal_g:], (z0 * s).to(x.dtype))
+                out = out - F.linear(xp[..., self.n_sal_g:], d.to(x.dtype))
+            else:
+                zs = (self._z_eff() * self._s_eff()).to(x.dtype)        # [out, n_nonsal_g]
+                out = out - F.linear(xp[..., self.n_sal_g:], zs)
 
         if self.group_k > 0:
             out = out + F.linear(x[..., :self.group_k],
@@ -622,10 +738,15 @@ class SALTQLinear(nn.Module):
         if self.symmetric:
             z_n = torch.zeros_like(s_n)
         else:
-            z_n = self.saltq_z.float()
+            # MUST go through _z_eff(): it is the single definition of "the zero-point actually
+            # used", and it is where the zp-LoRA delta enters. This block used to re-implement
+            # the round-and-clamp itself and read saltq_z directly, which was harmless while z
+            # was the only trainable zero-point and would silently export a model with NO adapter
+            # once one exists. (deployed_weight() == effective_weight() would have caught it,
+            # since effective_weight goes through _z_eff -- but only if someone ran the check.)
+            z_n = self._z_eff().detach()
             if not self.continuous_z:
-                z_n = z_n.round()
-            z_n = z_n.clamp(self.Qn, self.Qp)
+                z_n = z_n.round().clamp(self.Qn, self.Qp)
         codes.append(self._codes_cpu.to(device=s_n.device, dtype=torch.float32))
         scales.append(s_n)
         zeros.append(z_n)
@@ -699,6 +820,8 @@ def build_saltq_model(
     train_layernorms: bool = False,
     train_scale: bool = False,
     continuous_z: bool = True,
+    zplora_rank: int = 0,
+    zplora_alpha: float = 16.0,
     device=None,
 ):
     """
@@ -757,6 +880,8 @@ def build_saltq_model(
                 train_scale=train_scale,
                 continuous_z=continuous_z,
                 wq_dtype=dtype,
+                zplora_rank=zplora_rank,
+                zplora_alpha=zplora_alpha,
             )
             # BACKSTOP. The codes are integers at fixed column positions of the permuted
             # weight; nothing in the file format says which permutation produced those
@@ -786,9 +911,12 @@ def build_saltq_model(
     n_train = 0
     for mod in model.modules():
         if isinstance(mod, SALTQLinear):
-            for p in mod.parameters():
-                p.requires_grad_(True)
-                n_train += p.numel()
+            # ASK the layer -- see SALTQLinear.param_is_trainable. A blanket requires_grad_(True)
+            # here silently overrode a freeze set in __init__ and invalidated a whole run.
+            for pname, p in mod.named_parameters():
+                p.requires_grad_(mod.param_is_trainable(pname))
+                if p.requires_grad:
+                    n_train += p.numel()
     if train_layernorms:
         for name, p in model.named_parameters():
             if "layernorm" in name.lower() or name.endswith("model.norm.weight"):
@@ -828,11 +956,19 @@ def saltq_layers(model: nn.Module) -> Dict[str, SALTQLinear]:
 # ============================================================================
 
 def saltq_trainable_state_dict(model: nn.Module) -> Dict[str, torch.Tensor]:
-    return {
+    sd = {
         n: p.detach().cpu().contiguous()
         for n, p in model.named_parameters()
         if p.requires_grad
     }
+    # recal_dz is not a parameter (it is written in closed form, never by the optimizer) but it
+    # IS part of the deployed zero-point, so a checkpoint without it would silently export a
+    # model missing the entire mean-recalibration — the same class of trap deployed_tensors()
+    # already fell into once with the adapter.
+    for n, b in model.named_buffers():
+        if n.endswith("recal_dz") and b is not None:
+            sd[n] = b.detach().cpu().contiguous()
+    return sd
 
 
 def save_saltq_trainable(model: nn.Module, output_dir: str, saltq_base_dir: Optional[str] = None,
@@ -879,7 +1015,8 @@ def load_saltq_trainable(model: nn.Module, checkpoint_dir: str) -> int:
     sd = load_file(path)
     own = dict(model.named_parameters())
     missing = [k for k in own if own[k].requires_grad and k not in sd]
-    unexpected = [k for k in sd if k not in own]
+    unexpected = [k for k in sd if k not in own
+                  and not (k == "recal_dz" or k.endswith(".recal_dz"))]
     if missing:
         raise RuntimeError(f"[SALT-Q] checkpoint is missing {len(missing)} trainable tensors, "
                            f"e.g. {missing[:3]}")
@@ -889,6 +1026,12 @@ def load_saltq_trainable(model: nn.Module, checkpoint_dir: str) -> int:
         for k, v in sd.items():
             if k in own:
                 own[k].copy_(v.to(own[k].dtype).to(own[k].device))
+            elif k == "recal_dz" or k.endswith(".recal_dz"):
+                # Buffer, not a parameter: a freshly built model has it as None, so create it on
+                # the module rather than copy_ into nothing.
+                mod = model.get_submodule(k.rsplit(".", 1)[0] if "." in k else "")
+                dev = mod.saltq_z.device if hasattr(mod, "saltq_z") else "cpu"
+                mod.recal_dz = v.float().to(dev).contiguous()
     print(f"[SALT-Q] Loaded {len(sd)} trainable tensors from {path}")
     return len(sd)
 
@@ -1088,6 +1231,11 @@ def export_saltq(
             gradient_checkpointing=False,
             train_scale=bool((cfg["qat"].get("saltq", {}) or {}).get("train_scale", False)),
             continuous_z=bool((cfg["qat"].get("saltq", {}) or {}).get("continuous_z", True)),
+            # Without these, an export-only rebuild of a zp-LoRA run would construct a model with
+            # NO adapter and load_saltq_trainable would merely warn about "unexpected checkpoint
+            # tensors" — a deployed model silently missing its trained delta.
+            zplora_rank=int((cfg["qat"].get("saltq", {}) or {}).get("zplora_rank", 0)),
+            zplora_alpha=float((cfg["qat"].get("saltq", {}) or {}).get("zplora_alpha", 16.0)),
         )
         load_saltq_trainable(model, checkpoint_dir)
     else:

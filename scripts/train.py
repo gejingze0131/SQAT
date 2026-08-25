@@ -768,6 +768,9 @@ def main():
             train_layernorms=bool(cfg["qat"]["saltq"].get("train_layernorms", False)),
             train_scale=bool(cfg["qat"]["saltq"].get("train_scale", False)),
             continuous_z=bool(cfg["qat"]["saltq"].get("continuous_z", True)),
+            # 0 (default) = the full-rank trainable z every run so far used.
+            zplora_rank=int(cfg["qat"]["saltq"].get("zplora_rank", 0)),
+            zplora_alpha=float(cfg["qat"]["saltq"].get("zplora_alpha", 16.0)),
         )
         base_model_ref = model
     else:

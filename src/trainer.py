@@ -170,6 +170,11 @@ def build_trainer(
             scales_lr=saltq_lr(cfg, "scales_lr",
                                cfg["qat"].get("lsq", {}).get("scales_lr", 1e-5)),
             zp_lr=saltq_lr(cfg, "zp_lr", 1e-3),
+            # Only consulted when zplora_rank > 0. QA-LoRA trains its adapter at 5e-3, and the
+            # unit derivation lands in the same place: to move the shared coefficient as far per
+            # step as zp_lr 1.73e-3 does, lr_B * ||A_col|| must equal zp_lr, and with r=64 over
+            # G=128 groups ||A_col|| = 0.408, giving 4.2e-3. Two independent routes, one answer.
+            zplora_lr=saltq_lr(cfg, "zplora_lr", 5e-3),
             saltq_base_dir=saltq_base_dir,
         )
     elif enable_lsq:
@@ -189,6 +194,29 @@ def build_trainer(
         data_collator=data_collator,
         callbacks=[QATCallback(qat_handler)],
     )
+
+    # Closed-form output-mean recalibration of the non-salient zero-point (src/recalibration.py).
+    # Off (0) by default: every existing config is bit-identical to before. When on, z's
+    # drift-compensation job is done by direct computation instead of SGD, so it composes with
+    # zp-LoRA (adapter = task adaptation) and with a frozen z, but NOT with a trainable full-rank
+    # z: SGD and the callback would then both write the same coefficient toward different targets.
+    if qat_mode == "saltq":
+        recal_interval = int((cfg["qat"].get("saltq", {}) or {}).get("recal_interval", 0))
+        if recal_interval > 0:
+            sq = cfg["qat"].get("saltq", {}) or {}
+            from .recalibration import SALTQMeanRecalibration
+            zp_trainable = any(
+                p.requires_grad for n, p in model.named_parameters() if n.endswith("saltq_z"))
+            if zp_trainable:
+                raise RuntimeError(
+                    "[SALT-Q] recal_interval > 0 with a TRAINABLE full-rank z: the optimizer and "
+                    "the recalibration callback would both drive the non-salient coefficient. "
+                    "Freeze z (zplora_rank > 0, or zp_lr paths off) or set recal_interval: 0.")
+            trainer.add_callback(SALTQMeanRecalibration(
+                model,
+                capture_steps=int(sq.get("recal_capture_steps", 8)),
+                interval=recal_interval,
+            ))
 
     return trainer
 
@@ -249,7 +277,7 @@ def _make_lsq_trainer_cls(scales_lr: float):
 
 
 def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
-                            saltq_base_dir: str = None):
+                            saltq_base_dir: str = None, zplora_lr: float = 5e-3):
     """
     Trainer subclass for SALT-Q.
 
@@ -268,6 +296,7 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
     and live in the saltq_base dir; a checkpoint records a pointer to it instead of a copy.
     """
     from src.qat_saltq import (
+        ZPLORA_PARAM_FRAGMENTS,
         SALIENT_WEIGHT_PARAM,
         SCALE_PARAM_FRAGMENTS,
         ZEROPOINT_PARAM_FRAGMENTS,
@@ -292,18 +321,39 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
             def is_salient(n):
                 return SALIENT_WEIGHT_PARAM in n
 
+            def is_zplora(n):
+                return any(frag in n for frag in ZPLORA_PARAM_FRAGMENTS)
+
             salient = [p for n, p in named.items() if is_salient(n)]
             scales = [p for n, p in named.items() if is_scale(n)]
             zps = [p for n, p in named.items() if is_zp(n)]
+            zplora = [p for n, p in named.items() if is_zplora(n)]
             other = [p for n, p in named.items()
-                     if not is_salient(n) and not is_scale(n) and not is_zp(n)]
+                     if not is_salient(n) and not is_scale(n) and not is_zp(n)
+                     and not is_zplora(n)]
 
             param_groups = [
                 {"params": salient, "weight_decay": self.args.weight_decay, "lr": salient_lr},
                 {"params": scales, "weight_decay": 0.0, "lr": scales_lr},
                 {"params": zps, "weight_decay": 0.0, "lr": zp_lr},
+                # A FOURTH unit: B@A is in level units, so B and A each carry a square root of
+                # one. zp_lr cannot be reused for them.
+                {"params": zplora, "weight_decay": 0.0, "lr": zplora_lr},
                 {"params": other, "weight_decay": 0.0},
             ]
+            # A zp-LoRA run must NOT also be training the full-rank z: the adapter REPLACES it.
+            # This exact combination ran once, undetected, because build_saltq_model re-enabled
+            # saltq_z after SALTQLinear.__init__ froze it. Fail loudly instead.
+            if zplora and zps:
+                raise RuntimeError(
+                    f"[SALT-Q] zp-LoRA is active ({sum(p.numel() for p in zplora)/1e6:.1f}M "
+                    f"factors) but the zero-point group is ALSO trainable "
+                    f"({sum(p.numel() for p in zps)/1e6:.1f}M params). The adapter replaces the "
+                    f"full-rank z; training both means the run is not the experiment its config "
+                    f"describes. Check SALTQLinear.param_is_trainable and the freedom-allocation "
+                    f"loop in build_saltq_model."
+                )
+
             param_groups = [g for g in param_groups if g["params"]]
 
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
@@ -317,6 +367,8 @@ def _make_saltq_trainer_cls(salient_lr: float, scales_lr: float, zp_lr: float,
                 f"   (weight units, wd=0)\n"
                 f"  zero-points      {sum(p.numel() for p in zps) / 1e6:7.1f}M  lr={zp_lr:g}"
                 f"   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)\n"
+                f"  zp-LoRA (B, A)   {sum(p.numel() for p in zplora) / 1e6:7.1f}M  lr={zplora_lr:g}"
+                f"   (sqrt of a LEVEL - a fourth unit, wd=0)\n"
                 f"  other            {sum(p.numel() for p in other) / 1e6:7.1f}M  "
                 f"lr={self.args.learning_rate:g}"
             )

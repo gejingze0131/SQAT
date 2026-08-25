@@ -1,0 +1,128 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_zplora
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32, 1 epoch. ONE VARIABLE vs configs/saltq_cs170k_int2_g32_ep1.yaml (65.77):
+# the NON-SALIENT half trades its full-rank per-(row, group) z for a rank-64 factorisation of the
+# same coefficient — QA-LoRA's adapter, attached to SALT-Q's zero-point. The SALIENT half is
+# untouched: 157.3M real weights through the LSQ 2-bit fakequant, salient_lr 1.25e-4.
+#
+# ---------------------------------------------------------------------------------------------
+# WHY THIS AND NOT ANOTHER KNOB. Three attempts to make full-rank z work have failed, and all
+# three failed the SAME way — each made the update more uniform:
+#
+#   SALT-Q anchor          escapes 0.672   0.0680   MEAN(7) 65.77   <- THIS RUN'S BASELINE
+#   QA-LoRA INT2           escapes 0.347   0.0541   MEAN(7) 71.90   <- the target
+#   zp_lr x5               NEVER           0.1287   MEAN(7) 38.28   7/7 below majority
+#   zp_eps 1e-8 -> 1e-10   NEVER           0.1286   MEAN(7) 38.57   7/7 below majority
+#   per-tensor second mom  DIVERGED        0.1381   never reached the plateau at all
+#
+# The measured reason: QA-LoRA's realised update has stable rank 1.62 with 61.9% of its energy in
+# ONE singular direction; SALT-Q's is 5.67 / 17.7%. Matching QA-LoRA's dominant direction by lr
+# alone needs x4.73 — which IS the x5 that costs 27.5 points — because one scalar cannot give
+# direction 1 a large step and directions 2-128 a small one. Rank <= 64 imposes the concentration
+# structurally, and that is the one route not yet tried on this cell.
+#
+# ---------------------------------------------------------------------------------------------
+# WHAT IS IMPLEMENTED. The factorisation is on the COEFFICIENT, not on z, and that is not a
+# detail. Both methods add a per-(output, group) coefficient on a pooled input:
+#     QA-LoRA   y += scaling * (B @ A) @ mean_g(x)
+#     SALT-Q    y -= (z * s)           @ sum_g(x)  =  -(z * s * group_size) @ mean_g(x)
+# Factoring z would give dC = dz * s * group_size, a Hadamard product of a low-rank matrix with s
+# — NOT low rank, so it would spend the parameters and not buy the concentration. So
+# dC = scaling * (B @ A) is trained and z deploys as z_eff = z0 + dC / (s * group_size), which is
+# exactly what QA-LoRA folds in at deploy (z - c/s). s cancels out of the delta's contribution to
+# the weight, so the adapter is s-free (and train_scale=True is refused, since that breaks the
+# cancellation).
+#
+# IT ALSO FIXES A NUMERICAL BUG FOR FREE. The old forward cast z0*s + dz*s TOGETHER to bf16.
+# z0*s ~ 4.9e-2 at INT2 g32 while one step of dz*s ~ 1e-5, so at 8 mantissa bits the update was
+# 0.0218 ulp: measured, a realistic single step changes the bf16 value of only 0.5% of entries.
+# The adapter's delta is computed and cast on its own, and 100% of it survives. Part of what
+# QA-LoRA was getting for free all along.
+#
+# VERIFIED BEFORE SUBMITTING (scratch unit test, 7 groups, all pass):
+#   - B is zero-initialised, so z_eff at step 0 is IDENTICAL to the no-adapter model;
+#   - fast forward == F.linear(x, effective_weight()) to 3.3e-7;
+#   - deployed_weight() == effective_weight() EXACTLY (max|d| = 0) — the merge-free guarantee
+#     survives, which is the thing that would have silently broken: deployed_tensors() used to
+#     re-implement the round-and-clamp and read saltq_z directly, so it would have exported a
+#     model with NO adapter. It now goes through _z_eff(), the single definition;
+#   - the exported zero-point differs from z0 and equals _z_eff();
+#   - dL/dB and dL/dA flow, saltq_z is frozen with no grad, weight_salient still trains;
+#   - zplora_rank=0 creates no parameters, leaves z trainable, and keeps deploy equivalence exact,
+#     so every existing config is bit-identical to before;
+#   - the names cannot collide with the zero-point optimizer group. That group is matched by
+#     SUBSTRING, so "saltq_zlora_a" would have landed in it and trained at zp_lr — a level-units
+#     rate, wrong for a factor whose square is a level. Hence zplora_a / zplora_b and a FOURTH
+#     optimizer group at zplora_lr.
+#
+# r=64, alpha=16 (scaling 0.25) and lr 5e-3 are QA-LoRA's own settings, so the two arms differ in
+# what the adapter attaches to and not in its capacity or rate. The unit derivation independently
+# lands at 4.2e-3 for lr_B, which is the same place.
+#
+# ---------------------------------------------------------------------------------------------
+# HOW TO READ IT. Fixed before the run. Escape epoch from the LOSS CURVE (loss < 0.110 sustained),
+# MEAN(7) second, and check beats_majority before believing any INT2 score.
+#
+#   escape near 0.347 AND MEAN(7) > 71.9    -> the concentration story is right AND the salient
+#                                              tier adds on top of QA-LoRA. This is the result the
+#                                              method needs: SALT-Q = QA-LoRA's adapter + a
+#                                              trained salient slice, both surviving into the
+#                                              deployed quantization parameters.
+#   escape near 0.347, MEAN(7) ~ 71.9       -> the adapter is doing all the work and the salient
+#                                              tier adds nothing at INT2. Still resolves the
+#                                              plateau, but the method's INT2 story becomes
+#                                              "QA-LoRA with a better base".
+#   escape earlier than 0.672 but later
+#     than 0.347, MEAN(7) 66-71             -> concentration is necessary and partly sufficient;
+#                                              the remaining gap is the salient tier competing
+#                                              with the adapter. Re-tune salient_lr DOWN — the
+#                                              INT3 sweep is sharply unimodal and 4x overshoot
+#                                              already costs 2.7 points, so two effective
+#                                              adaptation paths can overshoot together.
+#   escape unchanged near 0.672             -> rank was never the mechanism. Everything measured
+#                                              about concentration is then correlation, and what
+#                                              is left is the base itself (54% reconstruction
+#                                              error at INT2) or group_k. Say so plainly.
+#   diverges                                -> zplora_lr 5e-3 is QA-LoRA's rate but QA-LoRA has no
+#                                              salient tier. Re-run at 1e-3 before concluding.
+#
+# ALSO WORTH READING, since it is cheap: at the final checkpoint, compare the adapter's realised
+# coefficient against QA-LoRA's with
+#   python scripts/compare_qalora_saltq_capacity.py --qalora_dir ... --saltq_base ... \
+#       --saltq_ckpt ... --group_size 32 --bits 2
+# p99/p50 should now be near QA-LoRA's 15.3 rather than SALT-Q's 5.7. If the escape moves and
+# that ratio does NOT, the mechanism attributed here is the wrong one.
+#
+# BASE REUSE. bits, group_size, group_k, train_salient and the permutation are all unchanged, so
+# the anchor's frozen codes are reused bit-identically. The adapter is a training-time
+# parameterisation and does not touch the base.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_zplora.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_zplora \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 zp-LoRA r=64: QA-LoRA adapter on the non-salient zero-point, salient tier still LSQ QAT' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_zplora.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
