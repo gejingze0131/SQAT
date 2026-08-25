@@ -1,0 +1,69 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_zpfrozen
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# The full rationale and the read rule live in the config header — this is one cell of a
+# deliberate sweep, not a standalone experiment. Baseline for all three: the INT2 anchor,
+# configs/saltq_cs170k_int2_g32_ep1.yaml, escape epoch 0.672, final loss 0.0680, MEAN(7) 65.77.
+#
+# WHY DOWN. Every experiment that gave the zero-point MORE authority made INT2 worse:
+#   anchor zp_lr 1.73e-3              escape 0.672   0.0680   MEAN(7) 65.77
+#   + rank-64 adapter ON TOP of z     never          0.1248
+#   zp_lr x5                          never          0.1287   MEAN(7) 38.28   7/7 degenerate
+#   zp_eps 1e-10                      never          0.1286   MEAN(7) 38.57   7/7 degenerate
+#   per-tensor second moment          diverged       0.1381   never reached the plateau
+#   z-only (z carries everything)     escape 0.938   0.1151   MEAN(7) 48.54
+# Six points, one direction, and DOWN has never been tried. At INT2 the frozen codes carry ~54%
+# reconstruction error and GPTQ chose z0 to minimise it, so any movement of z that is not a real
+# task improvement makes 97.7% of the weights worse.
+#
+# READ THE ESCAPE EPOCH FROM THE LOSS CURVE, and check beats_majority before believing any INT2
+# score — the anchor itself already has boolq collapsed.
+#
+# THIS CELL: zp_lr = 0. The zero-point is FROZEN at its GPTQ value, so the only trainable freedom
+# left is the salient slice and its LSQ grid. It is the limiting case of the sweep and the exact
+# COMPLEMENT of the z-only run, which closes a 2x2 the INT3 results already report:
+#
+#     z-only    (z, no salient)   escape 0.938   MEAN(7) 48.54
+#     THIS RUN  (salient, no z)   ?
+#     anchor    (both)            escape 0.672   MEAN(7) 65.77
+#     GPTQ floor (neither)        --             MEAN(7) 50.35
+#
+#   MEAN(7) > 65.77 -> z is ACTIVELY HARMFUL at INT2. Freeze it in the INT2 configuration, and the
+#                      INT3-vs-INT2 split gets a clean explanation: z helps while the codes have
+#                      headroom (26% error) and hurts once they do not (54%).
+#   MEAN(7) ~ 65.77 -> z contributes nothing at INT2; the anchor's score is the salient tier's.
+#   MEAN(7) < 65.77 -> z IS contributing and the six failures were about magnitude, not about z.
+#
+# CHECK THE OPTIMIZER PRINT FIRST: the zero-point group must report lr=0. lr=0 keeps z in the
+# group with its gradients still computed, which is deliberate — it costs a little compute and
+# keeps everything else identical to the anchor.
+
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_zpfrozen.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_zpfrozen \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 zp_lr=0: the salient tier alone, completing the 2x2 against the z-only run' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_zpfrozen.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

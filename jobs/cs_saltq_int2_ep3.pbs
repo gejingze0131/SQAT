@@ -1,0 +1,57 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_ep3
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32, 3 EPOCHS at the anchor's learning rates. ONE VARIABLE vs
+# configs/saltq_cs170k_int2_g32_ep1.yaml (escape 0.672, final 0.0680, MEAN(7) 65.77): num_epochs.
+#
+# WHY. The anchor escapes the plateau at epoch 0.672 and then has only 0.33 of an epoch left to
+# use it, while QA-LoRA escapes at 0.347 and gets twice as long. If the anchor is still improving
+# when the schedule ends, part of the 6.13-point gap is budget rather than method.
+#
+# THE LRs ARE UNCHANGED ON PURPOSE, AND THAT IS NOT DISPLACEMENT-NEUTRAL. The anchor's own comment
+# read "3 -> 1; the lrs above carry the sqrt(3) compensation" — these INT2 rates ARE the 3-epoch
+# rates times sqrt(3), because realised displacement goes as lr * c with c ~= 0.47*sqrt(T). So
+# holding lr fixed while T triples moves every tier ~1.73x further than the anchor did:
+#     salient_lr 1.25e-4 (matched 7.22e-5) | scales_lr 1.73e-5 (1.00e-5) | zp_lr 1.73e-3 (1.00e-3)
+# For the zero-point that is the direction that has failed six times at INT2, so a worse result
+# here does NOT convict the epoch count on its own.
+#
+# HOW TO READ IT, fixed in advance:
+#   MEAN(7) > 65.77, escape near 0.67 of the FIRST epoch -> the anchor was cut short; budget helps
+#   MEAN(7) > 65.77, escape LATER in steps               -> it is the cosine schedule, not tokens:
+#                                                           at 3 epochs the lr is still near peak
+#                                                           where the anchor was already decaying
+#   MEAN(7) ~ 65.77   -> one epoch was enough; matches INT3, where 3 epochs gave no clear gain
+#   MEAN(7) < 65.77   -> the sqrt(3) caveat fired; the follow-up is lr/sqrt(3), not a re-run
+#
+# Walltime is 24h: ~4.5h of training plus export and eval.
+#
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep3.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep3 \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 3 epochs at the anchor lrs: is one epoch simply too short after a 0.672 escape' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep3.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

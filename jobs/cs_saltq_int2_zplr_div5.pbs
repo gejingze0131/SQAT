@@ -1,0 +1,58 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_zplr_div5
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# The full rationale and the read rule live in the config header — this is one cell of a
+# deliberate sweep, not a standalone experiment. Baseline for all three: the INT2 anchor,
+# configs/saltq_cs170k_int2_g32_ep1.yaml, escape epoch 0.672, final loss 0.0680, MEAN(7) 65.77.
+#
+# WHY DOWN. Every experiment that gave the zero-point MORE authority made INT2 worse:
+#   anchor zp_lr 1.73e-3              escape 0.672   0.0680   MEAN(7) 65.77
+#   + rank-64 adapter ON TOP of z     never          0.1248
+#   zp_lr x5                          never          0.1287   MEAN(7) 38.28   7/7 degenerate
+#   zp_eps 1e-10                      never          0.1286   MEAN(7) 38.57   7/7 degenerate
+#   per-tensor second moment          diverged       0.1381   never reached the plateau
+#   z-only (z carries everything)     escape 0.938   0.1151   MEAN(7) 48.54
+# Six points, one direction, and DOWN has never been tried. At INT2 the frozen codes carry ~54%
+# reconstruction error and GPTQ chose z0 to minimise it, so any movement of z that is not a real
+# task improvement makes 97.7% of the weights worse.
+#
+# READ THE ESCAPE EPOCH FROM THE LOSS CURVE, and check beats_majority before believing any INT2
+# score — the anchor itself already has boolq collapsed.
+#
+# THIS CELL: zp_lr 1.73e-3 -> 3.46e-4 (/5), the exact mirror of the x5 that cost 27.5 points.
+# It measures the SIGN of dScore/dzp_lr at the anchor, which has never been measured.
+#   escape earlier and/or MEAN(7) > 65.77 -> z is over-driven at the anchor; sweep further down
+#   escape ~0.672, MEAN(7) ~ 65.77        -> zp_lr is a plateau here; the INT2 gap is the salient
+#                                            tier's problem alone
+#   escape later and/or MEAN(7) < 65.77   -> z IS contributing and 1.73e-3 is near its optimum;
+#                                            the monotone story above is then wrong
+
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_zplr_div5.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_zplr_div5 \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              'INT2 zp_lr /5 = 3.46e-4: does the zero-point improve when it is driven LESS' \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_zplr_div5.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
