@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_span_lrdown
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32, loss_span=instruction+response, LRS HALVED: zp_lr 8.66e-4, salient_lr
+# 6.25e-5. TWO VALUE EDITS vs the span run (67.29) -- the LEFT bracket of the cell's lr axis
+# (right bracket: lrup, ~2.5x, 66.24). Targets the response-only-validated displacement of
+# ~0.04 grid steps, since at 1x dense supervision already realises 0.079. Read order in the
+# yaml header: displacement first, then curve, then probe/MEAN(7) against 67.29 and 66.24.
+# <= 67.29 closes the lr question (peak at 1x); > 67.29 reopens it for QA-LoRA's inherited
+# 5e-3 as well before any within-cell method ordering is claimed.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_span_lrdown.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_span_lrdown \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              "span cell, lrs halved: zp_lr 8.66e-4 + salient_lr 6.25e-5; left bracket vs span 67.29 / lrup 66.24" \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_span_lrdown.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
