@@ -1,0 +1,38 @@
+#!/bin/bash
+#PBS -N cs_saltq_int3_span
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+# SALT-Q INT3 g64 (the sal5e5 anchor: 157M free salient + full-rank z, 81.48 response-only) under
+# data.loss_span=instruction+response. One key vs the anchor; same permuted base and frozen INT3
+# codes reused. The INT3 replica of the INT2 span cell, where dense supervision removed every
+# plateau pathology but lowered the ceiling (QLoRA fp16 82.42 -> 77.69) and tied SALT-Q with
+# QA-LoRA (67.29 / 67.64). INT3 never had a plateau, so this cell isolates the CAPACITY effect
+# of supervising question text from the OPTIMISATION effect. Read only against the same-span
+# QA-LoRA (jobs/cs_qalora_int3_span.pbs) and QLoRA bounds (jobs/cs_qlora_int3_span_bounds.pbs).
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+python scripts/test_saltq_base_provenance.py || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int3_g64_ep1_sal5e5_span.yaml \
+    --bits              3 \
+    --output_root       outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int3_g64_ep1/saltq_base_3bit_g64 \
+    --note              "INT3 g64 sal5e5 anchor under loss_span=instruction+response; INT3 replica of the INT2 span cell, compare only within the cell" \
+    > logs/commonsense_170k/saltq_cs170k_int3_g64_ep1_sal5e5_span.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

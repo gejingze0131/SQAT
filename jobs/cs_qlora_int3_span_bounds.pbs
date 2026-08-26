@@ -1,0 +1,48 @@
+#!/bin/bash
+#PBS -N cs_qlora_int3_span_bounds
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# BOTH BOUNDS of the instruction+response INT3 g64 cell from ONE QLoRA training run, exactly as
+# jobs/cs_qlora_int2_span_bounds.pbs did for INT2 (77.69 / 38.08) and as the response-only INT3
+# bounds were built (82.42 merged fp16 / 78.38 merged-then-GPTQ):
+#   1. QLoRA train (NF4 base, qat_mode none) under loss_span=instruction+response
+#      -> merged fp16 checkpoint + eval                       = UPPER BOUND
+#   2. GPTQ INT3 g64 re-export of that same merged checkpoint + eval   = FLOOR
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+set -e
+mkdir -p logs/commonsense_170k
+bash runs/qlora/run_qlora_commonsense.sh \
+    --config     configs/qlora_none_cs170k_int3_g64_ep1_span.yaml \
+    --bits       3 \
+    --num_gpus   4 \
+    --output_dir outputs/qlora_none_cs170k_int3_ep1_span \
+    > logs/commonsense_170k/qlora_none_cs170k_int3_g64_ep1_span.log 2>&1
+echo "qlora train+merged-eval rc=$?"
+
+SRC=outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-merged-eval
+DST=outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval
+python scripts/export_gptq_dequant.py \
+    --model_path "$SRC" --output_dir "$DST" \
+    --config configs/qlora_none_cs170k_int3_g64_ep1_span.yaml \
+    --bits 3 --group_size 64 \
+    2>&1 | tee logs/commonsense_170k/qlora_span_gptq_int3_export.log
+bash runs/eval_vllm.sh --model_path "$DST" --dataset commonsense --gpus 0,1,2,3 \
+    --tag "$(basename $DST)" \
+    > logs/commonsense_170k/qlora_span_gptq_int3_eval.log 2>&1
+echo "floor eval rc=$?"
+echo "End time: $(date)"

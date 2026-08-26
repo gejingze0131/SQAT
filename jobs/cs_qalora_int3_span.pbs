@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N cs_qalora_int3_span
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+# QA-LoRA INT3 g64, 1 epoch, under data.loss_span=instruction+response -- the INT3 replica of the
+# INT2 span cell's QA-LoRA point (67.64 there vs 71.90 response-only). One key vs the
+# response-only INT3 run (80.92). Read only against the same-span SALT-Q sal5e5 and the QLoRA
+# span bounds.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+mkdir -p logs/commonsense_170k
+bash runs/qalora/run_qalora_commonsense.sh \
+    --config configs/qalora_cs170k_int3_g64_ep1_span.yaml \
+    --bits       3 \
+    --output_dir outputs/qalora_cs170k_int3_ep1_span \
+    > logs/commonsense_170k/qalora_cs170k_int3_g64_ep1_span.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
