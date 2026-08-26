@@ -1,0 +1,71 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_span
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32 ANCHOR (157M free salient + full-rank z SGD, 65.77 / escape 0.672) with ONE
+# KEY changed: data.loss_span response -> instruction+response. The fixed PROMPT header (29
+# tokens) is masked; question + options + response are supervised. Same base, same lrs, same
+# everything else -- but this is a NEW CELL, not a single-variable point in the old table.
+#
+# ---------------------------------------------------------------------------------------------
+# WHY. Every INT2 commonsense pathology this branch has chased lives on the response-only
+# plateau: with ~7 of ~8 response tokens being template, the task is ONE token per record, the
+# loss sits at ~0.125 until an escape, and that escape is what full-rank z SGD cannot find
+# (z-only 0.938), what the STE salient tier delays for the adapter (1+3: 0.347 -> 0.77), and
+# where every spike lives. MetaMath at the same INT2 g32 -- hundreds of supervised rationale
+# tokens per record -- has NONE of it: loss 2.4 -> 0.16 monotone, no plateau, no spikes,
+# zp_lr 5e-3 and salient_lr 5e-4 (3-4x the commonsense values) stable, SALT-Q 37.7 = QA-LoRA
+# 37.4, best variant 40.9. Dense supervision is the difference. This run gives commonsense the
+# same: 100-300 real LM tokens per record instead of one.
+#
+# VERIFIED BEFORE SUBMITTING (scratch test_span.py, real tokenizer): response mode supervises 7
+# tokens, instruction+response 44-47 on boolq records (header 29 masked, first supervised token
+# = start of the question text), full = all; input_ids identical across modes; bad mode
+# refused. loss_span rides in datasets.map's fn_kwargs, so it gets its own cache fingerprint;
+# the [Data] loss_span= line prints the supervised share as visible evidence.
+#
+# ---------------------------------------------------------------------------------------------
+# HOW TO READ IT. Fixed before the run.
+#   0. The [Data] line must report ~100-250 supervised tokens/record. ~8 = stale cache; stop.
+#   1. LOSS CURVE SHAPE, not level: the per-token loss now covers the question text, so its
+#      absolute value is not comparable to 0.125. The prediction is math-like -- monotone
+#      descent, no plateau, no spikes. A plateau-then-escape shape means dense supervision did
+#      NOT remove the pathology and the plateau is about the answer token itself.
+#   2. MEAN(7) is NOT comparable to 65.77 / 71.90 (different cell). It is read against the
+#      QA-LoRA run under the same loss_span, which must follow (configs/qalora_cs170k_int2_g32
+#      _ep1.yaml + the same key). Until then the only claims are about curve shape and
+#      stability.
+#   3. If the shape is math-like, the next single-variable runs inside this cell are the ones
+#      the old cell could not support: zp_lr up (math tolerated 3x), and the salient tier with
+#      and without the adapter.
+#
+# BASE REUSE. bits, group_size, group_k, permutation unchanged; GPTQ calibration uses input_ids
+# only, so the anchor's frozen codes are reused bit-identically.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_span.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_span \
+    --train_layernorms  false \
+    --permuted_base_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --note              "INT2 anchor with loss_span=instruction+response (question+options+response supervised, header masked); NEW CELL, compare only against same-span baselines" \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_span.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

@@ -95,28 +95,68 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: PreTrainedTokenizer) -> Dict
     )
 
 
+# Which span of each record carries the loss. data.loss_span in the yaml; "response" is the
+# convention every result in results_saltq.csv before 2026-08-26 was produced with.
+#
+#   response              prompt masked, loss on the response only (PiSSA / LLM-Adapters' QLoRA
+#                         lineage). On commonsense-170k the response is one of 15 fixed strings
+#                         ("the correct answer is answer2"), so ~7 of its ~8 tokens are template
+#                         and the whole task is ONE token per record. The training loss sits on
+#                         a plateau at ~0.125 (= template learned, answer not) until an escape
+#                         that at INT2 arrives late (0.35-0.94 epoch) or never.
+#   instruction+response  only the fixed PROMPT header ("Below is an instruction ... ###
+#                         Instruction:\n") is masked; the question + options + response are
+#                         supervised. 100-300 real language-modelling tokens per record, which
+#                         is what MetaMath's rationales give math for free -- and math has no
+#                         plateau, no instability and zp_lr 3x higher without blowing up.
+#                         LLM-Adapters' own train_on_inputs=True default is this mode.
+#   full                  everything, header included.
+# A different loss_span is a different EXPERIMENTAL CELL: every baseline it is compared with
+# must be re-run under the same span.
+LOSS_SPANS = ("response", "instruction+response", "full")
+
+
+def _header_len(tokenizer: PreTrainedTokenizer) -> int:
+    """Token count of PROMPT's fixed prefix, up to and including "### Instruction:\n"."""
+    header = PROMPT.split("{instruction}")[0]
+    return len(tokenizer(header, truncation=False).input_ids)
+
+
 def preprocess(
     sources: Sequence[str],
     targets: Sequence[str],
     tokenizer: PreTrainedTokenizer,
+    loss_span: str = "response",
 ) -> Dict:
-    """Tokenize source+target and mask the source span out of the labels."""
+    """Tokenize source+target and mask the unsupervised span out of the labels."""
+    if loss_span not in LOSS_SPANS:
+        raise ValueError(f"data.loss_span must be one of {LOSS_SPANS}, got {loss_span!r}")
     examples = [s + t for s, t in zip(sources, targets)]
     examples_tokenized, sources_tokenized = [
         _tokenize_fn(strings, tokenizer) for strings in (examples, sources)
     ]
     input_ids = examples_tokenized["input_ids"]
     labels = copy.deepcopy(input_ids)
+    header_len = _header_len(tokenizer) if loss_span == "instruction+response" else 0
     for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
-        label[:source_len] = IGNORE_INDEX
+        if loss_span == "response":
+            masked = source_len
+        elif loss_span == "instruction+response":
+            # The header is tokenized on its own; BPE could merge differently at its last
+            # token when the instruction follows, so never mask past the prompt itself.
+            masked = min(header_len, source_len)
+        else:
+            masked = 0
+        label[:masked] = IGNORE_INDEX
     return dict(input_ids=input_ids, labels=labels)
 
 
-def train_tokenize_function(examples, tokenizer, query: str, response: str) -> Dict:
+def train_tokenize_function(examples, tokenizer, query: str, response: str,
+                            loss_span: str = "response") -> Dict:
     """Batched `datasets.map` function: {query, response} columns -> {input_ids, labels}."""
     sources = [PROMPT.format_map(dict(instruction=q)) for q in examples[query]]
     targets = [f"{r}\n{tokenizer.eos_token}" for r in examples[response]]
-    return preprocess(sources, targets, tokenizer)
+    return preprocess(sources, targets, tokenizer, loss_span=loss_span)
 
 
 # ============================================================================
@@ -247,7 +287,9 @@ def _to_instruction_output(ds: Dataset, cfg_template: Optional[str], data_path: 
 # ============================================================================
 
 def _tokenize(ds: Dataset, tokenizer, fields: Sequence[str], num_proc: int,
-              desc: str) -> Dataset:
+              desc: str, loss_span: str = "response") -> Dataset:
+    # loss_span rides in fn_kwargs, which datasets folds into the map fingerprint -- so a
+    # different span gets its own cache file instead of silently reusing "response" labels.
     return ds.map(
         train_tokenize_function,
         batched=True,
@@ -256,8 +298,19 @@ def _tokenize(ds: Dataset, tokenizer, fields: Sequence[str], num_proc: int,
         remove_columns=ds.column_names,
         load_from_cache_file=True,
         desc=desc,
-        fn_kwargs={"tokenizer": tokenizer, "query": fields[0], "response": fields[1]},
+        fn_kwargs={"tokenizer": tokenizer, "query": fields[0], "response": fields[1],
+                   "loss_span": loss_span},
     )
+
+
+def supervised_token_share(ds: Dataset, n: int = 2000) -> Tuple[float, float]:
+    """(mean supervised tokens per record, share of all tokens) over the first n records."""
+    sup = tot = 0
+    for rec in ds.select(range(min(n, len(ds)))):
+        lab = np.asarray(rec["labels"])
+        sup += int((lab != IGNORE_INDEX).sum()); tot += lab.size
+    n = min(n, len(ds))
+    return sup / max(n, 1), sup / max(tot, 1)
 
 
 def _prepare_raw(cfg: dict, split: str, rank: int = 0) -> Tuple[Optional[Dataset], List[str]]:
@@ -327,10 +380,18 @@ def load_dataset_for_training(
     if eval_raw is not None and max_eval and max_eval < len(eval_raw):
         eval_raw = eval_raw.select(range(max_eval))
 
-    train_dataset = _tokenize(train_raw, tokenizer, fields, num_proc, "Tokenizing train")
+    loss_span = str(data_cfg.get("loss_span", "response"))
+    train_dataset = _tokenize(train_raw, tokenizer, fields, num_proc, "Tokenizing train",
+                              loss_span=loss_span)
     eval_dataset = None
     if eval_raw is not None:
-        eval_dataset = _tokenize(eval_raw, tokenizer, fields, num_proc, "Tokenizing eval")
+        eval_dataset = _tokenize(eval_raw, tokenizer, fields, num_proc, "Tokenizing eval",
+                                 loss_span=loss_span)
+    # Visible evidence of which span is actually supervised (a stale tokenizer cache would
+    # otherwise be indistinguishable from the intended mode).
+    per_rec, share = supervised_token_share(train_dataset)
+    print(f"[Data] loss_span={loss_span}: {per_rec:.1f} supervised tokens/record "
+          f"({share:.1%} of all tokens, first 2000 records)")
 
     return train_dataset, eval_dataset
 
