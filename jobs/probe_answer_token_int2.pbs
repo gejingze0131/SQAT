@@ -1,0 +1,24 @@
+#!/bin/bash
+#PBS -N probe_ans_int2
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=2:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+# Teacher-forced answer-token probe (scripts/probe_answer_token.py) on the INT2 anchor: the
+# frozen base (step 0) and the anchor's final checkpoint. Reads the one number the plateau story
+# is about -- ans_acc / ans_loss at the answer token on 64 held-out records per task -- which
+# neither the response-only training loss (7/8 template) nor the instruction+response loss
+# (95% question text) shows. Also validates the script before the loss_span run's checkpoints
+# (500/1000/1500/final) are probed the same way.
+mkdir -p logs/probe results/probe
+python scripts/probe_answer_token.py \
+    --config configs/saltq_cs170k_int2_g32_ep1.yaml \
+    --saltq_base_dir outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --checkpoints base outputs/saltq_cs170k_int2_g32_ep1-2bit-saltq/final \
+    --per_task 64 --batch 8 \
+    --out results/probe/saltq_cs170k_int2_g32_ep1_anchor.json \
+    > logs/probe/saltq_cs170k_int2_g32_ep1_anchor.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
