@@ -20,5 +20,5 @@ python scripts/probe_answer_token.py \
     --checkpoints base outputs/saltq_cs170k_int2_g32_ep1-2bit-saltq/final \
     --per_task 64 --batch 8 \
     --out results/probe/saltq_cs170k_int2_g32_ep1_anchor.json \
-    > logs/probe/saltq_cs170k_int2_g32_ep1_anchor.log 2>&1
+    > logs/probe/saltq_cs170k_int2_g32_ep1_anchor_v2.log 2>&1
 echo "rc=$?"; echo "End time: $(date)"

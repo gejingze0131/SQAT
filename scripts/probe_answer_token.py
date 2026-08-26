@@ -29,6 +29,7 @@ import torch, torch.nn.functional as F, yaml
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.data import PROMPT, IGNORE_INDEX
 from src.qat_saltq import build_saltq_model, load_saltq_trainable
+from src.permute_common import register_boundary_gathers_from_meta
 from transformers import AutoTokenizer
 
 
@@ -104,11 +105,17 @@ def main():
     device = 'cuda'
     tok = AutoTokenizer.from_pretrained(a.saltq_base_dir)
     if tok.pad_token_id is None: tok.pad_token = tok.eos_token
-    model, _ = build_saltq_model(
+    model, meta = build_saltq_model(
         a.saltq_base_dir, dtype=torch.bfloat16, gradient_checkpointing=False,
         train_scale=bool(sq.get('train_scale', False)), continuous_z=bool(sq.get('continuous_z', True)),
         zplora_rank=int(sq.get('zplora_rank', 0)), zplora_alpha=float(sq.get('zplora_alpha', 16.0)),
         salient_lora=bool(sq.get('salient_lora', False)), slora_alpha=sq.get('slora_alpha', None))
+    # REQUIRED for any forward of the multi-segment permuted model: the residual stream is
+    # re-ordered at each segment boundary by runtime hooks that training installs in
+    # prepare_model and eval installs on the exported model. Without them the first probe
+    # returned resp_loss 11.3 on a base that scores 50.35 generatively -- i.e. random logits.
+    hooks = register_boundary_gathers_from_meta(model, meta['perm_meta'])
+    print(f"[probe] registered {len(hooks)} boundary gathers")
     model = model.to(device).eval()
     recs, majority = records(a.test_json, a.per_task)
     maj_share = {t: sum(r['output'] == majority[t] for r in recs if r['type'] == t) / max(1, sum(r['type'] == t for r in recs)) for t in majority}
