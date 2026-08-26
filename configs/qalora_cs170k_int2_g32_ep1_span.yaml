@@ -1,0 +1,201 @@
+# =============================================================================
+# QA-LoRA baseline — Commonsense-170k, INT3 g64, ONE epoch.
+#
+# The second baseline. QLoRA answers "what does an adapter on a frozen quantized base reach",
+# QA-LoRA answers the same question for a method that is quantization-aware by construction, and
+# both are needed before any SALT-Q number means something comparative.
+#
+# QA-LoRA trains on a REAL GPTQ INT-b base (scripts/train.py builds it via
+# qalora.build_qalora_intb_base -- perm_group_k=0, every column GPTQ'd, no NF4 double
+# quantization), so unlike the QLoRA arm this one is genuinely quantized end to end and needs no
+# separate GPTQ re-export to be a deployment number.
+#
+# MATCHED to the SALT-Q runs: dataset, prompt + response-only masking + collator, INT3 g64,
+# effective batch 80, num_epochs 1 (from this family's 3), and group_by_length: false -- which on
+# this dataset is not a detail. Length-grouped batches here are task-pure (dominant task 79% of an
+# 80-example batch at the median, 100% at p90, against 30% shuffled), and SALT-Q with the flag on
+# collapsed to one constant answer per task at 37.03 against 79.04 with it off.
+#
+# NOT matched, deliberately: learning_rate stays at QA-LoRA's own 5e-3. A baseline retuned to
+# match the method under test is not a baseline.
+#
+# (Header of the parent config follows.)
+# QA-LoRA — Commonsense-170k, INT3 g64
+#
+# lr 5.0e-3, chosen deliberately rather than inherited. QA-LoRA's group-pooled adapter deploys by
+# folding into the affine zero-points (paper Eq. 7), so its magnitude only means anything in
+# quantization LEVELS, D/s. Measured on MetaMath: lr 1e-4 realized 0.0054 levels and scored 19.4;
+# lr 2e-3 realized 0.0544 and scored 37.07 — still BELOW the 0.1-0.3 useful band, i.e. 2e-3 is a
+# known-under-driven setting. The response is sublinear (20x the rate bought 10x the displacement,
+# ~lr^0.77), which put the band at roughly 8e-3; 5e-3 is the chosen midpoint between that estimate
+# and the last rate with a real measurement behind it.
+#
+# The paper's own 2e-5 is for LLaMA-7B at batch 16 (arXiv:2309.14717); this runs at batch 80 for 3
+# epochs, so it would be badly under-driven transplanted verbatim, and a handicapped baseline is
+# worth nothing to compare against. Re-measure D/s on the finished checkpoint before trusting the
+# score: if it lands under 0.1, this cell is still under-driven.
+# Matched to the SALT-Q Commonsense-170k runs so the comparison is method-only: same dataset and
+# prompt template, 3 epochs, effective batch 80 (5 x 4 x 4 GPUs), max_seq_len 2048, LoRA r=64 /
+# alpha=16 / dropout 0, cosine + 3% warmup, max_grad_norm 0.3, seed 42. Only quant_bits,
+# group_size and the learning rate differ per file.
+#
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 2
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  # All 7 projections participate in LoRA fine-tuning.
+  # QAT fakequant coverage differs by projection type:
+  #   q/k/v/gate/up_proj : residual-stream P_k permute → QAT on salient cols [0:group_k]
+  #   down_proj          : block-internal P4_l permute (salient-first) → QAT on [0:group_k]
+  #                        (arbitrary intermediate-dim permutation, no multi-head constraint)
+  #   o_proj             : per-head Hadamard fold (H into v_proj + H^T into o_proj), NO QAT
+  #                        (within-head permutation can't produce contiguous [0:group_k] slice)
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "sqat_permute"
+  symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
+  group_size: 32
+                            # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
+                            # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
+                            # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
+
+  # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
+  # fakequant scale is replaced by a learnable nn.Parameter (asym → learn scale+zp, sym → learn
+  # scale only), initialized current_minmax so the initial grid matches the old min-max grid.
+  # Applies to full QAT and the sqat_permute salient slice. enabled=false → bit-identical to the
+  # original min-max path. scales_lr is a dedicated (small) optimizer lr for the scale/zp group.
+  lsq:
+    enabled: false
+    scales_lr: 1.0e-5
+
+  # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
+  sqat:
+    calibration_samples: 512
+    calibration_seq_len: 2048
+
+  sqat_permute:
+    # Legacy comparison mode: manual residual segments + fixed residual/down_proj group_k.
+    # With top_k_ratio present, residual salient channels are selected by per-source
+    # top_k_ratio union-first (old pipeline). num_runtime_permutes = len(boundary_sizes) - 1.
+    boundary_sizes: [2, 30]
+
+    # Global manual override. Every residual segment and every down_proj layer uses
+    # exactly this group_k. Outlier overflow is reported as a warning.
+    group_k: 128
+
+    # Per-source top-k fraction for legacy residual-stream salient selection.
+    top_k_ratio: 0.01
+
+    # Log-space z-score threshold for residual-stream outlier detection.
+    outlier_log_sigma: 3.0
+    # Separate log-space z-score threshold for per-layer down_proj group_k selection.
+    down_outlier_log_sigma: 3.0
+
+    # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
+    stage: 2
+
+    # gptq (Improvement 1): at export, quantize the ~97% NON-salient columns [group_k:] with
+    # GPTQ/OBS instead of plain RTN. The salient slice [0:group_k] keeps the EXACT canonical
+    # (training-consistent) grid; the non-salient block is GPTQ'd INDEPENDENTLY (no salient-error
+    # leakage — the QAT/LoRA was trained to tolerate the salient quant error, so the non-salient
+    # cols must approximate their fp16 weights, not compensate for the salient slice). Uses the
+    # SAME group_size and asym/sym as QAT. Dense (--export_dequant) only; o_proj has no salient
+    # slice → fully GPTQ. Composes with awq_scale. Calibrated on the training data in the permuted
+    # basis (boundary gathers active), sequential per decoder layer (memory-bounded).
+    gptq:
+      enabled: true
+      nsamples: 128          # calibration sequences for the Hessian
+      percdamp: 0.01         # Hessian diagonal damping (fraction of mean diag)
+      # blocksize is GPTQ's lazy-batch COMPUTE block (how many columns are error-compensated
+      # before one batched Hessian update). It is NOT the quantization group: the quant grid is
+      # group_size (=64 above). blocksize only must be a multiple of group_size (auto-aligned in
+      # code). 128 is the standard GPTQ default (= 2 groups of 64); larger=faster, smaller=exacter.
+      blocksize: 128
+      batch_size: 2          # calibration micro-batch (keeps activation memory low)
+
+    # awq_scale (Improvement 2): AWQ-style per-input-channel scaling of the salient slice
+    # [0:group_k]. Within each block, q/k/v share one scale S1 (they read the same input), gate/up
+    # share S2, down_proj uses its own S3 (on its P4 intermediate slice); o_proj is untouched (it
+    # keeps its per-head Hadamard, NO QAT). S_j = (E[x²]_j)^alpha normalized so min=1, clamped to
+    # [1, max]. Training fakequants in the amplified space W*S; export bakes 1/S into the dense
+    # weight (deployed = quant(W*S)/S), so it is purely a better quant grid — bit-identical output,
+    # no runtime scaling. Dense (--export_dequant) only; composes with gptq. false = original scheme.
+    awq_scale:
+      enabled: true
+      alpha: 0.5             # exponent on E[x²]; larger = stronger amplification of salient channels
+      max: 2.0              # clamp on S (S in [1, max])
+
+    # --- Stage-2 flow (handled automatically by scripts/train.py) ---------------------
+    # To avoid a dequant->permute->requant round-trip (double quantization), the permute/fold
+    # is applied to a CLEAN fp16 base, which is saved to <output_dir>/permuted_fp16_base and
+    # then reloaded through the standard load_in_4bit path so NF4 quantizes the permuted
+    # weights exactly ONCE. That directory (~13GB) is kept so `--export_only` later can reload
+    # the correct (permuted) base; delete it manually once you no longer need export-only.
+    #
+    # The per-segment residual permutation needs a runtime boundary gather (one index_select
+    # per segment boundary; num_segments-1 total). It is re-registered for training in the
+    # handler and for inference by the eval scripts (which read sqat_permute_meta.pt). Do not
+    # evaluate a permuted export with a loader that ignores that metadata.
+
+data:
+  # Local pissa-dataset JSON: datasets/commonsense/{train,test}.json, records of
+  # instruction / input / output / type covering BoolQ, PIQA, SIQA, ARC-e/c, HellaSwag,
+  # WinoGrande and OBQA. Rendered through src/data.PROMPT with the loss on the RESPONSE
+  # ONLY, which is what makes the trained model's output parseable by scripts/test_acc.py.
+  train_dataset: "datasets/commonsense"
+  train_split: "train"
+  # No in-loop eval: the test split is scored GENERATIVELY (vLLM + exact-match) by
+  # run_eval_vllm.sh, and a teacher-forced loss on it would not predict that score.
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null            # null = all 8 tasks; e.g. ["boolq", "piqa:2000"] to restrict
+  shuffle_dataset: true
+  # DERIVED FROM configs/qalora_cs170k_int2_g32_ep1.yaml (71.90 under response-only) BY THIS ONE
+  # KEY plus output_dir. The control for configs/saltq_cs170k_int2_g32_ep1_span.yaml: nothing in
+  # the instruction+response cell is comparable to the response-only table, so QA-LoRA must be
+  # re-run under the same span before any SALT-Q-vs-QA-LoRA claim there. See src/data.py
+  # LOSS_SPANS for what the modes mean.
+  loss_span: instruction+response
+  num_proc: 32
+
+training:
+  # Distinct from the shared sqat_permute output_dir so this cannot land on another run.
+  output_dir: "outputs/qalora_cs170k_int2_ep1_span"
+  num_epochs: 1              # 3 -> 1, matching the SALT-Q runs this is compared against
+  per_device_train_batch_size: 5
+  per_device_eval_batch_size: 5
+  gradient_accumulation_steps: 4
+  group_by_length: false
+  learning_rate: 5.0e-3
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 200
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true

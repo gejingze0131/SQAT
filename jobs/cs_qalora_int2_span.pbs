@@ -1,0 +1,34 @@
+#!/bin/bash
+#PBS -N cs_qalora_int2_span
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+# QA-LoRA INT2 g32, 1 epoch, under data.loss_span=instruction+response -- the CONTROL for the
+# SALT-Q anchor in the same cell (jobs/cs_saltq_int2_span.pbs). One key vs the response-only
+# QA-LoRA run (71.90): the fixed PROMPT header is masked, question + options + response are
+# supervised. Same GPTQ base, same adapter (r=64, alpha=16, lr 5e-3), same schedule.
+#
+# HOW TO READ IT. Against the SALT-Q span run only (never against 71.90): escape/shape from the
+# loss curve is uninformative here (95% question text) -- use scripts/probe_answer_token.py on
+# final/ for the answer-token accuracy, and MEAN(7) from the generative eval. If dense
+# supervision lifts QA-LoRA as much as it lifted SALT-Q, the cell says nothing about SALT-Q's
+# salient tier; if SALT-Q leads inside this cell, that lead is the first clean INT2 claim.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+mkdir -p logs/commonsense_170k
+bash runs/qalora/run_qalora_commonsense.sh \
+    --config     configs/qalora_cs170k_int2_g32_ep1_span.yaml \
+    --bits       2 \
+    --output_dir outputs/qalora_cs170k_int2_ep1_span \
+    > logs/commonsense_170k/qalora_cs170k_int2_g32_ep1_span.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
