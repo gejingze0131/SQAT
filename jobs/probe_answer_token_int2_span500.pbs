@@ -1,0 +1,23 @@
+#!/bin/bash
+#PBS -N probe_span500
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=2:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+# Answer-token probe on the loss_span=instruction+response anchor at step 500 (checkpoint copied
+# out before save_total_limit rolls it). The response-only anchor was still on its plateau at
+# step 500 (escape at 1240, ans_acc ~ majority). If this checkpoint's ans_acc is already well
+# above majority, dense supervision removed the plateau; if it sits at majority, the plateau is
+# about the answer token itself and dense supervision does not help it.
+mkdir -p logs/probe results/probe
+python scripts/probe_answer_token.py \
+    --config configs/saltq_cs170k_int2_g32_ep1_span.yaml \
+    --saltq_base_dir outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32 \
+    --checkpoints outputs/saltq_cs170k_int2_g32_ep1_span-2bit-saltq-ckpts/checkpoint-500 \
+    --per_task 64 --batch 8 \
+    --out results/probe/saltq_cs170k_int2_g32_ep1_span_ckpt500.json \
+    > logs/probe/saltq_cs170k_int2_g32_ep1_span_ckpt500.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
