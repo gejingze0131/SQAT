@@ -1,0 +1,55 @@
+#!/bin/bash
+#PBS -N cs_qlora_int2_span_bounds
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# BOTH BOUNDS of the instruction+response INT2 g32 cell from ONE QLoRA training run, mirroring
+# how the response-only cell got 82.42 (merged fp16) / 50.35 (merged-then-GPTQ):
+#   1. QLoRA train (NF4 base, qat_mode none, LoRA lr 2e-4) under data.loss_span=
+#      instruction+response  -> merged fp16 checkpoint + eval  = UPPER BOUND
+#   2. GPTQ INT2 g32 re-export of that same merged checkpoint (error-compensated
+#      gptq_quantize_model_sequential, the same quantizer SALT-Q's and QA-LoRA's bases use)
+#      + eval                                                  = FLOOR
+# The response-only merged checkpoint cannot be reused: the span is the cell's defining
+# variable, and it changes what the LoRA learns.
+#
+# The cell so far: SALT-Q anchor-under-span 67.29 (probe ans_acc curve 0.49/0.63/0.66/0.68 at
+# 500/1000/1500/final -- escape moved from step 1240 to 500-1000, no spikes); QA-LoRA-under-span
+# submitted alongside. These bounds place both.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+set -e
+mkdir -p logs/commonsense_170k
+bash runs/qlora/run_qlora_commonsense.sh \
+    --config     configs/qlora_none_cs170k_int2_g32_ep1_span.yaml \
+    --bits       2 \
+    --num_gpus   4 \
+    --output_dir outputs/qlora_none_cs170k_int2_ep1_span \
+    > logs/commonsense_170k/qlora_none_cs170k_int2_g32_ep1_span.log 2>&1
+echo "qlora train+merged-eval rc=$?"
+
+SRC=outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval
+DST=outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval
+python scripts/export_gptq_dequant.py \
+    --model_path "$SRC" --output_dir "$DST" \
+    --config configs/qlora_none_cs170k_int2_g32_ep1_span.yaml \
+    --bits 2 --group_size 32 \
+    2>&1 | tee logs/commonsense_170k/qlora_span_gptq_int2_export.log
+bash runs/eval_vllm.sh --model_path "$DST" --dataset commonsense --gpus 0,1,2,3 \
+    --tag "$(basename $DST)" \
+    > logs/commonsense_170k/qlora_span_gptq_int2_eval.log 2>&1
+echo "floor eval rc=$?"
+echo "End time: $(date)"
