@@ -1,0 +1,37 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_span_k256
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+
+# SALT-Q INT2 g32, span cell, group_k 128 -> 256. ONE KEY vs configs/saltq_cs170k_int2_g32_ep1_
+# span.yaml (67.16 MEAN(8)); lrs held at the bracketed peak (zp 1.73e-3, salient 1.25e-4).
+# No --permuted_base_dir / --saltq_base_dir: as in the INT3 k-sweep, the permuted base (autoseg
+# at k=256) and the frozen INT2 g32 codes are rebuilt under this run's own output root, so this
+# is SALT-Q at k=256 by the repo's own rule. Motivation: k=256 is the knee of the rank-ordered
+# fp16-salient sweep in this cell (44.6 -> 49.2 MEAN(8), probe ans_loss 1.27 -> 1.15).
+# Read against 67.16 / 67.29; deployed width is unchanged at 2.00 bits.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+
+mkdir -p logs/commonsense_170k
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_span_k256.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_span_k256 \
+    --train_layernorms  false \
+    --note              "span cell, group_k 256 (single variable vs k=128 / 67.16); lrs at the bracketed peak; base rebuilt at k=256" \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_span_k256.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
