@@ -1,0 +1,23 @@
+#!/bin/bash
+#PBS -N probe_mp_int3_rank
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=3:00:00
+#PBS -j oe
+
+# Teacher-forced probe on the RANK-ORDERED INT3 g64 span sweep exports (k=64..1024). The generative
+# curve is (see the eval logs) -- non-monotone at 512 even
+# with true top-k. Near the INT2 degenerate regime single tasks swing by +-5 between adjacent k
+# under greedy decoding; the continuous resp_loss / ans_loss decide whether 512 is a real defect.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+mkdir -p logs/probe results/probe
+python scripts/probe_answer_token.py \
+    --hf_model_dirs outputs/mixedprec_int3_g64_span_rank/k64 outputs/mixedprec_int3_g64_span_rank/k128 \
+                    outputs/mixedprec_int3_g64_span_rank/k256 outputs/mixedprec_int3_g64_span_rank/k512 \
+                    outputs/mixedprec_int3_g64_span_rank/k1024 \
+    --per_task 128 --batch 8 \
+    --out results/probe/mixedprec_int3_g64_span_rank_probe.json \
+    > logs/probe/mixedprec_int3_g64_span_rank_probe.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
