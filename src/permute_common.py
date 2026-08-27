@@ -1843,9 +1843,10 @@ def build_permuted_fp16_checkpoint(
                     )
             segment_group_ks = [fixed_group_k] * len(boundary_sizes)
             print(
-                f"[SegPerm] Manual segments + fixed global group_k + legacy top_k_ratio selection: "
-                f"boundary_sizes={boundary_sizes}, group_k={fixed_group_k}, "
-                f"top_k_ratio={top_k_ratio:g}"
+                f"[SegPerm] Manual segments + fixed global group_k + "
+                f"{'legacy top_k_ratio' if legacy_topk_ratio_mode else 'sigma-outlier (autoseg-style)'} "
+                f"selection: boundary_sizes={boundary_sizes}, group_k={fixed_group_k}, "
+                f"{'top_k_ratio=' + format(top_k_ratio, 'g') if legacy_topk_ratio_mode else 'outlier_log_sigma=' + format(outlier_log_sigma, 'g')}"
             )
 
     num_segments = len(boundary_sizes)
