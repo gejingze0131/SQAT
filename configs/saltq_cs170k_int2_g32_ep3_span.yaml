@@ -487,7 +487,7 @@ training:
   # cosine schedule stretches to 5535 steps; the peak lrs stay at their bracketed values.
   # READ against 67.16 / 67.29 (1 epoch) and, once run, the same-span QA-LoRA at 3 epochs --
   # a 3-epoch SALT-Q against a 1-epoch QA-LoRA is not a comparison.
-  num_epochs: 3              # 3 -> 1; the lrs above carry the sqrt(3) compensation
+  num_epochs: 3              # 1 -> 3 for this cell; lrs kept at the 1-epoch bracketed peak (no re-scaling)
   # 4 x RTX 6000 Ada (46 GB). At group_size=64 / group_k=128 on Llama-2-7B the resident cost per
   # GPU is roughly:
   #   frozen int8 codes            6.3 GB   (buffers; DDP broadcast is disabled for them)
