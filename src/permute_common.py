@@ -324,7 +324,16 @@ def _select_bucket_from_mask(
     agg: torch.Tensor,
     outlier_mask: torch.Tensor,
     group_k: int,
+    rank_order: bool = False,
 ) -> List[int]:
+    """Top-group_k channels of one segment: outliers first (by score), then the rest by score.
+
+    rank_order=False (default, every trained base): the SET is returned index-sorted, and
+    _build_segment_perm then appends the non-selected channels in index order too -- so the
+    permutation is only meaningful up to position group_k. rank_order=True keeps the selection
+    order, so that with a large group_k every prefix [0:k) is the true top-k under the same
+    ranking. Used by scripts/build_rankperm_meta.py for the mixed-precision sweeps; it changes
+    nothing about which channels are selected."""
     sorted_by_score = torch.argsort(agg, descending=True).tolist()
     selected: List[int] = []
     selected_set = set()
@@ -343,7 +352,7 @@ def _select_bucket_from_mask(
             selected.append(idx)
             selected_set.add(idx)
 
-    return sorted(selected)
+    return list(selected) if rank_order else sorted(selected)
 
 
 def _topk_ratio_mask(values: torch.Tensor, top_k_ratio: float) -> torch.Tensor:
@@ -721,6 +730,7 @@ def select_salient_channels(
     group_k: int = 128,
     group_size: int = 128,
     outlier_log_sigma: float = 3.0,
+    rank_order: bool = False,
 ) -> Dict[int, List[int]]:
     """
     Legacy residual-stream salient selection for fixed manual experiments.
@@ -748,7 +758,7 @@ def select_salient_channels(
         for key in b_sources:
             union_mask |= _topk_ratio_mask(normalized_all[key], top_k_ratio)
 
-        salient = _select_bucket_from_mask(agg, union_mask, int(group_k))
+        salient = _select_bucket_from_mask(agg, union_mask, int(group_k), rank_order=rank_order)
         result[seg] = salient
 
         sel_t = torch.tensor(salient, dtype=torch.long)
@@ -777,6 +787,7 @@ def select_salient_channels_variable(
     segment_group_ks: Sequence[int],
     group_size: int = 128,
     outlier_log_sigma: float = 3.0,
+    rank_order: bool = False,
 ) -> Dict[int, List[int]]:
     """Select salient residual channels with a potentially different group_k per segment."""
     assert len(boundary_sizes) == len(segment_group_ks), (
@@ -798,7 +809,7 @@ def select_salient_channels_variable(
 
         agg = _segment_aggregate_score(b_sources, normalized_all, hidden_size)
         seg_outlier = _segment_outlier_mask(b_sources, outlier_sets_all, hidden_size)
-        salient = _select_bucket_from_mask(agg, seg_outlier, group_k)
+        salient = _select_bucket_from_mask(agg, seg_outlier, group_k, rank_order=rank_order)
         result[seg] = salient
 
         sel_t      = torch.tensor(salient, dtype=torch.long)
@@ -1699,6 +1710,7 @@ def build_permuted_fp16_checkpoint(
     max_segments: int = 4,
     fold_awq: bool = False,
     reorder_salient: bool = False,
+    rank_order: bool = False,
 ) -> dict:
     """
     Stage-2 pre-quantization step — run on ONE process only (rank 0).
@@ -1891,11 +1903,13 @@ def build_permuted_fp16_checkpoint(
             group_k=int(fixed_group_k),
             group_size=group_size,
             outlier_log_sigma=outlier_log_sigma,
+            rank_order=rank_order,
         )
     else:
         residual_salient = select_salient_channels_variable(
             second_moments, d_model, boundary_sizes, segment_group_ks,
             group_size=group_size, outlier_log_sigma=outlier_log_sigma,
+            rank_order=rank_order,
         )
     # Reorder WITHIN each segment's salient block before laying it out. Membership is untouched,
     # so group_k / outlier capture / boundary gathers are unaffected — only which channels share a
@@ -1973,6 +1987,8 @@ def build_permuted_fp16_checkpoint(
         # quantizer sees the folded matrix and the export needs no AWQ awareness at all.
         "awq_folded":             bool(fold_awq and n_awq_folded > 0),
         "salient_reordered":      bool(reorder_salient),
+        # True => segment perms are saliency-ranked beyond group_k (sweep metas only).
+        "rank_ordered":           bool(rank_order),
     }
     torch.save(perm_meta, os.path.join(save_dir, PERM_META_FILENAME))
     print(f"[SegPerm] perm_meta saved → {os.path.join(save_dir, PERM_META_FILENAME)} "

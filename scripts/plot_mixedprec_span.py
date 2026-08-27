@@ -123,9 +123,12 @@ def plot_share(cell, args, mp, sq, qa, floor, ceil_, gap, rec, mlabel, out):
     stack = sorted([(sq[k][0], f"SALT-Q k={k}  {sq[k][0]:.2f}  ({rec(sq[k][0]):.0f}% of gap)", C_SQ, sq[k][1], "o") for k in sq]
                    + [(qa[0], f"QA-LoRA  {qa[0]:.2f}  ({rec(qa[0]):.0f}%)", C_QA, qa[1], "s")], key=lambda t: t[0])
     mid = (len(stack) - 1) / 2
+    seen = set()
     for i, (y, lab, col, e, mk) in enumerate(stack):
+        name = "SALT-Q trained salient" if mk == "o" else "QA-LoRA"
         ax.errorbar([0.0], [y], yerr=[e], color=col, marker=mk, ms=9, capsize=3, zorder=4, ls="none",
-                    label=("SALT-Q" if mk == "o" else "QA-LoRA") + f"  (0% fp16, {bits}.00 bits)" if i == 0 or mk == "s" else None)
+                    label=None if name in seen else f"{name}  (0% fp16, {bits}.00 bits)")
+        seen.add(name)
         ax.annotate(lab, xy=(0.0, y), xytext=(14, (i - mid) * 11), textcoords="offset points", fontsize=8.5, color=col, va="center")
     ax.set_xlim(-1.5, max(41, max(xs) * 1.06))
     ax.set_ylim(floor - 0.06 * gap, ceil_ + 0.12 * gap)
@@ -133,8 +136,8 @@ def plot_share(cell, args, mp, sq, qa, floor, ceil_, gap, rec, mlabel, out):
     ax.set_ylabel(mlabel)
     ax.set_title(f"{cell['title']}\n{mlabel} vs the true fp16 share", fontsize=10.5)
     ax.legend(loc="best", fontsize=8.6, framealpha=0.95)
-    fig.text(0.5, 0.005, "fp16 arm = the cell's QLoRA-merged checkpoint, top-k columns (by the saved saliency ranking) kept in fp16, rest GPTQ. "
-             "Error bars: binomial stderr propagated to the mean. Recovery = (score - floor) / (fp16 - floor).", ha="center", fontsize=7.6, color=INK2)
+    fig.text(0.5, 0.005, "fp16 arm: QLoRA-merged checkpoint, top-k columns by saliency kept in fp16, rest GPTQ.  "
+             "Error bars: binomial stderr.  Recovery = (score - floor) / (fp16 - floor).", ha="center", fontsize=7.6, color=INK2)
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     fig.savefig(out, dpi=170)
     print(f"wrote {out}")
