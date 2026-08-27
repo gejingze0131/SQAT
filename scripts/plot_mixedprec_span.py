@@ -155,14 +155,18 @@ def main():
     axR.axhspan(floor, ceil_, color=INK3, alpha=0.07, zorder=0)
     axR.errorbar([p[0] for p in pts], [p[1] for p in pts], yerr=[p[2] for p in pts], color=C_MP,
                  marker="o", ms=7, lw=1.8, capsize=3, zorder=3, label="fp16 salient + GPTQ rest")
+    # Everything at the nominal width shares one x; stack the labels by value so they never
+    # overlap (each label gets its own row, 11 pt apart, ordered like the points).
+    stack = sorted([(sq[k][0], f"SALT-Q k={k}  {sq[k][0]:.2f}  ({rec(sq[k][0]):.0f}% of gap)", C_SQ) for k in sq_ks]
+                   + [(qa[0], f"QA-LoRA  {qa[0]:.2f}  ({rec(qa[0]):.0f}%)", C_QA)], key=lambda t: t[0])
     for k in sq_ks:
         axR.errorbar([bits], [sq[k][0]], yerr=[sq[k][1]], color=C_SQ, marker="o", ms=9, capsize=3, zorder=4,
-                     label=f"SALT-Q k={k}" if k == sq_ks[0] else None)
-        axR.annotate(f"SALT-Q k={k}  {sq[k][0]:.2f}  ({rec(sq[k][0]):.0f}% of gap)", xy=(bits, sq[k][0]),
-                     xytext=(12, 4 if k == sq_ks[0] else -12), textcoords="offset points", fontsize=8.5, color=C_SQ)
+                     label="SALT-Q" if k == sq_ks[0] else None)
     axR.errorbar([bits], [qa[0]], yerr=[qa[1]], color=C_QA, marker="s", ms=9, capsize=3, zorder=4, label="QA-LoRA")
-    axR.annotate(f"QA-LoRA  {qa[0]:.2f}  ({rec(qa[0]):.0f}%)", xy=(bits, qa[0]), xytext=(12, -14),
-                 textcoords="offset points", fontsize=8.5, color=C_QA)
+    mid = (len(stack) - 1) / 2
+    for i, (y, lab, col) in enumerate(stack):
+        axR.annotate(lab, xy=(bits, y), xytext=(14, (i - mid) * 11), textcoords="offset points",
+                     fontsize=8.5, color=col, va="center")
     for b, y, _ in pts:
         if bits < b < 16:
             axR.annotate(f"{rec(y):.0f}%", xy=(b, y), xytext=(0, 8), textcoords="offset points", ha="center",
