@@ -1,0 +1,25 @@
+#!/bin/bash
+#PBS -N probe_mp_dip
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=3:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+# Is the k=128 -> 512 dip of the INT3 g64 span-cell fp16-salient sweep (73.73 -> 73.41 -> 72.92
+# MEAN(8), driven by openbookqa/piqa/winogrande) real or greedy-decoding noise? The two other
+# sweeps do not reproduce it at the same k (response-only INT3: +0.05; INT2 span: +3.1). Read
+# the same exports with the teacher-forced probe: resp_loss / ans_loss are CONTINUOUS and do not
+# flip on borderline prompts. Monotone loss across 128/256/512 with a dipping accuracy = noise;
+# a loss that rises at 256/512 = a real deployment defect to chase (segmentation, GPTQ sub-
+# Hessian, ...). k=64 and 1024 bracket it. 128 records per task for a tighter read.
+mkdir -p logs/probe results/probe
+python scripts/probe_answer_token.py \
+    --hf_model_dirs outputs/mixedprec_int3_g64_span/k64 outputs/mixedprec_int3_g64_span/k128 \
+                    outputs/mixedprec_int3_g64_span/k256 outputs/mixedprec_int3_g64_span/k512 \
+                    outputs/mixedprec_int3_g64_span/k1024 \
+    --per_task 128 --batch 8 \
+    --out results/probe/mixedprec_int3_g64_span_dip.json \
+    > logs/probe/mixedprec_int3_g64_span_dip.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"

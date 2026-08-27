@@ -95,14 +95,47 @@ def probe(model, tok, recs, batch, device):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--config', required=True); ap.add_argument('--saltq_base_dir', required=True)
-    ap.add_argument('--checkpoints', nargs='+', required=True)
+    ap.add_argument('--config', default=None); ap.add_argument('--saltq_base_dir', default=None)
+    ap.add_argument('--checkpoints', nargs='*', default=[])
+    ap.add_argument('--hf_model_dirs', nargs='*', default=[],
+                    help='dense fp16 exports (e.g. the mixed-precision sweep dirs, each with its own '
+                         'sqat_permute_meta.pt): probed as-is, one model load each')
     ap.add_argument('--test_json', default='datasets/commonsense/test.json')
     ap.add_argument('--per_task', type=int, default=64); ap.add_argument('--batch', type=int, default=8)
     ap.add_argument('--out', default=None)
     a = ap.parse_args()
-    cfg = yaml.safe_load(open(a.config)); sq = cfg['qat'].get('saltq', {}) or {}
     device = 'cuda'
+    results = {}
+    if a.hf_model_dirs:
+        # Dense exports: plain HF load + the boundary gathers from the meta saved beside them.
+        from transformers import AutoModelForCausalLM
+        recs, majority = records(a.test_json, a.per_task)
+        maj_share = {t: sum(r['output'] == majority[t] for r in recs if r['type'] == t) / max(1, sum(r['type'] == t for r in recs)) for t in majority}
+        for d in a.hf_model_dirs:
+            tok = AutoTokenizer.from_pretrained(d)
+            if tok.pad_token_id is None: tok.pad_token = tok.eos_token
+            model = AutoModelForCausalLM.from_pretrained(d, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True).to(device).eval()
+            mp = os.path.join(d, 'sqat_permute_meta.pt')
+            if os.path.exists(mp):
+                hooks = register_boundary_gathers_from_meta(model, mp)
+                print(f"[probe] {d}: registered {len(hooks)} boundary gathers")
+            res = probe(model, tok, recs, a.batch, device)
+            tasks = sorted(res)
+            overall = {k: sum(res[t][k] for t in tasks) / len(tasks) for k in ('resp_loss', 'ans_loss', 'ans_acc')}
+            results[d] = dict(per_task=res, overall=overall)
+            print(f"\n== {d}")
+            print(f"{'task':14s} {'resp_loss':>9s} {'ans_loss':>9s} {'ans_acc':>8s} {'majority':>9s}")
+            for t in tasks:
+                print(f"{t:14s} {res[t]['resp_loss']:9.4f} {res[t]['ans_loss']:9.4f} {res[t]['ans_acc']:8.3f} {maj_share[t]:9.3f}")
+            print(f"{'MEAN':14s} {overall['resp_loss']:9.4f} {overall['ans_loss']:9.4f} {overall['ans_acc']:8.3f}", flush=True)
+            del model; torch.cuda.empty_cache()
+        if a.out:
+            os.makedirs(os.path.dirname(a.out), exist_ok=True)
+            json.dump(dict(results=results, majority_share=maj_share, per_task=a.per_task), open(a.out, 'w'), indent=1)
+            print(f"wrote {a.out}")
+        return
+    assert a.config and a.saltq_base_dir and a.checkpoints, "SALT-Q mode needs --config, --saltq_base_dir, --checkpoints"
+    cfg = yaml.safe_load(open(a.config)); sq = cfg['qat'].get('saltq', {}) or {}
     tok = AutoTokenizer.from_pretrained(a.saltq_base_dir)
     if tok.pad_token_id is None: tok.pad_token = tok.eos_token
     model, meta = build_saltq_model(
@@ -119,7 +152,6 @@ def main():
     model = model.to(device).eval()
     recs, majority = records(a.test_json, a.per_task)
     maj_share = {t: sum(r['output'] == majority[t] for r in recs if r['type'] == t) / max(1, sum(r['type'] == t for r in recs)) for t in majority}
-    results = {}
     for ck in a.checkpoints:
         if ck != 'base':
             load_saltq_trainable(model, ck)
