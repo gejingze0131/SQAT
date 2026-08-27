@@ -78,7 +78,7 @@ def eff_bits(cell, k):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cell", choices=sorted(CELLS), required=True)
-    ap.add_argument("--metric", choices=["mean8", "mean7"], default="mean7")
+    ap.add_argument("--metric", choices=["mean8", "mean7"], default="mean8")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
     cell = CELLS[args.cell]
