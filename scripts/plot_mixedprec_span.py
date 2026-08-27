@@ -117,9 +117,11 @@ def plot_share(cell, args, mp, sq, qa, floor, ceil_, gap, rec, mlabel, out):
     xs = [0.0] + [p[0] for p in pts]; ys = [floor] + [p[1] for p in pts]; es = [mp[0][1]] + [p[2] for p in pts]
     ax.errorbar(xs, ys, yerr=es, color=C_MP, marker="o", ms=7, lw=2.0, capsize=3, zorder=3,
                 label="fp16 salient + GPTQ rest  (PTQ, top-k by saliency)")
-    for sh, y, _, k, eb in pts:
-        ax.annotate(f"k={k}\n{eb:.2f} b", xy=(sh, y), xytext=(0, 9), textcoords="offset points", ha="center",
-                    fontsize=7.6, color=C_MP)
+    for i, (sh, y, _, k, eb) in enumerate(pts):
+        # crowded near x = 0 (k = 32/64/128 sit within 2.5%): alternate above / below
+        up = (i % 2 == 0)
+        ax.annotate(f"k={k}\n{eb:.2f} b", xy=(sh, y), xytext=(0, 9 if up else -22), textcoords="offset points",
+                    ha="center", fontsize=7.6, color=C_MP)
     stack = sorted([(sq[k][0], f"SALT-Q k={k}  {sq[k][0]:.2f}  ({rec(sq[k][0]):.0f}% of gap)", C_SQ, sq[k][1], "o") for k in sq]
                    + [(qa[0], f"QA-LoRA  {qa[0]:.2f}  ({rec(qa[0]):.0f}%)", C_QA, qa[1], "s")], key=lambda t: t[0])
     mid = (len(stack) - 1) / 2
