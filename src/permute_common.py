@@ -1711,6 +1711,7 @@ def build_permuted_fp16_checkpoint(
     fold_awq: bool = False,
     reorder_salient: bool = False,
     rank_order: bool = False,
+    legacy_topk_ratio: Optional[bool] = None,
 ) -> dict:
     """
     Stage-2 pre-quantization step — run on ONE process only (rank 0).
@@ -1774,7 +1775,13 @@ def build_permuted_fp16_checkpoint(
 
     # ---- 2) automatic/manual segment + group_k resolution ----
     auto_summary = None
-    legacy_topk_ratio_mode = boundary_sizes is not None and fixed_group_k is not None
+    # Manual boundary_sizes + fixed group_k historically meant the legacy top_k_ratio selector;
+    # the autoseg bases use the sigma-outlier selector. legacy_topk_ratio=False forces the
+    # sigma path under a manual segmentation -- needed to REPRODUCE an autoseg base's selection
+    # with a different group_k (scripts/build_rankperm_meta.py), where the two selectors'
+    # differing outlier sets would otherwise change which channels come first.
+    legacy_topk_ratio_mode = (boundary_sizes is not None and fixed_group_k is not None) \
+        if legacy_topk_ratio is None else bool(legacy_topk_ratio)
     if boundary_sizes is None:
         if fixed_group_k is None:
             boundary_sizes, segment_group_ks, auto_summary = auto_segment_by_outliers(

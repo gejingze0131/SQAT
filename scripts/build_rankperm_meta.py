@@ -60,6 +60,11 @@ def main():
         max_segments=int(sp.get("max_segments", 4)),
         fold_awq=False, reorder_salient=False,
         rank_order=True,
+        # The base was built by autoseg (legacy_topk_ratio_mode False = sigma outliers). With a
+        # manual boundary_sizes the builder would default to the legacy top_k_ratio selector,
+        # whose outlier sets differ -> different "outliers first" order -> different top-128 in
+        # segments with >128 outliers (measured: segments 1-3 mismatched). Force the sigma path.
+        legacy_topk_ratio=bool(base.get("legacy_topk_ratio_mode", False)),
     )
     meta = meta.get("model", meta)
 
