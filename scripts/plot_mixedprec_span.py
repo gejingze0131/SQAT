@@ -47,6 +47,22 @@ CELLS = {
         ceil="qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval",
         qalora="qalora_cs170k_int2_ep1_span-2bit-qalora-dequant-eval",
         saltq={128: "saltq_cs170k_int2_g32_ep1_span-2bit-saltq-deploy-eval"}),
+    "int2_g32_span_rank": dict(
+        bits=2, gs=32, title="Commonsense INT2 g32, instruction+response supervision (rank-ordered top-k)",
+        mp_prefix="mixedprec_int2_g32_span_rank", mp_root="outputs/mixedprec_int2_g32_span_rank",
+        ks=[32, 64, 128, 256, 512, 1024, 2048],
+        floor="qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval",
+        ceil="qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval",
+        qalora="qalora_cs170k_int2_ep1_span-2bit-qalora-dequant-eval",
+        saltq={128: "saltq_cs170k_int2_g32_ep1_span-2bit-saltq-deploy-eval"}),
+    "int3_g64_span_rank": dict(
+        bits=3, gs=64, title="Commonsense INT3 g64, instruction+response supervision (rank-ordered top-k)",
+        mp_prefix="mixedprec_int3_g64_span_rank", mp_root="outputs/mixedprec_int3_g64_span_rank",
+        ks=[64, 128, 256, 512, 1024, 2048],
+        floor="qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval",
+        ceil="qlora_none_cs170k_int3_ep1_span-3bit-none-merged-eval",
+        qalora="qalora_cs170k_int3_ep1_span-3bit-qalora-dequant-eval",
+        saltq={128: "saltq_cs170k_int3_g64_ep1_sal5e5_span-3bit-saltq-deploy-eval"}),
     "int3_g64_span": dict(
         bits=3, gs=64, title="Commonsense INT3 g64, instruction+response supervision",
         mp_prefix="mixedprec_int3_g64_span", mp_root="outputs/mixedprec_int3_g64_span",
@@ -66,13 +82,62 @@ def load(tag):
         return json.load(f)["results"]
 
 
-def eff_bits(cell, k):
-    """Effective bit width from the sweep's own meta; None if that point was not exported."""
+def mp_meta(cell, k):
+    """(fp16 share of target weights, effective bit width) from the sweep's own meta; None if
+    that point was not exported."""
     p = os.path.join(cell["mp_root"], f"k{k}", "mixedprec_meta.pt")
     if not os.path.exists(p):
         return None
     m = torch.load(p, map_location="cpu", weights_only=False)
-    return float(m.get("effective_bits") or (cell["bits"] + m["fp16_share"] * (16 - cell["bits"])))
+    share = float(m["fp16_share"])
+    return share, float(m.get("effective_bits") or (cell["bits"] + share * (16 - cell["bits"])))
+
+
+def eff_bits(cell, k):
+    m = mp_meta(cell, k)
+    return None if m is None else m[1]
+
+
+def plot_share(cell, args, mp, sq, qa, floor, ceil_, gap, rec, mlabel, out):
+    """Single panel, x = the TRUE fraction of target weights kept in fp16 (linear). The GPTQ floor
+    is share 0, the fp16 merge is share 100%; SALT-Q and QA-LoRA keep nothing in fp16 and sit at
+    x = 0 as distinct markers. Effective bit widths are written beside each fp16-salient point."""
+    bits = cell["bits"]
+    pts = []
+    for k in cell["ks"]:
+        if k in mp and mp_meta(cell, k):
+            sh, eb = mp_meta(cell, k)
+            pts.append((sh * 100, mp[k][0], mp[k][1], k, eb))
+    pts.sort()
+    fig, ax = plt.subplots(figsize=(8.6, 5.6))
+    ax.axhspan(floor, ceil_, color=INK3, alpha=0.07, zorder=0)
+    for yv, lab in ((ceil_, f"fp16 merge (100% fp16)  {ceil_:.2f}"), (floor, f"GPTQ INT{bits} g{cell['gs']} floor (0% fp16)  {floor:.2f}")):
+        ax.axhline(yv, color=INK3, lw=1.0, ls=(0, (2, 2)), zorder=1)
+        ax.annotate(lab, xy=(0.5, yv + 0.012 * gap), xycoords=("axes fraction", "data"), color=INK2, fontsize=8.8)
+    xs = [0.0] + [p[0] for p in pts]; ys = [floor] + [p[1] for p in pts]; es = [mp[0][1]] + [p[2] for p in pts]
+    ax.errorbar(xs, ys, yerr=es, color=C_MP, marker="o", ms=7, lw=2.0, capsize=3, zorder=3,
+                label="fp16 salient + GPTQ rest  (PTQ, top-k by saliency)")
+    for sh, y, _, k, eb in pts:
+        ax.annotate(f"k={k}\n{eb:.2f} b", xy=(sh, y), xytext=(0, 9), textcoords="offset points", ha="center",
+                    fontsize=7.6, color=C_MP)
+    stack = sorted([(sq[k][0], f"SALT-Q k={k}  {sq[k][0]:.2f}  ({rec(sq[k][0]):.0f}% of gap)", C_SQ, sq[k][1], "o") for k in sq]
+                   + [(qa[0], f"QA-LoRA  {qa[0]:.2f}  ({rec(qa[0]):.0f}%)", C_QA, qa[1], "s")], key=lambda t: t[0])
+    mid = (len(stack) - 1) / 2
+    for i, (y, lab, col, e, mk) in enumerate(stack):
+        ax.errorbar([0.0], [y], yerr=[e], color=col, marker=mk, ms=9, capsize=3, zorder=4, ls="none",
+                    label=("SALT-Q" if mk == "o" else "QA-LoRA") + f"  (0% fp16, {bits}.00 bits)" if i == 0 or mk == "s" else None)
+        ax.annotate(lab, xy=(0.0, y), xytext=(14, (i - mid) * 11), textcoords="offset points", fontsize=8.5, color=col, va="center")
+    ax.set_xlim(-1.5, max(41, max(xs) * 1.06))
+    ax.set_ylim(floor - 0.06 * gap, ceil_ + 0.12 * gap)
+    ax.set_xlabel("share of target weights kept in fp16  (%, true proportion)")
+    ax.set_ylabel(mlabel)
+    ax.set_title(f"{cell['title']}\n{mlabel} vs the true fp16 share", fontsize=10.5)
+    ax.legend(loc="best", fontsize=8.6, framealpha=0.95)
+    fig.text(0.5, 0.005, "fp16 arm = the cell's QLoRA-merged checkpoint, top-k columns (by the saved saliency ranking) kept in fp16, rest GPTQ. "
+             "Error bars: binomial stderr propagated to the mean. Recovery = (score - floor) / (fp16 - floor).", ha="center", fontsize=7.6, color=INK2)
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
+    fig.savefig(out, dpi=170)
+    print(f"wrote {out}")
 
 
 def main():
@@ -80,12 +145,14 @@ def main():
     ap.add_argument("--cell", choices=sorted(CELLS), required=True)
     ap.add_argument("--metric", choices=["mean8", "mean7"], default="mean8")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--x", choices=["groupk", "share"], default="groupk",
+                    help="share = single panel with the true fp16 proportion on x")
     args = ap.parse_args()
     cell = CELLS[args.cell]
     bits = cell["bits"]
     tasks = TASKS8 if args.metric == "mean8" else TASKS7
     mlabel = f"MEAN({len(tasks)})"
-    out = args.out or f"figures/mixedprec_{args.cell}_{args.metric}.png"
+    out = args.out or f"figures/mixedprec_{args.cell}_{args.metric}{'_share' if args.x == 'share' else ''}.png"
 
     def agg(r): return sum(r[t]["acc"] for t in tasks) / len(tasks) * 100
     def err(r):
@@ -110,6 +177,17 @@ def main():
     floor, ceil_ = mp[0][0], mp[None][0]
     gap = ceil_ - floor
     rec = lambda a: (a - floor) / gap * 100
+
+    plt.rcParams.update({
+        "font.size": 10, "axes.grid": True, "grid.alpha": 0.22, "grid.linewidth": 0.7,
+        "axes.axisbelow": True, "figure.facecolor": "white", "axes.facecolor": "#fcfcfb",
+        "axes.edgecolor": "#d9d8d2", "axes.labelcolor": INK2, "text.color": INK,
+        "xtick.color": INK2, "ytick.color": INK2, "axes.linewidth": 0.8,
+    })
+    if args.x == "share":
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        plot_share(cell, args, mp, sq, qa, floor, ceil_, gap, rec, mlabel, out)
+        return
 
     plt.rcParams.update({
         "font.size": 10, "axes.grid": True, "grid.alpha": 0.22, "grid.linewidth": 0.7,

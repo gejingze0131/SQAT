@@ -1,0 +1,20 @@
+#!/bin/bash
+#PBS -N build_rankperm
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=2:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+# Rank-ordered permutation meta (group_k=2048, segmentation FIXED to the base's [1,1,10,20]) for
+# the mixed-precision sweeps. See scripts/build_rankperm_meta.py: the trained base's perms are
+# only saliency-ordered up to position 128, so the sweeps' k>128 points kept arbitrary columns
+# in fp16. The script asserts the k=128 SETS equal the base's, so the k=128 point stays matched.
+mkdir -p logs/commonsense_170k
+python scripts/build_rankperm_meta.py \
+    --config configs/saltq_cs170k_int3_g64_ep1_sal5e5.yaml \
+    --base_meta_dir outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base \
+    --save_dir outputs/mixedprec_rankperm_k2048 --group_k 2048 \
+    > logs/commonsense_170k/build_rankperm_meta.log 2>&1
+RC=$?; echo "rc=$RC"; echo "End time: $(date)"; exit $RC
