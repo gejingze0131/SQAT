@@ -147,7 +147,7 @@ def main():
     axL.set_ylabel(mlabel)
     axL.set_ylim(floor - 0.06 * gap, ceil_ + 0.10 * gap)
     axL.set_title(f"{cell['title']}\n{mlabel} vs group_k (matched segmentation, matched GPTQ)", fontsize=10.5)
-    axL.legend(loc="lower right", fontsize=8.8, framealpha=0.95)
+    axL.legend(loc="best", fontsize=8.8, framealpha=0.95)
 
     # ---------------- right: metric vs effective bits
     pts = [(mpb[k], mp[k][0], mp[k][1]) for k in ks_all if mpb.get(k)]
