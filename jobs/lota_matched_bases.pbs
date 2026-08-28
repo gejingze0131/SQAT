@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -N lota_matched_bases
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# The MATCHED bases for the second LoTA-QAF arm: this repo's own GPTQ (src/gptq.py), this
+# repo's calibration data (128 sequences of the commonsense training set), no act-order --
+# packed into GPTQModel's format so LoTA-QAF trains on the SAME integer grid QA-LoRA's INT-b
+# base carries. See baseline/LoTA-QAF/sqat/make_matched_base.py for why packing (rather than
+# re-quantizing through GPTQModel) is what makes the grids identical, and for the round-trip
+# assertion that stops the job if they are not.
+#
+# The paper-faithful bases (jobs/lota_quantize_bases.pbs) stay: that arm answers "what does
+# LoTA-QAF do as published", this one answers "what does it do from where SALT-Q starts".
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+LOTA_ENV=/scratch/users/nus/jingzege/conda_envs/lota
+LOG=logs/commonsense_170k/lota_matched_bases.log
+lota_py() {
+    env -u PYTHONPATH -u PYTHONHOME \
+        LD_LIBRARY_PATH="$LOTA_ENV/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$LOTA_ENV/bin/python" "$@"
+}
+nvidia-smi | head -12
+mkdir -p logs/commonsense_170k
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
+set -x
+for cfg in configs/qalora_cs170k_int3_g64_ep1_span.yaml configs/qalora_cs170k_int2_g32_ep1_span.yaml; do
+    echo ">>> matched base from $cfg" | tee -a "$LOG"
+    lota_py baseline/LoTA-QAF/sqat/make_matched_base.py \
+        --config "$cfg" --out outputs/lota_bases >> "$LOG" 2>&1 || exit 1
+done
+set +x
+echo "rc=$?"; echo "End time: $(date)"

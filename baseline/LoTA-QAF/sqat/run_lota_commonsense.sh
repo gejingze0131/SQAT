@@ -33,6 +33,7 @@ CONFIG=""
 BITS=""
 GROUP_SIZE=""
 BASE_ROOT="outputs/lota_bases"
+BASE_DIR_OVERRIDE=""
 SKIP_QUANT=false
 SKIP_TRAIN=false
 SKIP_EVAL=false
@@ -46,6 +47,7 @@ while [[ $# -gt 0 ]]; do
         --bits)        BITS="$2";        shift 2 ;;
         --group_size)  GROUP_SIZE="$2";  shift 2 ;;
         --base_root)   BASE_ROOT="$2";   shift 2 ;;
+        --base_dir)    BASE_DIR_OVERRIDE="$2"; SKIP_QUANT=true; shift 2 ;;
         --skip_quant)  SKIP_QUANT=true;  shift ;;
         --skip_train)  SKIP_TRAIN=true;  shift ;;
         --skip_eval)   SKIP_EVAL=true;   shift ;;
@@ -90,10 +92,13 @@ fi
 OUT_DIR="$(lota_py -c "import yaml,sys;print(yaml.safe_load(open(sys.argv[1]))['training']['output_dir'])" "$CONFIG")"
 
 cd "$SQAT_ROOT"
-BASE_DIR="${BASE_ROOT}/Llama-2-7B_int${BITS}_${GROUP_SIZE}_asym"
+# --base_dir points at a base built some other way -- make_matched_base.py writes one carrying
+# THIS repo's GPTQ grid, so the LoTA-QAF row can be read against SALT-Q and QA-LoRA with the
+# starting grid held fixed instead of only its own floor.
+BASE_DIR="${BASE_DIR_OVERRIDE:-${BASE_ROOT}/Llama-2-7B_int${BITS}_${GROUP_SIZE}_asym}"
 ADAPTER_DIR="${OUT_DIR}/final"
 EVAL_DIR="${OUT_DIR}-${BITS}bit-lota-dequant-eval"
-BASE_EVAL_DIR="${BASE_ROOT}/Llama-2-7B_int${BITS}_${GROUP_SIZE}_asym-${BITS}bit-lotabase-eval"
+BASE_EVAL_DIR="${BASE_DIR}-${BITS}bit-lotabase-eval"
 
 echo "============================================================"
 echo "  LoTA-QAF pipeline"

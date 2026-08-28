@@ -1,0 +1,55 @@
+#!/bin/bash
+#PBS -N lota_smoke
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=03:00:00
+#PBS -j oe
+
+# Wiring smoke test for the LoTA-QAF baseline, against the GPTQ bases jobs/lota_quantize_bases.pbs
+# already built. Five optimizer steps on 400 records proves the peft splice landed (IntLinear
+# modules exist and t-SignSGD finds them), that t-SignSGD steps on bf16 gradients, and that the
+# dense export reproduces the trained CustomLoraLinear forward at both widths. Every one of those
+# failures is otherwise discovered twenty hours into a 24h run.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+LOTA_ENV=/scratch/users/nus/jingzege/conda_envs/lota
+LOG=logs/commonsense_170k/lota_smoke.log
+lota_py() {
+    env -u PYTHONPATH -u PYTHONHOME \
+        LD_LIBRARY_PATH="$LOTA_ENV/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$LOTA_ENV/bin/python" "$@"
+}
+nvidia-smi | head -12
+mkdir -p logs/commonsense_170k
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+# Throwaway run; it should not open a wandb run next to the real ones.
+export WANDB_MODE=offline
+
+for d in outputs/lota_bases/Llama-2-7B_int3_64_asym outputs/lota_bases/Llama-2-7B_int2_32_asym; do
+    [ -f "$d/quantize_config.json" ] || { echo "ERROR: missing GPTQ base $d"; exit 1; }
+done
+
+set -x
+echo ">>> smoke: 5 steps on the INT3 base" | tee -a "$LOG"
+lota_py baseline/LoTA-QAF/sqat/train_lota.py \
+    --config baseline/LoTA-QAF/sqat/configs/lota_cs170k_int3_g64_ep1_span.yaml \
+    --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym \
+    --output_dir outputs/lota_smoke_int3 \
+    --max_steps 5 --max_train_samples 400 >> "$LOG" 2>&1 || exit 1
+
+echo ">>> smoke: export consistency, both widths" | tee -a "$LOG"
+lota_py baseline/LoTA-QAF/sqat/tests/test_export_consistency.py \
+    --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym \
+    --adapter_dir outputs/lota_smoke_int3/final >> "$LOG" 2>&1 || exit 1
+lota_py baseline/LoTA-QAF/sqat/tests/test_export_consistency.py \
+    --quantized_model_dir outputs/lota_bases/Llama-2-7B_int2_32_asym >> "$LOG" 2>&1 || exit 1
+
+echo ">>> smoke: dense export writes a loadable checkpoint" | tee -a "$LOG"
+lota_py baseline/LoTA-QAF/sqat/export_lota_dense.py \
+    --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym \
+    --adapter_dir outputs/lota_smoke_int3/final \
+    --out outputs/lota_smoke_int3-3bit-lota-dequant-eval >> "$LOG" 2>&1 || exit 1
+set +x
+echo "rc=$?"; echo "End time: $(date)"
