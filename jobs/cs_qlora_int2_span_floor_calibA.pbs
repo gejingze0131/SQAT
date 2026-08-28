@@ -1,0 +1,25 @@
+#!/bin/bash
+#PBS -N floor_calib_int2_A
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=2:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+# Arm A of the INT2 span-floor calibration diagnostic (sampling=first, 128 records, batch 2);
+# see jobs/cs_qlora_int2_span_floor_calib.pbs for the four-arm design. Split into one job per
+# arm with a 2h walltime so the scheduler can backfill them: the combined 8h job sat in the g3
+# queue for hours ("Insufficient node_pool") while the 3h arm-E job got a node in 30 min.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+mkdir -p logs/commonsense_170k
+SRC=outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval
+DST=outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calA
+python scripts/export_gptq_dequant.py --model_path "$SRC" --output_dir "$DST" \
+    --config configs/qlora_none_cs170k_int2_g32_ep1_span.yaml --bits 2 --group_size 32 \
+    --nsamples 128 --calibration_samples 128 --calibration_sampling first --batch_size 2 \
+    2>&1 | tee logs/commonsense_170k/qlora_span_gptq_int2_calA_export.log
+bash runs/eval_vllm.sh --model_path "$DST" --dataset commonsense --gpus 0,1,2,3 \
+    --tag "$(basename $DST)" > logs/commonsense_170k/qlora_span_gptq_int2_calA_eval.log 2>&1
+echo "arm A rc=$?"; rm -rf "$DST-vllm"; echo "End time: $(date)"
