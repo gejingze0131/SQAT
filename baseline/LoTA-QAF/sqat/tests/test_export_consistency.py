@@ -45,9 +45,18 @@ def main():
     ap.add_argument("--rank", type=int, default=64)
     ap.add_argument("--n_layers", type=int, default=4, help="how many quantized linears to check")
     ap.add_argument("--tokens", type=int, default=8)
+    # A pass at the real omega can fire NO markers and still report exact agreement, which
+    # proves only the base+offset path. Ternary A/B at rank r give |AB| a std of about
+    # sqrt(r*4/9) = 5.3 at r=64, so omega=48 is a ~9-sigma event that random init never
+    # reaches, and a barely-trained adapter reaches it a handful of times. The probe repeats
+    # the check at an omega low enough that markers actually fire -- same code, same boundary
+    # masks, same offset -- and the run fails if none did.
+    ap.add_argument("--probe_omega", type=int, default=8,
+                    help="second pass at a low omega so the marker path is exercised; 0 disables")
     args = ap.parse_args()
 
     torch.manual_seed(0)
+    omegas = [args.omega] + ([args.probe_omega] if args.probe_omega else [])
     model = GPTQModel.load(
         args.quantized_model_dir, torch_dtype=torch.bfloat16, device_map="cuda:0",
         trust_remote_code=True, backend=BACKEND.AUTO_TRAINABLE,
@@ -61,10 +70,10 @@ def main():
     picked = quant_linears[::step][: args.n_layers]
     print(f"[test] {len(quant_linears)} quantized linears; checking {len(picked)}")
 
-    worst = 0.0
-    for name, base in picked:
+    worst, total_markers = 0.0, {om: 0 for om in omegas}
+    for om, (name, base) in ((om, nb) for om in omegas for nb in picked):
         layer = CustomLoraLinear(base, "default", r=args.rank, lora_alpha=2 * args.rank,
-                                 lora_dropout=0.0, threshold=args.omega, residual=True)
+                                 lora_dropout=0.0, threshold=om, residual=True)
         layer.to(base.qweight.device)
         pair = None
         if adapters:
@@ -90,24 +99,32 @@ def main():
 
         with torch.no_grad():
             live = layer(x)
-            w = merged_dense_weight(base, A, B, omega=args.omega, residual=True)
+            w = merged_dense_weight(base, A, B, omega=om, residual=True)
             dense = torch.nn.functional.linear(x, w.T)
 
         denom = live.abs().max().item() or 1.0
         rel = (live - dense).abs().max().item() / denom
         worst = max(worst, rel)
-        nnz = int((torch.matmul(A.T.float(), B.T.float()).abs() > args.omega).sum())
-        print(f"[test] {name:<48s} {src:<7s} markers={nnz:>10,d}  rel.max|d|={rel:.2e}")
+        nnz = int((torch.matmul(A.T.float(), B.T.float()).abs() > om).sum())
+        total_markers[om] += nnz
+        print(f"[test] omega={om:<3d} {name:<44s} {src:<7s} markers={nnz:>10,d}  rel.max|d|={rel:.2e}")
         del layer, w
         torch.cuda.empty_cache()
 
     # bf16 has ~3 decimal digits; the two paths do the same ops in a different order, so exact
     # equality is not required, only that no term is missing or mis-scaled.
     tol = 5e-3
+    for om in omegas:
+        print(f"[test] omega={om}: {total_markers[om]:,d} markers fired across the checked layers")
     print(f"[test] worst relative deviation {worst:.2e} (tol {tol:.0e})")
     if worst > tol:
         raise SystemExit("FAIL: dense export disagrees with the trained forward")
-    print("[test] OK — train == deploy")
+    if not any(total_markers.values()):
+        raise SystemExit(
+            "FAIL: no markers fired at any omega — the check exercised only the base and the "
+            "offset, and says nothing about the integer merge or the boundary masks"
+        )
+    print("[test] OK — train == deploy, marker path exercised")
 
 
 if __name__ == "__main__":
