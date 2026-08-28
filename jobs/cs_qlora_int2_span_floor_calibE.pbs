@@ -1,0 +1,27 @@
+#!/bin/bash
+#PBS -N floor_calib_int2_E
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=3:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+# Arm E of the calibration diagnostic (see jobs/cs_qlora_int2_span_floor_calib.pbs for A-D):
+# the GPTQ-paper recipe -- 128 windows x 2048 tokens of generic C4 text (datasets/c4_calib_1024
+# .json, the file pinned for the LoTA-QAF arm), out-of-domain by design. Read against D
+# (in-domain balanced, same 262k budget): if E >= D the standard calibration is at least as good
+# for this deployment and buys external comparability; if D > E clearly, in-domain stays.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+mkdir -p logs/commonsense_170k
+SRC=outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval
+DST=outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calE
+python scripts/export_gptq_dequant.py --model_path "$SRC" --output_dir "$DST" \
+    --config configs/qlora_none_cs170k_int2_g32_ep1_span.yaml --bits 2 --group_size 32 \
+    --nsamples 128 --calibration_samples 128 --calibration_seq_len 2048 \
+    --calibration_source datasets/c4_calib_1024.json --batch_size 2 \
+    2>&1 | tee logs/commonsense_170k/qlora_span_gptq_int2_calE_export.log
+bash runs/eval_vllm.sh --model_path "$DST" --dataset commonsense --gpus 0,1,2,3 \
+    --tag "$(basename $DST)" > logs/commonsense_170k/qlora_span_gptq_int2_calE_eval.log 2>&1
+echo "arm E rc=$?"; rm -rf "$DST-vllm"; echo "End time: $(date)"
