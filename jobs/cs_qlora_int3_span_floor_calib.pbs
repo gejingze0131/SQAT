@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N floor_calib_int3
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=3:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+# INT3 g64 span-cell floor (72.60 with the boolq-only 9.5k-token calibration), rebuilt with the
+# two calibrations that matter after the INT2 diagnostic: D = in-domain balanced 3500 records
+# (471k tokens; lifted the INT2 floor 36.64 -> 66.22) and E = the GPTQ-paper C4 128 x 2048.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+mkdir -p logs/commonsense_170k
+SRC=outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-merged-eval
+CFG=configs/qlora_none_cs170k_int3_g64_ep1_span.yaml
+run_arm () {  # $1 arm  $2 extra args
+  DST=outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval-cal$1
+  python scripts/export_gptq_dequant.py --model_path "$SRC" --output_dir "$DST" --config "$CFG" \
+      --bits 3 --group_size 64 $2 2>&1 | tee logs/commonsense_170k/qlora_span_gptq_int3_cal$1_export.log
+  bash runs/eval_vllm.sh --model_path "$DST" --dataset commonsense --gpus 0,1,2,3 \
+      --tag "$(basename $DST)" > logs/commonsense_170k/qlora_span_gptq_int3_cal$1_eval.log 2>&1
+  echo "arm $1 rc=$?"; rm -rf "$DST-vllm"
+}
+run_arm D "--nsamples 3500 --calibration_samples 3500 --calibration_sampling balanced --batch_size 8"
+run_arm E "--nsamples 128 --calibration_samples 128 --calibration_seq_len 2048 --calibration_source datasets/c4_calib_1024.json --batch_size 2"
+echo "End time: $(date)"
