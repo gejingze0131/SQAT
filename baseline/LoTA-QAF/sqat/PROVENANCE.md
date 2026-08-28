@@ -79,3 +79,50 @@ width plus a per-group fractional zero-point shift. That is the same deployment 
 QA-LoRA rows (a group-constant delta folded into the affine zero-point), so "2 bits" means the
 same thing in both tables. The dense fp16 file is a container for the evaluation harness, not a
 wider format.
+
+
+## What the INT3 g64 run measured (2026-08-29)
+
+First completed cell: Commonsense-170k, 1 epoch, `loss_span=instruction+response`, omega=48,
+sigma_t 5%->0.1%->0.01%, the paper's own settings.
+
+| Row | Avg (MEAN8) |
+|---|---|
+| LoTA-QAF | **53.13** |
+| LoTA-QAF base (GPTQModel, raw) | **9.63** |
+
+Read it against the same-span SALT-Q (77.76) and QA-LoRA (76.82), and against **9.63**, not
+against this repo's 72.60 GPTQ floor: that row is QLoRA-fine-tuned and *then* quantized, so it
+already knows the task, whereas LoTA-QAF's base is raw pretrained Llama-2 and cannot emit the
+answer format at all. Gap recovered inside its own bracket is (53.13-9.63)/(77.75-9.63) = 64%.
+The honest head-to-head is 53.13 vs QA-LoRA's 76.82: both start from a raw quantized base and
+see the same data, batch and epoch.
+
+Three measurements explain the shape of that result, all taken from the trained adapter:
+
+1. **The ternary adapter trained hard.** `lora_B` is zero-initialised by construction; after
+   1844 steps both A and B are dense ternary (~1/3 each of -1, 0, +1). t-SignSGD is working.
+
+2. **The integer merge is nearly inert.** |AB| runs p50=6, p90=19, p99=34, p99.9=45, max=61
+   against omega=48, so 3.4e-04 of weights cross the threshold in layer 0's down_proj and
+   *zero* cross it in layer 23's. The +-1 grid-step moves the method is named for barely
+   happen here: with rank r, |AB| is a sum of r ternary products and has std sqrt(4r/9) = 5.3
+   at r=64, so omega = 0.75r is a ~9-sigma threshold that training only reaches in the far tail.
+
+3. **So all 43.5 points of lift come from the offset factor** -- and the released code scales
+   that offset by 1/omega where the paper does not. `layer.py:359`, `adapter.py:391` and
+   `lota_merge.py:382` all compute `groupmean(dW - omega*markers) / self.threshold`, while
+   Eq. (4)-(5) define `mu = mean(W~)` and `z' = z + s*mu` with no such division. Measured on
+   this checkpoint, that is a deployed zero-point shift of |mu| = 0.022 grid steps (p99 0.098)
+   under the code, against 1.06 (p99 4.72) under the paper's formula -- a factor of 48.
+
+Because the division is consistent across upstream's training, inference and merge paths it is
+not a train/deploy inconsistency, and this reproduction follows the released code, which is
+what reproducing an official implementation means. But it is the obvious candidate for the
+23.7-point gap to QA-LoRA, whose group-pooled delta folds into the zero-points unscaled. Note
+also that the paper's own INT3/INT4 *performance-recovery* deltas (+0.07 / +0.03 MMLU) are
+consistent with a small offset, while its INT2 (+15.45) and task-specific numbers are not
+obviously reachable with one.
+
+An arm using Eq. (4)'s scaling is a one-line change and would separate "the method is weak on
+this task" from "the released scaling is not what produced the published numbers". Not run.
