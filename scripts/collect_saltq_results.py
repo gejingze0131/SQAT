@@ -89,6 +89,11 @@ def _infer_method(model_dir: str) -> str:
         ("gptqfull-ablation", "PSQAT-abl GPTQ-full(LB)"),
         ("saltq", "SALT-Q"),
         ("sqat_permute", "Permuted-SQAT"),
+        # LoTA-QAF and its own GPTQModel base (baseline/LoTA-QAF/). The base dir must be
+        # matched FIRST: it also contains "lota", and a floor row labelled as the method
+        # would read as a catastrophic result for the method.
+        ("lotabase", "LoTA-QAF base (GPTQModel)"),
+        ("lota", "LoTA-QAF"),
         ("qalora", "QA-LoRA"),
         ("-full-", "LR-QAT"),
         ("-none-", "QLoRA"),

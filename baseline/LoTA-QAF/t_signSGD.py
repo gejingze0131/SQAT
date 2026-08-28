@@ -62,7 +62,10 @@ class tSignSGD(Optimizer):
         for group in self.param_groups:
             for p in group["params"]:
                 if p.grad is not None:
-                    grad_norm += torch.sum(p.grad ** 2)
+                    # .float(): the ternary adapters are bf16, and a bf16 sum of ~10^5 squares
+                    # loses the small terms entirely — the norm this compares against 10 would
+                    # be an artifact of the accumulation dtype. No-op when grads are fp32.
+                    grad_norm += torch.sum(p.grad.float() ** 2)
         grad_norm = torch.sqrt(grad_norm).item()
         print(f"Grad norm: {grad_norm}", end='#  ')
         
@@ -104,12 +107,18 @@ class tSignSGD(Optimizer):
             for p in group["params"]:
                 if p.grad is None:
                     continue
-                sigma_t = torch.quantile(p.grad.abs(), q=sigma)
+                # torch.quantile() accepts float/double only, and the ternary adapters
+                # (IntLinear, peft/tuners/lora/layer.py) are bf16 — so their gradients are
+                # bf16 and the unconverted call raises. Casting for the quantile only: the
+                # thresholds are then compared against the original bf16 magnitudes exactly
+                # as before, and on an fp32 gradient this is an identity.
+                grad_abs = p.grad.abs()
+                sigma_t = torch.quantile(grad_abs.float(), q=sigma).to(grad_abs.dtype)
 
                 if upper == False:  # 1e-9 is Tau in Paper.
                     p.data.add_(torch.where((p.grad.abs() > sigma_t) & (p.grad.abs() > 1e-9), -torch.sign(p.grad), torch.zeros_like(p.grad)))
                 else:
-                    upper_threshold = torch.quantile(p.grad.abs(), q=0.99995)
+                    upper_threshold = torch.quantile(grad_abs.float(), q=0.99995).to(grad_abs.dtype)
                     p.data.add_(torch.where((p.grad.abs() > sigma_t) & (p.grad.abs() > 1e-9) & (p.grad.abs() < upper_threshold), -torch.sign(p.grad), torch.zeros_like(p.grad)))
                     # Trick: the max_grad if abnormally large, for top 0.00005 part, discard, to prevent excessive change to current parameter distribution.
 

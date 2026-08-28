@@ -1,0 +1,35 @@
+#!/bin/bash
+#PBS -N cs_lota_int2_span
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# LoTA-QAF INT2 g32, 1 epoch, data.loss_span=instruction+response -- the third method in the
+# span cell's INT2 table, next to SALT-Q (69.61 at k=256) and QA-LoRA (67.11).
+#
+# HOW TO READ IT. Against the same-span SALT-Q and QA-LoRA rows only. Its floor is NOT the
+# QLoRA-merged-then-GPTQ row (36.64): LoTA-QAF trains on its own GPTQModel base, which
+# --with_base exports and scores separately as "LoTA-QAF base (GPTQModel)". The gap recovered
+# for this row must be computed against THAT floor and the shared fp16 upper bound.
+#
+# One GPU, on purpose: upstream is single-device (GPTQModel.load(device_map="cuda:0")) and the
+# effective batch of 80 is reached by 20 x 4 accumulation. See baseline/LoTA-QAF/sqat/PROVENANCE.md.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+mkdir -p logs/commonsense_170k
+bash baseline/LoTA-QAF/sqat/run_lota_commonsense.sh \
+    --config     configs/lota_cs170k_int2_g32_ep1_span.yaml \
+    --bits       2 \
+    --group_size 32 \
+    --with_base \
+    --note       "1 GPU, eff. batch 80 = 20x4x1; GPTQModel base (c4-1024, desc_act)" \
+    > logs/commonsense_170k/lota_cs170k_int2_g32_ep1_span.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"

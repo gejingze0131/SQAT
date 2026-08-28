@@ -10,3 +10,8 @@ scripts/__pycache__/
 # logs/job_outputs/ (itself ignored) rather than tracked.
 *.o[0-9]*
 datasets
+
+# Pinned third-party checkouts the LoTA-QAF baseline patches rather than imports; they are
+# rebuilt by baseline/LoTA-QAF/sqat/setup_env.sh at the commits it names.
+baseline/LoTA-QAF/vendor/
+.triton/
