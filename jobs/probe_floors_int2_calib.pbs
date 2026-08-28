@@ -1,0 +1,24 @@
+#!/bin/bash
+#PBS -N probe_floor_calib
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=2:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+# Teacher-forced probe on the INT2 span-floor exports of the calibration diagnostic. The
+# generative floors are destroyed models at INT2 (every task at/below majority; the boolq-only
+# floor "scores" 36.64 largely because 72% of its boolq outputs are the majority template, the
+# C4-calibrated one 30.67 because it emits no parseable answer at all: dominant-output share
+# 0.01-0.05). resp_loss / ans_loss separate TEMPLATE SURVIVAL from ANSWER KNOWLEDGE, which the
+# generative score cannot. Arms A-D are added when their exports exist (see the g3 job).
+mkdir -p logs/probe results/probe
+DIRS=""
+for d in outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-cal{E,A,C,B,D}; do
+  [ -f "$d/model.safetensors" ] && DIRS="$DIRS $d"
+done
+echo "probing:$DIRS"
+python scripts/probe_answer_token.py --hf_model_dirs $DIRS --per_task 128 --batch 8 \
+    --out results/probe/int2_span_floors_calib.json > logs/probe/int2_span_floors_calib.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
