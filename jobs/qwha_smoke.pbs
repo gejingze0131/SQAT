@@ -1,0 +1,22 @@
+#!/bin/bash
+#PBS -N qwha_smoke
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=2
+#PBS -l walltime=02:00:00
+#PBS -j oe
+
+# Harness smoke test for the QWHA baseline on a 2-layer random Llama: gptqmodel quantization,
+# the peft-fork adapter, AdaAlloc init, DDP training on the commonsense span cell, and the dense
+# export's equivalence check. Everything the 7B runs would otherwise discover after hours.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+# Llama-2 and wikitext-2-raw-v1 are pre-fetched into HF_HOME on a login node; compute
+# nodes have no route out.
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_DISABLE_XET=1
+nvidia-smi | head -12
+mkdir -p logs/qwha
+bash baseline/QWHA/sqat/smoke_test.sh > logs/qwha/smoke_test.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"

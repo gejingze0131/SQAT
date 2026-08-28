@@ -1,0 +1,27 @@
+#!/bin/bash
+#PBS -N qwha_prep_int2_g32
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# QWHA baseline, INT2 g32: the two single-GPU stages that do not depend on the training
+# recipe -- the plain-GPTQ base (no MagR; this repo's other rows sit on a plain GPTQ base) and the
+# AdaAlloc adapter initialization (wikitext2 X^T X per projection, then per-layer spectrum
+# selection). Both are idempotent; the 4-GPU training job depends on this one.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+# Llama-2 and wikitext-2-raw-v1 are pre-fetched into HF_HOME on a login node; compute
+# nodes have no route out.
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_DISABLE_XET=1
+nvidia-smi | head -12
+free -g | head -2
+mkdir -p logs/qwha
+bash baseline/QWHA/sqat/run_qwha_commonsense.sh \
+    --config baseline/QWHA/sqat/configs/qwha_cs170k_int2_g32_ep1_span.yaml \
+    --skip_train --skip_export --skip_eval \
+    > logs/qwha/qwha_prep_int2_g32.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
