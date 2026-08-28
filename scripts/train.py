@@ -415,7 +415,12 @@ def main():
     if qat_mode == "qalora":
         print("  QA-LoRA:         asymmetric affine quantization only")
 
-    accelerator = Accelerator()
+    # Rank 0 builds the offline bases alone (permute + GPTQ) while the other ranks wait in
+    # wait_for_everyone(); with a 3500-sequence calibration set that takes ~1 h, far past the
+    # 10-minute NCCL default (job 15762395 died at GPTQ layer 28/32). Barrier timeout raised to 6 h.
+    from datetime import timedelta
+    from accelerate.utils import InitProcessGroupKwargs
+    accelerator = Accelerator(kwargs_handlers=[InitProcessGroupKwargs(timeout=timedelta(hours=6))])
 
     # --- Export-only mode ---
     if args.export_only:
