@@ -3,7 +3,7 @@
 #PBS -q normal
 #PBS -P personal-jingzege
 #PBS -l select=1:ngpus=4
-#PBS -l walltime=8:00:00
+#PBS -l walltime=4:30:00
 #PBS -j oe
 cd "$PBS_O_WORKDIR" || exit 1
 source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
@@ -23,6 +23,10 @@ nvidia-smi | head -12
 #   B  first   3500 records  (260k tokens, boolq only)    + budget
 #   C  balanced 128 records  ( 9.5k tokens, 8 tasks)      + task mix
 #   D  balanced 3500 records (260k tokens, 8 tasks)       + budget + task mix   <- GPTQ's budget
+# SCHEDULING NOTE (2026-08-28): g3 requires walltime > 2h and allows ONE running job per user;
+# gdev caps the queue at 16 GPUs total with ~90 jobs waiting, so four 2h x 4-GPU arms never
+# start there. One g3 job, four arms in sequence (~4h), walltime 4.5h -- short enough to backfill
+# (the 3h arm-E job got a node in 30 min; the 8h version of this job waited 3h and never ran).
 # READ: MEAN(8) of each vs 36.64. If D moves the floor by more than a point, every GPTQ base in
 # the project (SALT-Q non-salient codes, QA-LoRA bases, the other floors) inherits the same
 # defect and the tables' lower bounds are understated; that is a separate campaign.
