@@ -58,6 +58,11 @@ def main() -> int:
     ap.add_argument("--percdamp", type=float, default=0.01)
     ap.add_argument("--blocksize", type=int, default=128)
     ap.add_argument("--batch_size", type=int, default=2)
+    ap.add_argument("--calibration_samples", type=int, default=None,
+                    help="override cfg.qat.sqat.calibration_samples (records loaded); raise it "
+                         "together with --nsamples for a larger Hessian budget")
+    ap.add_argument("--calibration_sampling", choices=["first", "shuffle", "balanced"], default=None,
+                    help="override cfg.qat.sqat.calibration_sampling (see src/data.py)")
     args = ap.parse_args()
 
     meta_pt = os.path.join(args.model_path, "sqat_permute_meta.pt")
@@ -70,6 +75,10 @@ def main() -> int:
         return 2
 
     cfg = yaml.safe_load(open(args.config))
+    if args.calibration_samples is not None:
+        cfg["qat"]["sqat"]["calibration_samples"] = int(args.calibration_samples)
+    if args.calibration_sampling is not None:
+        cfg["qat"]["sqat"]["calibration_sampling"] = args.calibration_sampling
     bits = args.bits or int(cfg["model"]["quant_bits"])
     group_size = args.group_size or int(cfg["qat"].get("group_size", 128))
     symmetric = bool(cfg["qat"].get("symmetric", False))

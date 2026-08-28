@@ -1,0 +1,48 @@
+#!/bin/bash
+#PBS -N floor_calib_int2
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=8:00:00
+#PBS -j oe
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+nvidia-smi | head -12
+
+# GPTQ CALIBRATION DIAGNOSTIC on the INT2 g32 span-cell floor (QLoRA span merged checkpoint ->
+# GPTQ INT2 g32 -> eval; the current floor is 36.64 MEAN(8)). Three defects were found in how
+# every Hessian in this project was built (2026-08-28):
+#   1. budget: gptq.nsamples=128 counts SEQUENCES; commonsense records are ~74 tokens, so the
+#      Hessian saw 9,519 tokens vs GPTQ's 128 x 2048 = 262k. down_proj's H is 11008-dim ->
+#      rank-deficient; q/k/v/gate/up had ~2.3 rows per dim.
+#   2. task mix: load_calibration_data took the FIRST n records of train.json, which is grouped
+#      by task -- every calibration set was 100% boolq prompts (one template).
+#   3. padding: right-padded positions went into H (now masked; src/gptq.py _masked_xtx).
+# Four arms factor them (all four use the padding mask; A vs the old 36.64 isolates the mask):
+#   A  first    128 records  ( 9.5k tokens, boolq only)   mask only
+#   B  first   3500 records  (260k tokens, boolq only)    + budget
+#   C  balanced 128 records  ( 9.5k tokens, 8 tasks)      + task mix
+#   D  balanced 3500 records (260k tokens, 8 tasks)       + budget + task mix   <- GPTQ's budget
+# READ: MEAN(8) of each vs 36.64. If D moves the floor by more than a point, every GPTQ base in
+# the project (SALT-Q non-salient codes, QA-LoRA bases, the other floors) inherits the same
+# defect and the tables' lower bounds are understated; that is a separate campaign.
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+mkdir -p logs/commonsense_170k
+SRC=outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval
+CFG=configs/qlora_none_cs170k_int2_g32_ep1_span.yaml
+run_arm () {  # $1 arm  $2 sampling  $3 n  $4 batch
+  DST=outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-cal$1
+  python scripts/export_gptq_dequant.py --model_path "$SRC" --output_dir "$DST" --config "$CFG" \
+      --bits 2 --group_size 32 --nsamples $3 --calibration_samples $3 --calibration_sampling $2 --batch_size $4 \
+      2>&1 | tee logs/commonsense_170k/qlora_span_gptq_int2_cal$1_export.log
+  bash runs/eval_vllm.sh --model_path "$DST" --dataset commonsense --gpus 0,1,2,3 \
+      --tag "$(basename $DST)" > logs/commonsense_170k/qlora_span_gptq_int2_cal$1_eval.log 2>&1
+  echo "arm $1 rc=$?"
+  rm -rf "$DST-vllm"
+}
+run_arm A first    128  2
+run_arm C balanced 128  2
+run_arm B first    3500 8
+run_arm D balanced 3500 8
+echo "End time: $(date)"

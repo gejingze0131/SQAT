@@ -236,6 +236,21 @@ class _GPTQCatcherStop(Exception):
 
 
 @torch.no_grad()
+def _masked_xtx(x: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
+    """X^T X over the REAL token positions of a [B, T, d] activation. The collator right-pads
+    every batch; before 2026-08-28 the padded positions (the pad/EOS embedding run through the
+    stack) went into every Hessian too. With ~74-token records and batch 2 that was a few percent
+    of the rows; at the larger calibration batches the budget fix uses it would not be."""
+    d = x.shape[-1]
+    x = x.reshape(-1, d)
+    if mask is not None:
+        m = mask.reshape(-1).bool()
+        if m.numel() == x.shape[0]:
+            x = x[m]
+    x = x.float()
+    return x.t() @ x
+
+
 def gptq_quantize_model_sequential(
     model: nn.Module,
     calibration_dataloader: DataLoader,
@@ -298,6 +313,8 @@ def gptq_quantize_model_sequential(
 
     layers[0] = _Catcher(orig_layer0)
     seen = 0
+    masks: List[Optional[torch.Tensor]] = []          # 2-D [B, T] padding masks, one per batch
+    n_tokens = 0
     for batch in calibration_dataloader:
         if seen >= nsamples:
             break
@@ -308,9 +325,12 @@ def gptq_quantize_model_sequential(
             model(input_ids=ids, attention_mask=am)
         except _GPTQCatcherStop:
             pass
+        masks.append(am.detach().to("cpu") if am is not None else None)
+        n_tokens += int(am.sum().item()) if am is not None else ids.numel()
         seen += ids.shape[0]
     layers[0] = orig_layer0
-    print(f"[GPTQ] Captured {len(inps)} calibration batches ({seen} sequences).")
+    print(f"[GPTQ] Captured {len(inps)} calibration batches ({seen} sequences, {n_tokens} real "
+          f"tokens; padded positions are excluded from every Hessian).")
 
     def _kw_to_dev(kw):
         return {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in kw.items()}
@@ -335,18 +355,20 @@ def gptq_quantize_model_sequential(
         Hs: Dict[str, torch.Tensor] = {}
         handles = []
 
+        cur = {"mask": None}                       # set per batch below; read by the hooks
+
         def _mk(nm):
             def _h(mod, inp, out):
-                x = inp[0].detach()
-                x = x.reshape(-1, x.shape[-1]).float()
-                xtx = x.t() @ x
+                xtx = _masked_xtx(inp[0].detach(), cur["mask"])
                 Hs[nm] = xtx if nm not in Hs else Hs[nm].add_(xtx)
             return _h
 
         for nm, (mod, _) in subs.items():
             handles.append(mod.register_forward_hook(_mk(nm)))
         for i in range(len(inps)):
+            cur["mask"] = masks[i].to(device) if masks[i] is not None else None
             layer(inps[i].to(device), **_kw_to_dev(kwargs_list[i]))
+        cur["mask"] = None
         for h in handles:
             h.remove()
 
