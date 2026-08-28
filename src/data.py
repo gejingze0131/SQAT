@@ -396,6 +396,29 @@ def load_dataset_for_training(
     return train_dataset, eval_dataset
 
 
+def _generic_text_windows(path: str, tokenizer: PreTrainedTokenizer, n_windows: int,
+                          seq_len: int) -> Dataset:
+    """calibration_source: raw texts -> EOS-joined token stream -> n_windows x seq_len rows."""
+    import json as _json
+    texts = _json.load(open(path))
+    texts = [t["text"] if isinstance(t, dict) else t for t in texts]
+    eos = tokenizer.eos_token_id
+    ids: List[int] = []
+    for t in texts:
+        ids.extend(tokenizer(t, add_special_tokens=False).input_ids + [eos])
+        if len(ids) >= n_windows * seq_len:
+            break
+    n_avail = len(ids) // seq_len
+    if n_avail < n_windows:
+        raise ValueError(f"{path} yields {n_avail} windows of {seq_len} tokens, fewer than the "
+                         f"{n_windows} requested")
+    rows = [ids[i * seq_len:(i + 1) * seq_len] for i in range(n_windows)]
+    print(f"[Data] calibration: {n_windows} generic-text windows x {seq_len} tokens from {path} "
+          f"({n_windows * seq_len} tokens)")
+    return Dataset.from_dict({"input_ids": [np.array(r) for r in rows],
+                              "labels": [np.array(r) for r in rows]})
+
+
 def load_calibration_data(
     cfg: dict,
     tokenizer: PreTrainedTokenizer,
@@ -407,14 +430,52 @@ def load_calibration_data(
     load_dataset_for_training; only the sequence-length cap differs.
     """
     sqat_cfg = cfg["qat"]["sqat"]
-    n_samples = sqat_cfg["calibration_samples"]
+    n_samples = int(sqat_cfg["calibration_samples"])
     cal_seq_len = sqat_cfg["calibration_seq_len"]
+    sampling = str(sqat_cfg.get("calibration_sampling", "first"))
+    source = sqat_cfg.get("calibration_source")
+    if source:
+        # GENERIC-TEXT calibration (the GPTQ-paper recipe): a JSON list of raw strings (e.g.
+        # datasets/c4_calib_1024.json), concatenated with EOS and cut into calibration_seq_len
+        # token windows; calibration_samples windows are kept. No prompt template, no labels.
+        # 128 x 2048 windows = 262k tokens = the standard budget. Out-of-domain by design.
+        return _generic_text_windows(source, tokenizer, n_samples, int(cal_seq_len))
 
     raw, fields = _prepare_raw(cfg, cfg["data"].get("train_split", "train"))
     if raw is None:
         raise ValueError(f"Could not load calibration data from '{cfg['data']['train_dataset']}'.")
-    if n_samples < len(raw):
-        raw = raw.select(range(n_samples))
+    # HOW THE RECORDS ARE PICKED. "first" is what every base before 2026-08-28 used: the first n
+    # records of the raw file. datasets/commonsense/train.json is grouped by task (boolq is
+    # records 0..9426), so "first" calibrated every Hessian AND every saliency statistic in the
+    # project on boolq prompts only -- 128 records x ~74 tokens = 9.5k tokens of one template.
+    # Kept as the default so those bases stay reproducible. "shuffle" draws n records uniformly
+    # (seeded); "balanced" draws n / #types per `type` (seeded).
+    seed = int(cfg.get("training", {}).get("seed", 42))
+    if sampling == "first":
+        if n_samples < len(raw):
+            raw = raw.select(range(n_samples))
+    elif sampling == "shuffle":
+        raw = raw.shuffle(seed=seed)
+        if n_samples < len(raw):
+            raw = raw.select(range(n_samples))
+    elif sampling == "balanced":
+        if "type" not in raw.column_names:
+            raise ValueError("calibration_sampling=balanced needs a `type` column in the raw data")
+        types = sorted(set(raw["type"]))
+        per = -(-n_samples // len(types))                       # ceil
+        parts = []
+        for i, t in enumerate(types):
+            sub = raw.filter(lambda r, t=t: r["type"] == t).shuffle(seed=seed + i)
+            parts.append(sub.select(range(min(per, len(sub)))))
+        raw = concatenate_datasets(parts).shuffle(seed=seed)
+        if n_samples < len(raw):
+            raw = raw.select(range(n_samples))
+    else:
+        raise ValueError(f"qat.sqat.calibration_sampling must be first|shuffle|balanced, got {sampling!r}")
+    if "type" in raw.column_names:
+        import collections
+        print(f"[Data] calibration: {len(raw)} records, sampling={sampling}, "
+              f"task mix={dict(collections.Counter(raw['type']))}")
 
     # model_max_length is what _tokenize_fn truncates against; calibration uses its own cap.
     prev_max_len = tokenizer.model_max_length

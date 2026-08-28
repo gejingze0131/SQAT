@@ -63,6 +63,10 @@ def main() -> int:
                          "together with --nsamples for a larger Hessian budget")
     ap.add_argument("--calibration_sampling", choices=["first", "shuffle", "balanced"], default=None,
                     help="override cfg.qat.sqat.calibration_sampling (see src/data.py)")
+    ap.add_argument("--calibration_source", default=None,
+                    help="JSON list of raw texts (e.g. datasets/c4_calib_1024.json): generic-text "
+                         "calibration in calibration_seq_len windows, the GPTQ-paper recipe")
+    ap.add_argument("--calibration_seq_len", type=int, default=None)
     args = ap.parse_args()
 
     meta_pt = os.path.join(args.model_path, "sqat_permute_meta.pt")
@@ -79,6 +83,10 @@ def main() -> int:
         cfg["qat"]["sqat"]["calibration_samples"] = int(args.calibration_samples)
     if args.calibration_sampling is not None:
         cfg["qat"]["sqat"]["calibration_sampling"] = args.calibration_sampling
+    if args.calibration_source is not None:
+        cfg["qat"]["sqat"]["calibration_source"] = args.calibration_source
+    if args.calibration_seq_len is not None:
+        cfg["qat"]["sqat"]["calibration_seq_len"] = int(args.calibration_seq_len)
     bits = args.bits or int(cfg["model"]["quant_bits"])
     group_size = args.group_size or int(cfg["qat"].get("group_size", 128))
     symmetric = bool(cfg["qat"].get("symmetric", False))
