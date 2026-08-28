@@ -38,6 +38,17 @@ mkdir -p logs/commonsense_170k
 # node; compute nodes must not reach out.
 export HF_HUB_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
+# The smoke run is throwaway; it should not open a wandb run next to the real ones.
+export WANDB_MODE=offline
+
+# Materialised once on a login node (quantize_base.py writes it when it is missing and the hub
+# is reachable). Checked here because the alternative is discovering it after a four-minute
+# model load: load_dataset("allenai/c4") keys its cache on a `datasets`-version-dependent
+# config hash, so an offline node cannot reuse a cache another env wrote.
+[ -f datasets/c4_calib_1024.json ] || {
+    echo "ERROR: datasets/c4_calib_1024.json missing; run quantize_base.py once on a login node"
+    exit 1
+}
 
 set -x
 for cell in "3 64" "2 32"; do

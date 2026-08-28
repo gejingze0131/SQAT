@@ -22,12 +22,39 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 os.environ.setdefault("TRITON_CACHE_DIR", os.path.join(os.getcwd(), ".triton/cache"))
 
 import torch
-from datasets import load_dataset
 from gptqmodel import GPTQModel, QuantizeConfig
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lota_common import resolve_pretrained  # noqa: E402
+
+
+def load_calibration_texts(path, nsamples):
+    """The paper's calibration set: the first `nsamples` texts of one C4 shard."""
+    if os.path.isfile(path):
+        import json
+
+        with open(path) as f:
+            texts = json.load(f)
+        if len(texts) < nsamples:
+            raise SystemExit(f"{path} holds {len(texts)} texts, fewer than --nsamples {nsamples}")
+        print(f"[quantize_base] {nsamples} calibration texts from {path}")
+        return texts[:nsamples]
+
+    from datasets import load_dataset
+
+    texts = load_dataset(
+        "allenai/c4",
+        data_files="en/c4-train.00001-of-01024.json.gz",
+        split="train",
+    ).select(range(nsamples))["text"]
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    import json
+
+    with open(path, "w") as f:
+        json.dump(list(texts), f)
+    print(f"[quantize_base] wrote {nsamples} calibration texts to {path}")
+    return list(texts)
 
 
 def main():
@@ -38,6 +65,11 @@ def main():
     ap.add_argument("--sym", action="store_true", help="default is asymmetric, as in the paper")
     ap.add_argument("--out", required=True, help="parent dir; the int{b}_{g}_asym dir is created under it")
     ap.add_argument("--nsamples", type=int, default=1024)
+    # The calibration texts are materialised to a file the first time and read from it after.
+    # load_dataset("allenai/c4", data_files=...) keys its cache on a config hash that changes
+    # with the `datasets` version, so an offline compute node cannot reuse a cache written by
+    # another env -- and every run should calibrate on the SAME 1024 sequences anyway.
+    ap.add_argument("--calib_json", default="datasets/c4_calib_1024.json")
     ap.add_argument("--calib_batch_size", type=int, default=1)
     # Where GPTQModel caches the per-layer calibration activations. 1024 C4 sequences of
     # a few hundred tokens is several GB of hidden states on top of the 13 GB bf16 model;
@@ -69,11 +101,7 @@ def main():
         attn_implementation="eager",
     )
 
-    calibration_dataset = load_dataset(
-        "allenai/c4",
-        data_files="en/c4-train.00001-of-01024.json.gz",
-        split="train",
-    ).select(range(args.nsamples))["text"]
+    calibration_dataset = load_calibration_texts(args.calib_json, args.nsamples)
 
     model.quantize(calibration_dataset, batch_size=args.calib_batch_size,
                    calibration_enable_gpu_cache=not args.cpu_cache)
