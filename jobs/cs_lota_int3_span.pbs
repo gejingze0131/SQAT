@@ -25,8 +25,7 @@ conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core
 export HF_HUB_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 mkdir -p logs/commonsense_170k
-bash baseline/LoTA-QAF/sqat/run_lota_commonsense.sh \
-    --config     configs/lota_cs170k_int3_g64_ep1_span.yaml \
+bash runs/lota/run_lota_commonsense.sh \
     --bits       3 \
     --group_size 64 \
     --with_base \
