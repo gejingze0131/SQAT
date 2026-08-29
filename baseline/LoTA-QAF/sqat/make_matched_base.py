@@ -53,6 +53,11 @@ from src.model_loader import load_tokenizer  # noqa: E402
 
 TARGETS = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
 
+# gptqmodel's own bit unpacking, shared with the deployment export so the two agree by
+# construction rather than by coincidence.
+from export_lota_dense import decode_qweight as decode_qweight_int  # noqa: E402
+from export_lota_dense import decode_zeros as decode_zeros_int  # noqa: E402
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -139,10 +144,11 @@ def main():
     )
     print(f"[matched-base] GPTQ done for {len(quantized)} projections")
 
-    # The weights left in the model are the dequantized codes; pack() recovers the codes from
-    # them as round(W/s + z), so the packed checkpoint carries exactly this grid.
-    reference = {n: m.weight.data.clone().float().cpu()
-                 for n, m in model.named_modules() if n in quantized}
+    # The reference is the GRID itself -- integer codes, scales, zero points -- not the product
+    # of the three. Comparing dequantized weights instead would measure dtype: pack() stores
+    # scales in fp16 where our GPTQ used fp32, and a bf16 reload rounds to 8 mantissa bits, which
+    # together put ~7e-3 on the larger weights with a perfectly correct grid underneath.
+    reference = {n: (w_int.cpu(), scale.cpu(), zp.cpu()) for n, (w_int, scale, zp) in quantized.items()}
 
     quant_result = {}
     for name, (_w_int, scale, zp) in quantized.items():
@@ -195,25 +201,37 @@ def main():
     # --- the grid must survive the round trip, or the row means nothing -------------------
     del model
     torch.cuda.empty_cache()
-    check = GPTQModel.load(save_dir, torch_dtype=torch.bfloat16, device_map=args.device,
+    # float16, not bfloat16: pack() stores scales in fp16, and loading in bf16 would re-cast
+    # them to 8 mantissa bits, so the scale comparison below would measure the reload dtype
+    # rather than the grid.
+    check = GPTQModel.load(save_dir, torch_dtype=torch.float16, device_map=args.device,
                            trust_remote_code=True, backend=BACKEND.TORCH)
     from gptqmodel.nn_modules.qlinear import BaseQuantLinear
 
-    worst, n = 0.0, 0
+    bad, n = [], 0
     for name, module in check.model.named_modules():
         if not isinstance(module, BaseQuantLinear) or name not in reference:
             continue
+        w_int, scale, zp = reference[name]
         with torch.no_grad():
-            got = module.dequantize_weight().float().T.cpu()   # [in,out] -> [out,in]
-        d = (got - reference[name]).abs().max().item()
-        worst = max(worst, d)
+            q_got = decode_qweight_int(module).T.cpu().float()          # [in,out] -> [out,in]
+            z_got = decode_zeros_int(module).T.cpu().float()            # [ng,out] -> [out,ng]
+            s_got = module.scales.T.cpu().float()                       # [ng,out] -> [out,ng]
+        dq = (q_got - w_int).abs().max().item()
+        dz = (z_got - zp).abs().max().item()
+        # our fp32 scales are stored by pack() as fp16; that cast is the only licensed loss
+        ds = (s_got - scale.half().float()).abs().max().item()
+        if dq != 0 or dz != 0 or ds != 0:
+            bad.append((name, dq, dz, ds))
         n += 1
-    print(f"[matched-base] round-trip checked {n} projections, max|delta| = {worst:.3e}")
+    print(f"[matched-base] round-trip checked {n} projections: codes, zero points and scales")
     if n != len(quantized):
         raise SystemExit(f"only {n} of {len(quantized)} projections came back quantized")
-    if worst > 1e-3:
-        raise SystemExit("packed grid differs from the GPTQ output — do not train on this base")
-    print("[matched-base] OK — the packed base carries this repo's GPTQ grid")
+    if bad:
+        for name, dq, dz, ds in bad[:5]:
+            print(f"    {name}: |dq|={dq} |dz|={dz} |ds|={ds}")
+        raise SystemExit(f"{len(bad)} projections differ from the GPTQ output — do not train on this base")
+    print("[matched-base] OK — the packed base carries this repo's GPTQ grid, exactly")
 
 
 if __name__ == "__main__":
