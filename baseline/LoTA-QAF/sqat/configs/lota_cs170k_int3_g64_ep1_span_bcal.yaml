@@ -1,0 +1,104 @@
+# =============================================================================
+# LoTA-QAF baseline — Commonsense-170k, INT3 g64, ONE epoch, span cell.
+#
+# The third baseline in T1 of SALTQ_experiment_tracker.md. QLoRA answers "what does a 16-bit
+# adapter on a frozen quantized base reach", QA-LoRA answers it for a method that folds its
+# adapter into the zero-points, and LoTA-QAF answers it for a method that MOVES THE INTEGER
+# CODES themselves: a ternary adapter thresholded at omega adds +-1 grid step to every weight
+# it selects, merged losslessly at deploy (arXiv:2505.18724, NeurIPS'25).
+#
+# MATCHED to the SALT-Q / QA-LoRA span runs so the comparison is method-only: dataset, PROMPT,
+# data.loss_span = instruction+response, shuffle seed, effective batch 80, 1 epoch,
+# max_seq_len 2048, LoRA r=64 on all 7 projections, dropout 0, group_by_length false, seed 42.
+#
+# NOT matched, deliberately — the method's own published settings, exactly as the QA-LoRA
+# config keeps QA-LoRA's own learning rate:
+#   * the base is quantized by GPTQModel with the paper's recipe (asym, desc_act, 1024 C4
+#     sequences), not by src/gptq.py. LoTA-QAF adjusts the integer grid it is handed, so that
+#     grid is part of the method. Its own floor is measured separately (--adapter_dir none).
+#   * omega = 0.75r = 48 and sigma_t 5% -> 0.1% -> 0.01%, the paper's Section 4.1 values.
+#   * max_grad_norm is disabled (upstream forces this under LoTA-QAF).
+#
+# The batch SPLIT differs from the QA-LoRA config (20x4 on one GPU vs 5x4 on four) while the
+# effective batch stays 80. LoTA-QAF's per-step cost is dominated by weight-side work -- the
+# [in,out] ternary product, the threshold kernel and the dense reconstruction, all independent
+# of how many tokens are in the batch -- so a wider micro-batch is nearly free, and gradient
+# accumulation sums the same gradients into the same optimizer step either way.
+#
+# BCAL CELL. Derived from lota_cs170k_int3_g64_ep1_span.yaml by lota.quantized_model_dir and
+# training.output_dir. The base is no longer GPTQModel's own (1024 C4 sequences, act-order):
+# it is built by sqat/make_matched_base.py from THIS repo's GPTQ on the balanced in-domain
+# calibration -- 3500 records drawn evenly across the eight tasks, ~471k real tokens -- and
+# packed into GPTQModel's format, verified bit-exact on codes, zero points and scales, so the
+# integer grid is the one QA-LoRA's and SALT-Q's bcal rows start from.
+#
+# This SUPERSEDES the earlier INT3 row (53.13 MEAN(8)), which trained on GPTQModel's own C4
+# base and is therefore not comparable to the bcal table.
+#
+# Recipe is the paper's main table, unchanged: omega = 0.75r = 48, sigma_t 5% -> 0.1% -> 0.01%.
+#
+# Read ONLY against bcal rows: fp16 77.75, GPTQ floor 76.05, QA-LoRA 77.71, SALT-Q 78.85 --
+# and against its own --with_base floor for gap recovered.
+# =============================================================================
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 3
+  max_seq_len: 2048
+  dtype: "bfloat16"
+  attn_implementation: "sdpa"   # upstream asks for flash_attention_2; not built in this env
+
+lora:
+  rank: 64
+  # 2r, the paper's value. The ternary forward applies no alpha/r scaling (CustomLoraLinear
+  # never reads it), so this is recorded rather than used.
+  alpha: 128
+  dropout: 0.0
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+lota:
+  # Written by quantize_base.py; --quantized_model_dir overrides it.
+  quantized_model_dir: "outputs/lota_bases/Llama-2-7B_bcal_int3_64_asym_sqatcal"
+  interval_point: 48      # omega, 0.75 * rank
+  filter_ratio: 0.95      # sigma_t start: update the top 5% of |grad|
+  min_grad: 0.999         # sigma_t at 80% of training: top 0.1%
+  filter_upper: 0.9999    # sigma_t over the last 20%: top 0.01%
+  residual: true          # the offset factor, folded into the zero point
+
+data:
+  train_dataset: "datasets/commonsense"
+  train_split: "train"
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null
+  shuffle_dataset: true
+  loss_span: instruction+response
+  num_proc: 32
+
+training:
+  output_dir: "outputs/lota_cs170k_int3_ep1_span_bcal"
+  num_epochs: 1
+  per_device_train_batch_size: 20
+  gradient_accumulation_steps: 4      # 20 x 4 x 1 GPU = 80, the shared effective batch
+  group_by_length: false
+  # t-SignSGD (Eq. 6) adds -sign(g) with no step size, so none of the next four keys reach the
+  # ternary weights. Kept so the run is described by the same fields as its siblings.
+  learning_rate: 5.0e-3
+  weight_decay: 0.0
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  logging_steps: 10
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
