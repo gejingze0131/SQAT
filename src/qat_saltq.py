@@ -147,6 +147,7 @@ def build_saltq_base(
     nsamples: int = 128,
     dtype: torch.dtype = torch.float16,
     train_salient: bool = True,
+    salient_init: str = "minmax",
 ) -> dict:
     """
     Turn a permuted fp16 base into SALT-Q's starting point.
@@ -175,9 +176,26 @@ def build_saltq_base(
     step 0 SALT-Q's salient segment reproduces the canonical grid too (asym LSQ+ at current_minmax
     IS the canonical affine grid), so the model starts numerically identical to a GPTQ export.
 
+    salient_init selects how the salient slice STARTS:
+      * "minmax" (default, the runs before 2026-08-29): the sweep pins [0:group_k) to the min-max
+        RTN grid and solves [group_k:) as an independent OBS problem (above). At INT2 g32 that is
+        RTN on the highest-energy columns of every layer — first training loss 5.8 vs 2.5 for a
+        plain GPTQ model — and the knowledge it destroys is not re-learned from the task data.
+      * "gptq": ONE OBS problem over the whole matrix (gptq.gptq_quantize_layer(obs_salient=True)):
+        the salient columns are quantized first and compensated by the columns after them, as in
+        a plain GPTQ export. The salient slice's DEQUANTIZED GPTQ values become the trainable fp32
+        weights and its GPTQ (s, z) the LSQ start, so the LSQ fakequant reproduces the sweep's
+        codes exactly (asserted below) and step 0 is numerically a full-GPTQ model. The fp16
+        salient weights are used only for a diagnostic (how many salient codes OBS moved off RTN).
+
     Returns the meta dict (also written to save_dir/saltq_meta.pt).
     """
     from safetensors.torch import save_file
+    from .quant_primitives import group_dequantize, group_quantize
+
+    salient_init = str(salient_init)
+    if salient_init not in ("minmax", "gptq"):
+        raise ValueError(f"[SALT-Q] salient_init must be 'minmax' or 'gptq', got {salient_init!r}")
     from transformers import AutoModelForCausalLM
 
     if device is None:
@@ -235,6 +253,7 @@ def build_saltq_base(
         nsamples=nsamples,
         awq_scales=None,      # SALT-Q trains the salient weights directly; AWQ-S is redundant
         lsq_scales=None,
+        obs_salient=(salient_init == "gptq"),
     )
 
     del model
@@ -249,6 +268,8 @@ def build_saltq_base(
     n_codes = 0
     n_salient = 0
     n_qparams = 0
+    n_sal_codes = 0
+    n_sal_moved = 0        # salient_init=gptq: codes where OBS chose differently from min-max RTN
 
     # Drain `quantized` as we go: gptq_quantize_model_sequential hands back the integer levels as
     # fp32 [out, in] tensors, which for a 7B model is ~27 GB of host RAM. Popping each entry right
@@ -288,7 +309,31 @@ def build_saltq_base(
         n_codes += codes.numel()
         n_qparams += 2 * tensors[f"{name}.s_n"].numel()
 
-        if gk > 0:
+        if gk > 0 and salient_init == "gptq":
+            s0 = scale[:, :n_sal_g].float().contiguous()
+            z0 = zp[:, :n_sal_g].float().contiguous()
+            q_sal = W_int[:, :gk]
+            W_S = group_dequantize(q_sal, s0, z0, group_size, gk, symmetric).float().contiguous()
+            # The train<->export contract: the export quantizer on this start with this grid must
+            # give back the sweep's codes, else step 0 is not the GPTQ model it claims to be.
+            q_chk, _, _ = group_quantize(W_S, group_size, q_bits, symmetric,
+                                         fixed_scale=(s0 if symmetric else (s0, z0)))
+            n_bad = int((q_chk != q_sal).sum().item())
+            if n_bad:
+                raise RuntimeError(f"[SALT-Q] salient_init=gptq: {name}: {n_bad} of {q_sal.numel()} "
+                                   f"salient codes are not reproduced by the LSQ grid at the start")
+            # Diagnostic only: what min-max RTN of the fp16 slice would have chosen.
+            q_rtn, _, _ = group_quantize(salient_fp[name], group_size, q_bits, symmetric)
+            n_sal_moved += int((q_rtn != q_sal).sum().item())
+            n_sal_codes += int(q_sal.numel())
+            tensors[f"{name}.w_s"] = W_S
+            tensors[f"{name}.s_s"] = s0
+            if not symmetric:
+                tensors[f"{name}.z_s"] = z0
+            n_salient += W_S.numel()
+            n_qparams += (1 if symmetric else 2) * s0.numel()
+            del q_chk, q_rtn
+        elif gk > 0:
             W_S = salient_fp[name]
             tensors[f"{name}.w_s"] = W_S.contiguous()
             if symmetric:
@@ -319,6 +364,7 @@ def build_saltq_base(
         "symmetric": bool(symmetric),
         "target_terminals": target_terminals,
         "train_salient": bool(train_salient),
+        "salient_init": salient_init,
         "layers": layers_meta,
         "perm_meta": perm_meta,
         "param_counts": {
@@ -330,6 +376,10 @@ def build_saltq_base(
     torch.save(meta, os.path.join(save_dir, SALTQ_META_FILENAME))
 
     tokenizer.save_pretrained(save_dir)
+    if salient_init == "gptq" and n_sal_codes:
+        print(f"[SALT-Q] salient_init=gptq: whole-matrix OBS; {n_sal_moved / n_sal_codes * 100:.2f}% of "
+              f"{n_sal_codes / 1e6:.1f}M salient codes differ from min-max RTN; the LSQ start reproduces "
+              f"every code (asserted per layer)")
     print(
         f"[SALT-Q] base saved -> {save_dir}\n"
         f"[SALT-Q]   frozen codes:              {n_codes / 1e6:9.1f}M  (int8, zero freedom)\n"

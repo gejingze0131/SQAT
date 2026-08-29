@@ -197,11 +197,13 @@ def _saltq_base_matches(base_dir: str, cfg: dict):
     if (int(meta.get("q_bits", -1)) != int(cfg["model"]["quant_bits"])
             or int(meta.get("group_size", -1)) != int(cfg["qat"].get("group_size", 128))
             or bool(meta.get("symmetric", False)) != bool(cfg["qat"].get("symmetric", False))
-            or bool(meta.get("train_salient", True)) != bool(sq_cfg.get("train_salient", True))):
+            or bool(meta.get("train_salient", True)) != bool(sq_cfg.get("train_salient", True))
+            or str(meta.get("salient_init", "minmax")) != str(sq_cfg.get("salient_init", "minmax"))):
         return None
     return (f"INT{meta.get('q_bits')} g{meta.get('group_size')} "
             f"{'sym' if meta.get('symmetric') else 'asym'}"
-            f"{'' if meta.get('train_salient', True) else ' train_salient=False'}")
+            f"{'' if meta.get('train_salient', True) else ' train_salient=False'}"
+            f"{'' if meta.get('salient_init', 'minmax') == 'minmax' else ' salient_init=' + str(meta.get('salient_init'))}")
 
 
 def load_config(config_path: str, overrides: dict) -> dict:
@@ -651,6 +653,7 @@ def main():
                 "symmetric": bool(cfg["qat"].get("symmetric", False)),
                 "train_salient": bool((cfg["qat"].get("saltq", {}) or {})
                                       .get("train_salient", True)),
+                "salient_init": str((cfg["qat"].get("saltq", {}) or {}).get("salient_init", "minmax")),
             }
             try:
                 _sq_have_meta = torch.load(_sq_meta_pt, map_location="cpu", weights_only=False)
@@ -661,6 +664,7 @@ def main():
                 "group_size": int(_sq_have_meta.get("group_size", -1)),
                 "symmetric": bool(_sq_have_meta.get("symmetric", False)),
                 "train_salient": bool(_sq_have_meta.get("train_salient", True)),
+                "salient_init": str(_sq_have_meta.get("salient_init", "minmax")),
             }
             _sq_diff = ", ".join(f"{k}: base={_sq_have[k]} vs config={_sq_want[k]}"
                                  for k in _sq_want if _sq_have[k] != _sq_want[k]) or "unknown"
@@ -701,6 +705,7 @@ def main():
                 nsamples=int(sq_gptq.get("nsamples", 128)),
                 dtype=getattr(torch, cfg["model"]["dtype"]),
                 train_salient=bool(sq_cfg.get("train_salient", True)),
+                salient_init=str(sq_cfg.get("salient_init", "minmax")),
             )
         accelerator.wait_for_everyone()
         print(f"[SALT-Q] Using frozen-code base {saltq_base_dir}")

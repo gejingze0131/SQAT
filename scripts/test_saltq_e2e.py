@@ -297,6 +297,69 @@ def main():
         verify_saltq_deploy_equivalence(model_z, max_layers=len(layers_z))
         check(True, "train_salient=False: deployed == trained (exact) still holds")
 
+        # ---- stage 9: salient_init="gptq" (whole-matrix OBS; salient slice starts ON the GPTQ grid) ----
+        print("\n[stage 9] build_saltq_base(salient_init='gptq')")
+        from safetensors.torch import load_file as _load_st
+        from src.qat_saltq import SALTQ_BASE_FILENAME
+        from src.quant_primitives import group_quantize as _gq
+        saltq_dir_g = os.path.join(work, "saltq_base_sgptq")
+        meta_g = build_saltq_base(
+            permuted_base_dir=perm_dir, perm_meta=perm_meta, tokenizer=tok,
+            calibration_dataloader=loader, target_terminals=TARGETS,
+            group_size=GROUP_SIZE, q_bits=Q_BITS, symmetric=SYMMETRIC,
+            save_dir=saltq_dir_g, device=torch.device("cpu"), nsamples=8, blocksize=32,
+            dtype=torch.float32, salient_init="gptq",
+        )
+        check(meta_g.get("salient_init") == "gptq", "salient_init recorded in the base meta")
+        check(meta.get("salient_init", "minmax") == "minmax", "default base records salient_init=minmax")
+        pc_g = meta_g["param_counts"]
+        check(pc_g["trainable_salient_weights"] == pc["trainable_salient_weights"]
+              and pc_g["frozen_codes"] == pc["frozen_codes"],
+              "salient_init=gptq: same freedom split as the default base")
+        st_g = _load_st(os.path.join(saltq_dir_g, SALTQ_BASE_FILENAME))
+        st_d = _load_st(os.path.join(saltq_dir, SALTQ_BASE_FILENAME))
+        perm_sd = _load_st(os.path.join(perm_dir, "model.safetensors"))
+        n_on_grid = n_slices = n_diff_codes = 0
+        for k in st_g:
+            if not k.endswith(".w_s"):
+                continue
+            name = k[:-len(".w_s")]
+            w_s, s_s = st_g[k], st_g[f"{name}.s_s"]
+            fs = s_s if SYMMETRIC else (s_s, st_g[f"{name}.z_s"])
+            q_g, _, _ = _gq(w_s, GROUP_SIZE, Q_BITS, SYMMETRIC, fixed_scale=fs)
+            fq = (q_g * s_s.repeat_interleave(GROUP_SIZE, dim=1)) if SYMMETRIC else \
+                 ((q_g - st_g[f"{name}.z_s"].repeat_interleave(GROUP_SIZE, dim=1)) * s_s.repeat_interleave(GROUP_SIZE, dim=1))
+            n_on_grid += int(torch.allclose(fq, w_s, atol=1e-6))
+            n_slices += 1
+            # the default base stores the fp16 slice; its min-max grid is the static-group grid the
+            # sweep used, so the two bases share s_s (and z_s) but not w_s
+            check(torch.allclose(st_d[f"{name}.s_s"], s_s), f"{name}: gptq start shares the min-max grid")
+            q_d, _, _ = _gq(st_d[k], GROUP_SIZE, Q_BITS, SYMMETRIC, fixed_scale=fs)
+            n_diff_codes += int((q_d != q_g).sum().item())
+        check(n_slices > 0 and n_on_grid == n_slices,
+              f"salient_init=gptq: all {n_slices} salient starts lie exactly on their LSQ grid")
+        check(n_diff_codes > 0,
+              f"salient_init=gptq: OBS moved {n_diff_codes} salient codes off the RTN choice")
+        model_g, meta_g2 = build_saltq_model(saltq_dir_g, dtype=torch.float32,
+                                             gradient_checkpointing=True)
+        handler_g = SALTQ()
+        model_g = handler_g.prepare_model(model_g, fake_cfg(work), saltq_meta=meta_g2,
+                                          saltq_base_dir=saltq_dir_g)
+        layers_g = saltq_layers(model_g)
+        check(all(hasattr(m, "weight_salient") for m in layers_g.values()
+                  if m.group_k > 0),
+              "salient_init=gptq: salient slices are trainable weights")
+        model_g.train()
+        out_g = model_g(input_ids=ids, labels=ids)
+        check(torch.isfinite(out_g.loss).item(), f"salient_init=gptq: loss finite: {out_g.loss.item():.4f}")
+        out_g.loss.backward()
+        sal_grads = [m.weight_salient.grad for m in layers_g.values() if hasattr(m, "weight_salient")]
+        check(all(g is not None and g.abs().sum() > 0 for g in sal_grads),
+              "salient_init=gptq: every salient weight gets a non-zero gradient from an on-grid start")
+        model_g.eval()
+        verify_saltq_deploy_equivalence(model_g, max_layers=len(layers_g))
+        check(True, "salient_init=gptq: deployed == trained (exact) holds")
+
         print("\n" + "=" * 68)
         print(f"  SALT-Q e2e: {PASSED} passed, {FAILED} failed")
         print("=" * 68)

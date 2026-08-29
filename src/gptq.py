@@ -108,6 +108,7 @@ def gptq_quantize_layer(
     awq_s: Optional[torch.Tensor] = None,   # [group_k] AWQ scale for the salient slice, or None
     keep_salient_fp16: bool = False,        # ablation: leave the salient slice as fp16 (no quant)
     fixed_scale=None,                       # LSQ learned scale[, zp] for the salient slice, or None
+    obs_salient: bool = False,              # SALT-Q salient_init=gptq: ONE OBS problem over all columns
 ):
     """
     Quantize the salient slice [0:group_k] to the canonical SQAT grid (training-consistent) and
@@ -134,6 +135,15 @@ def gptq_quantize_layer(
         f"GPTQ requires in_features ({in_f}) divisible by group_size ({group_size})"
     assert group_k % group_size == 0, \
         f"group_k ({group_k}) must be a multiple of group_size ({group_size})"
+    if obs_salient and group_k > 0:
+        # SALT-Q salient_init=gptq (src/qat_saltq.build_saltq_base): the salient slice is NOT pinned
+        # to the RTN grid. The whole matrix is one OBS problem — the salient columns come first and
+        # their rounding error is compensated by the columns after them, exactly as in a plain GPTQ
+        # export — and the caller keeps the salient part of (W_int, scale, zp) as the trainable LSQ
+        # start. The layout of the returned tensors is unchanged.
+        assert awq_s is None and fixed_scale is None and not keep_salient_fp16, \
+            "obs_salient composes with none of awq_s / fixed_scale / keep_salient_fp16"
+        group_k = 0
     ng = in_f // group_size
     q_max = _sym_q_max(q_bits) if symmetric else _asym_q_max(q_bits)
 
@@ -267,6 +277,7 @@ def gptq_quantize_model_sequential(
     awq_scales: Optional[dict] = None,
     keep_salient_fp16: bool = False,
     lsq_scales: Optional[dict] = None,
+    obs_salient: bool = False,
 ) -> Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """
     In-place sequential GPTQ on a dense (permuted) fp16 model. For every nn.Linear whose terminal
@@ -384,6 +395,7 @@ def gptq_quantize_model_sequential(
                 percdamp=percdamp, blocksize=blocksize, awq_s=awq_s,
                 keep_salient_fp16=keep_salient_fp16,
                 fixed_scale=fixed_scale,
+                obs_salient=obs_salient,
             )
             W_deq = group_dequantize(W_int, sc, zp, group_size, W.shape[1], symmetric)
             if keep_salient_fp16 and gk > 0:
