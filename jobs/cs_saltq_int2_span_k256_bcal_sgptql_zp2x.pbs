@@ -1,0 +1,37 @@
+#!/bin/bash
+#PBS -N cs_saltq_int2_span_k256_bcal_sgptql_zp2x
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+# bcal + salient_init=gptq (see the config header). Permuted base reused from the bcal run.
+# BALANCED-CALIBRATION ("bcal") cell: SALT-Q INT2 g32 k=256 span (old cell 69.61 on BoolQ-only bases)
+# Training recipe byte-identical to the span-cell run it is derived from; the only change is the
+# offline calibration set (task-balanced 3500 records, ~471k real tokens, into BOTH the saliency
+# statistics and the GPTQ Hessians) — see the config header. The bases are built FRESH under the
+# new output_dir (no --permuted_base_dir / --saltq_base_dir reuse: the old bases carry the
+# BoolQ-only calibration this cell exists to replace). Extra cost vs the old cell: ~1 h of
+# calibration (3500-sequence GPTQ took ~45 min in the floor diagnostic).
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+set -x
+bash scripts/test_runs_wiring.sh || exit 1
+set +x
+mkdir -p logs/commonsense_170k
+echo "Start time: $(date)"
+bash runs/saltq/run_saltq_commonsense.sh \
+    --config            configs/saltq_cs170k_int2_g32_ep1_span_k256_bcal_sgptql_zp2x.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_cs170k_int2_g32_ep1_span_k256_bcal_sgptql_zp2x \
+    --saltq_base_dir    outputs/saltq_cs170k_int2_g32_ep1_span_k256_bcal_sgptql/saltq_base_2bit_g32 \
+    --permuted_base_dir outputs/saltq_cs170k_int2_g32_ep1_span_k256_bcal/permuted_fp16_base \
+    --train_layernorms  false \
+    --note              "bcal + salient_init=gptq + salient_init=gptq_latent (fp16 sub-grid position kept where RTN==GPTQ) on the same codes/grids as sgptq zp2x; single variable vs 74.42" \
+    > logs/commonsense_170k/saltq_cs170k_int2_g32_ep1_span_k256_bcal_sgptql_zp2x.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

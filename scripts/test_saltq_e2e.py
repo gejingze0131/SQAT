@@ -360,6 +360,50 @@ def main():
         verify_saltq_deploy_equivalence(model_g, max_layers=len(layers_g))
         check(True, "salient_init=gptq: deployed == trained (exact) holds")
 
+        # ---- stage 10: salient_init="gptq_latent" (GPTQ codes at step 0, fp16 sub-grid position kept) ----
+        print("\n[stage 10] build_saltq_base(salient_init='gptq_latent')")
+        saltq_dir_l = os.path.join(work, "saltq_base_sgptql")
+        meta_l = build_saltq_base(
+            permuted_base_dir=perm_dir, perm_meta=perm_meta, tokenizer=tok,
+            calibration_dataloader=loader, target_terminals=TARGETS,
+            group_size=GROUP_SIZE, q_bits=Q_BITS, symmetric=SYMMETRIC,
+            save_dir=saltq_dir_l, device=torch.device("cpu"), nsamples=8, blocksize=32,
+            dtype=torch.float32, salient_init="gptq_latent",
+        )
+        check(meta_l.get("salient_init") == "gptq_latent", "salient_init=gptq_latent recorded in meta")
+        st_l = _load_st(os.path.join(saltq_dir_l, SALTQ_BASE_FILENAME))
+        # The toy loader draws fresh random calibration data per call, so this sweep is NOT the
+        # stage-9 sweep and cross-base code comparisons are meaningless here. Verify the RULE
+        # instead: with q = the codes this start reproduces on its own grid (the builder asserted
+        # they are the sweep's codes), every salient start equals the fp16 slice (the default
+        # base stores it) where RTN of that slice on the same grid gives q, and the cell centre
+        # (q - z) * s elsewhere.
+        n_rule = n_slices_l = n_kept = n_tot = 0
+        for k in st_l:
+            if not k.endswith(".w_s"):
+                continue
+            name = k[:-len(".w_s")]
+            s_s = st_l[f"{name}.s_s"]
+            fs = s_s if SYMMETRIC else (s_s, st_l[f"{name}.z_s"])
+            q, _, _ = _gq(st_l[k], GROUP_SIZE, Q_BITS, SYMMETRIC, fixed_scale=fs)
+            q_fp, _, _ = _gq(st_d[k], GROUP_SIZE, Q_BITS, SYMMETRIC, fixed_scale=fs)
+            keep = q_fp == q
+            s_rep = s_s.repeat_interleave(GROUP_SIZE, dim=1)
+            centre = q * s_rep if SYMMETRIC else (q - st_l[f"{name}.z_s"].repeat_interleave(GROUP_SIZE, dim=1)) * s_rep
+            expect = torch.where(keep, st_d[k], centre)
+            n_rule += int(torch.allclose(st_l[k], expect, atol=1e-6))
+            n_slices_l += 1
+            n_kept += int(keep.sum()); n_tot += keep.numel()
+        check(n_slices_l > 0 and n_rule == n_slices_l,
+              f"gptq_latent: all {n_slices_l} salient starts follow the rule (fp16 where RTN-on-grid == code, cell centre elsewhere)")
+        check(n_kept > 0, f"gptq_latent: {n_kept}/{n_tot} salient starts keep their fp16 value (off-grid)")
+        model_l, meta_l2 = build_saltq_model(saltq_dir_l, dtype=torch.float32, gradient_checkpointing=True)
+        handler_l = SALTQ()
+        model_l = handler_l.prepare_model(model_l, fake_cfg(work), saltq_meta=meta_l2, saltq_base_dir=saltq_dir_l)
+        model_l.eval()
+        verify_saltq_deploy_equivalence(model_l, max_layers=len(saltq_layers(model_l)))
+        check(True, "gptq_latent: deployed == trained (exact) holds")
+
         print("\n" + "=" * 68)
         print(f"  SALT-Q e2e: {PASSED} passed, {FAILED} failed")
         print("=" * 68)

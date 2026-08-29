@@ -187,6 +187,11 @@ def build_saltq_base(
         weights and its GPTQ (s, z) the LSQ start, so the LSQ fakequant reproduces the sweep's
         codes exactly (asserted below) and step 0 is numerically a full-GPTQ model. The fp16
         salient weights are used only for a diagnostic (how many salient codes OBS moved off RTN).
+      * "gptq_latent": same sweep and the same step-0 codes as "gptq", but the trainable fp32 start
+        keeps the ORIGINAL fp16 value wherever min-max RTN of it already equals the GPTQ code
+        (~95% at INT2) and takes the dequantized GPTQ value only where OBS chose the other
+        neighbour. Step 0 is still exactly the GPTQ model; what is kept is the sub-grid position
+        (distance to the rounding boundary) that the on-grid start of "gptq" throws away.
 
     Returns the meta dict (also written to save_dir/saltq_meta.pt).
     """
@@ -194,8 +199,8 @@ def build_saltq_base(
     from .quant_primitives import group_dequantize, group_quantize
 
     salient_init = str(salient_init)
-    if salient_init not in ("minmax", "gptq"):
-        raise ValueError(f"[SALT-Q] salient_init must be 'minmax' or 'gptq', got {salient_init!r}")
+    if salient_init not in ("minmax", "gptq", "gptq_latent"):
+        raise ValueError(f"[SALT-Q] salient_init must be 'minmax', 'gptq' or 'gptq_latent', got {salient_init!r}")
     from transformers import AutoModelForCausalLM
 
     if device is None:
@@ -309,11 +314,20 @@ def build_saltq_base(
         n_codes += codes.numel()
         n_qparams += 2 * tensors[f"{name}.s_n"].numel()
 
-        if gk > 0 and salient_init == "gptq":
+        if gk > 0 and salient_init in ("gptq", "gptq_latent"):
             s0 = scale[:, :n_sal_g].float().contiguous()
             z0 = zp[:, :n_sal_g].float().contiguous()
             q_sal = W_int[:, :gk]
             W_S = group_dequantize(q_sal, s0, z0, group_size, gk, symmetric).float().contiguous()
+            # What RTN of the fp16 slice ON THE SWEEP'S GRID (s0, z0) would have chosen: the
+            # diagnostic for "gptq" and the keep/replace mask for "gptq_latent". Recomputing a
+            # min-max grid from the fp16 group is the same grid up to float rounding, and that
+            # rounding flips a few boundary cases — the export quantizer on (s0, z0) is the one
+            # whose agreement with the codes the assertion below demands.
+            q_rtn, _, _ = group_quantize(salient_fp[name], group_size, q_bits, symmetric,
+                                         fixed_scale=(s0 if symmetric else (s0, z0)))
+            if salient_init == "gptq_latent":
+                W_S = torch.where(q_rtn == q_sal, salient_fp[name].float(), W_S).contiguous()
             # The train<->export contract: the export quantizer on this start with this grid must
             # give back the sweep's codes, else step 0 is not the GPTQ model it claims to be.
             q_chk, _, _ = group_quantize(W_S, group_size, q_bits, symmetric,
@@ -322,8 +336,6 @@ def build_saltq_base(
             if n_bad:
                 raise RuntimeError(f"[SALT-Q] salient_init=gptq: {name}: {n_bad} of {q_sal.numel()} "
                                    f"salient codes are not reproduced by the LSQ grid at the start")
-            # Diagnostic only: what min-max RTN of the fp16 slice would have chosen.
-            q_rtn, _, _ = group_quantize(salient_fp[name], group_size, q_bits, symmetric)
             n_sal_moved += int((q_rtn != q_sal).sum().item())
             n_sal_codes += int(q_sal.numel())
             tensors[f"{name}.w_s"] = W_S
@@ -376,10 +388,11 @@ def build_saltq_base(
     torch.save(meta, os.path.join(save_dir, SALTQ_META_FILENAME))
 
     tokenizer.save_pretrained(save_dir)
-    if salient_init == "gptq" and n_sal_codes:
-        print(f"[SALT-Q] salient_init=gptq: whole-matrix OBS; {n_sal_moved / n_sal_codes * 100:.2f}% of "
-              f"{n_sal_codes / 1e6:.1f}M salient codes differ from min-max RTN; the LSQ start reproduces "
-              f"every code (asserted per layer)")
+    if salient_init in ("gptq", "gptq_latent") and n_sal_codes:
+        print(f"[SALT-Q] salient_init={salient_init}: whole-matrix OBS; {n_sal_moved / n_sal_codes * 100:.2f}% of "
+              f"{n_sal_codes / 1e6:.1f}M salient codes differ from min-max RTN"
+              + (" (those start at the GPTQ cell centre, the rest at their fp16 value)" if salient_init == "gptq_latent" else "")
+              + "; the LSQ start reproduces every code (asserted per layer)")
     print(
         f"[SALT-Q] base saved -> {save_dir}\n"
         f"[SALT-Q]   frozen codes:              {n_codes / 1e6:9.1f}M  (int8, zero freedom)\n"
