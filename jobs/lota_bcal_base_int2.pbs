@@ -1,0 +1,48 @@
+#!/bin/bash
+#PBS -N lota_bcal_base_int2
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+# The INT2 g32 GPTQ base for LoTA-QAF's bcal row: THIS repo's src/gptq.py on the balanced
+# in-domain calibration (3500 records drawn evenly across the eight tasks, ~471k real tokens),
+# packed into GPTQModel's format so the integer grid is bit-identical to the one QA-LoRA's and
+# SALT-Q's bcal rows start from. make_matched_base.py packs rather than re-quantizes and
+# asserts the round trip, so a layout or zero-point mismatch stops the job here.
+#
+# --nsamples 3500 is not optional: gptq_quantize_model_sequential consumes only the first
+# nsamples sequences of the loader, and qat.sqat_permute.gptq.nsamples in the bcal config is
+# still 128. Taking 128 of a task-balanced loader would walk the Hessian straight back toward
+# the head of the file — which on this dataset is 100% BoolQ, the very thing the bcal cell
+# exists to fix. The script refuses the mismatch rather than trusting the flag.
+#
+# --tag is likewise not optional: the default name is already taken by the BoolQ-only matched
+# base, and the script skips any dir that already has a quantize_config.json.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+LOTA_ENV=/scratch/users/nus/jingzege/conda_envs/lota
+LOG=logs/commonsense_170k/lota_bcal_base_int2.log
+lota_py() {
+    env -u PYTHONPATH -u PYTHONHOME \
+        LD_LIBRARY_PATH="$LOTA_ENV/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$LOTA_ENV/bin/python" "$@"
+}
+nvidia-smi | head -12
+mkdir -p logs/commonsense_170k
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
+set -x
+lota_py baseline/LoTA-QAF/sqat/make_matched_base.py \
+    --config configs/qalora_cs170k_int2_g32_ep1_span_bcal.yaml \
+    --out outputs/lota_bases \
+    --tag Llama-2-7B_bcal \
+    --nsamples 3500 \
+    --calib_batch_size 8 >> "$LOG" 2>&1 || exit 1
+set +x
+
+# The two lines that prove the calibration actually changed.
+grep -E "\[Data\] calibration:|\[GPTQ\] Captured" "$LOG" | tail -2
+echo "rc=$?"; echo "End time: $(date)"

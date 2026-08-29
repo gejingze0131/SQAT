@@ -40,8 +40,11 @@ sys.path.insert(0, SQAT_ROOT)
 from transformers import AutoModelForCausalLM  # noqa: E402
 
 from gptqmodel import BACKEND, GPTQModel  # noqa: E402
-from gptqmodel.quantization.config import FORMAT, QUANT_METHOD, QuantizeConfig  # noqa: E402
+from gptqmodel.quantization.config import (  # noqa: E402
+    FORMAT, META_FIELD_QUANTIZER, META_QUANTIZER_GPTQMODEL, QUANT_METHOD, QuantizeConfig,
+)
 from gptqmodel.utils.model import pack_model  # noqa: E402
+from gptqmodel.version import __version__ as gptqmodel_version  # noqa: E402
 
 from lota_common import resolve_pretrained  # noqa: E402
 from src.data import build_data_collator, load_calibration_data  # noqa: E402
@@ -59,6 +62,14 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--tag", default="Llama-2-7B")
     ap.add_argument("--device", default="cuda:0")
+    # The bcal configs carry the 3500-record budget under qat.sqat (the data side) and
+    # qat.qalora.gptq (what train.py reads), while qat.sqat_permute.gptq.nsamples -- the key
+    # THIS script reads -- is still 128. Overriding here beats deriving a near-duplicate config
+    # whose only job is to restate a number, and it keeps the reference configs untouched.
+    ap.add_argument("--nsamples", type=int, default=None,
+                    help="GPTQ calibration sequences; MUST equal qat.sqat.calibration_samples, "
+                         "since gptq_quantize_model_sequential takes only the first nsamples")
+    ap.add_argument("--calib_batch_size", type=int, default=None)
     args = ap.parse_args()
 
     os.chdir(SQAT_ROOT)   # data.train_dataset paths are repo-root relative
@@ -70,7 +81,22 @@ def main():
     symmetric = bool(cfg["qat"].get("symmetric", False))
     if symmetric:
         raise SystemExit("LoTA-QAF's ternary adaptation assumes an asymmetric affine grid")
-    gcfg = cfg["qat"]["sqat_permute"]["gptq"]
+    gcfg = dict(cfg["qat"]["sqat_permute"]["gptq"])
+    if args.nsamples is not None:
+        gcfg["nsamples"] = args.nsamples
+    if args.calib_batch_size is not None:
+        gcfg["batch_size"] = args.calib_batch_size
+
+    # The whole point of the bcal cell is that the Hessian sees a task-balanced, in-domain
+    # sample. Taking fewer sequences than were loaded silently truncates that back towards the
+    # head of the file -- which, on this dataset, means back towards 100% BoolQ.
+    n_loaded = int(cfg["qat"]["sqat"]["calibration_samples"])
+    if int(gcfg["nsamples"]) != n_loaded:
+        raise SystemExit(
+            f"GPTQ nsamples={gcfg['nsamples']} but qat.sqat.calibration_samples={n_loaded}. "
+            f"gptq_quantize_model_sequential consumes only the first nsamples sequences of the "
+            f"loader, so these must be equal — pass --nsamples {n_loaded}."
+        )
 
     save_dir = os.path.join(args.out, f"{args.tag}_int{bits}_{group_size}_asym_sqatcal")
     if os.path.isfile(os.path.join(save_dir, "quantize_config.json")):
@@ -80,6 +106,7 @@ def main():
     print("=" * 70)
     print(f"  matched GPTQ base — INT{bits} g{group_size}, this repo's settings")
     print(f"  calibration: {cfg['data']['train_dataset']}, {gcfg['nsamples']} sequences, "
+          f"sampling={cfg['qat']['sqat'].get('calibration_sampling', 'first')}, "
           f"batch {gcfg['batch_size']}, percdamp {gcfg['percdamp']}, blocksize {gcfg['blocksize']}")
     print(f"  act-order:   off (src/gptq.py does not reorder columns)")
     print(f"  out:         {save_dir}")
@@ -141,11 +168,23 @@ def main():
         pack_dtype=torch.int32,
     )
 
+    # FORMAT.GPTQ_V2, not GPTQ, and the difference is one quantization step on every weight.
+    # gptqmodel's loader converts a `gptq` (v1) checkpoint on the way in -- v1 serialised
+    # `qzeros = zero - 1`, so from_quantized() adds 1 back UNCONDITIONALLY for the torch kernel
+    # (utils/model.py::convert_gptq_v1_to_v2_format). Its own writer therefore calls
+    # convert_gptq_v2_to_v1_format() before saving as v1 (models/writer.py:205). We do not:
+    # PackableQuantLinear.pack() stores the TRUE zero, i.e. v2 convention already, so declaring
+    # v1 here would hand the loader zeros it then shifts by one. Declaring v2 is what makes the
+    # bytes on disk mean what they say. The round-trip assertion below is what caught this.
     qcfg = QuantizeConfig(
         bits=bits, group_size=group_size, sym=symmetric, desc_act=False,
-        damp_percent=float(gcfg["percdamp"]), format=FORMAT.GPTQ,
+        damp_percent=float(gcfg["percdamp"]), format=FORMAT.GPTQ_V2,
         quant_method=QUANT_METHOD.GPTQ, pack_dtype=torch.int32,
     )
+    # Without a producer stamp, loading sym=False refuses outright ("only supported if produced
+    # by gptqmodel version >= 0.9.0"); QuantizeConfig() leaves meta empty, its own quantize()
+    # path fills it in.
+    qcfg.meta_set_versionable(META_FIELD_QUANTIZER, [f"{META_QUANTIZER_GPTQMODEL}:{gptqmodel_version}"])
     os.makedirs(save_dir, exist_ok=True)
     model.config.quantization_config = qcfg.to_dict()
     model.save_pretrained(save_dir, safe_serialization=True)

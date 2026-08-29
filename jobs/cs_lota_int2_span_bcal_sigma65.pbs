@@ -1,0 +1,35 @@
+#!/bin/bash
+#PBS -N cs_lota_int2_bcal_sigma65
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# LoTA-QAF INT2 g32 on the bcal base, sigma_t 6.5% — the paper's task-specific recommendation.
+#
+# HOW TO READ IT. Only against bcal rows — fp16 77.75, GPTQ floor 66.22, QA-LoRA 72.96,
+# SALT-Q 74.42 — and against its OWN --with_base floor for gap recovered, because LoTA-QAF
+# trains on a base this repo built but never fine-tuned, while the 66.22 floor row is a QLoRA
+# checkpoint merged and then quantized and therefore already knows the answer format.
+#
+# No --with_base here: the bare-base floor is identical for both arms and the sigma_t=5%
+# job already scores it. The base is shared with the other arm and must already exist (jobs/lota_bcal_base_int2.pbs);
+# --base_dir implies --skip_quant, so nothing here can rebuild it under a trained adapter.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+mkdir -p logs/commonsense_170k
+bash runs/lota/run_lota_commonsense.sh \
+    --config     baseline/LoTA-QAF/sqat/configs/lota_cs170k_int2_g32_ep1_span_bcal_sigma65.yaml \
+    --bits       2 \
+    --group_size 32 \
+    --base_dir   outputs/lota_bases/Llama-2-7B_bcal_int2_32_asym_sqatcal \
+    --note       "bcal matched base (balanced 3500, this repo's GPTQ grid); sigma_t 6.5% — the paper's task-specific recommendation" \
+    > logs/commonsense_170k/lota_cs170k_int2_g32_ep1_span_bcal_sigma65.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"
