@@ -63,6 +63,22 @@ CELLS = {
         ceil="qlora_none_cs170k_int3_ep1_span-3bit-none-merged-eval",
         qalora="qalora_cs170k_int3_ep1_span-3bit-qalora-dequant-eval",
         saltq={128: "saltq_cs170k_int3_g64_ep1_sal5e5_span-3bit-saltq-deploy-eval"}),
+    "int2_g32_span_rank_bcal": dict(
+        bits=2, gs=32, title="Commonsense INT2 g32, span supervision, balanced calibration (rank-ordered top-k)",
+        mp_prefix="mixedprec_int2_g32_span_rank_bcal", mp_root="outputs/mixedprec_int2_g32_span_rank_bcal",
+        ks=[32, 64, 128, 256, 512, 1024, 2048],
+        floor="qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calD",
+        ceil="qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval",
+        qalora="qalora_cs170k_int2_ep1_span_bcal-2bit-qalora-dequant-eval",
+        saltq={256: "saltq_cs170k_int2_g32_ep1_span_k256_bcal_sgptql_zp2x-2bit-saltq-deploy-eval"}),
+    "int3_g64_span_rank_bcal": dict(
+        bits=3, gs=64, title="Commonsense INT3 g64, span supervision, balanced calibration (rank-ordered top-k)",
+        mp_prefix="mixedprec_int3_g64_span_rank_bcal", mp_root="outputs/mixedprec_int3_g64_span_rank_bcal",
+        ks=[64, 128, 256, 512, 1024, 2048],
+        floor="qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval-calD",
+        ceil="qlora_none_cs170k_int3_ep1_span-3bit-none-merged-eval",
+        qalora="qalora_cs170k_int3_ep1_span_bcal-3bit-qalora-dequant-eval",
+        saltq={128: "saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal-3bit-saltq-deploy-eval"}),
     "int3_g64_span": dict(
         bits=3, gs=64, title="Commonsense INT3 g64, instruction+response supervision",
         mp_prefix="mixedprec_int3_g64_span", mp_root="outputs/mixedprec_int3_g64_span",

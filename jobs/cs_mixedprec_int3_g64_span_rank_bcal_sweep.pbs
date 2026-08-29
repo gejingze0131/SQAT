@@ -1,0 +1,42 @@
+#!/bin/bash
+#PBS -N mixedprec_int3_g64_span_rank_bcal
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+# RE-RUN of jobs/cs_mixedprec_int3_g64_span_sweep.pbs with the RANK-ORDERED permutation meta
+# (outputs/mixedprec_rankperm_k2048, built by jobs/build_rankperm_meta.pbs). The first sweep
+# replayed the trained base's perms, which are saliency-ordered only up to position 128, so its
+# k>128 points kept "top-128 + arbitrary columns" in fp16 -- the flat 128..512 stretch. With
+# every prefix now a true top-k, this is the fp16-salient arm the figure claims. k=128 is re-run
+# too (same SET as before, but the non-salient column order -- hence GPTQ grouping -- changed).
+# bcal replica of the rank-ordered fp16-salient PTQ sweep: same merged fp16 checkpoint, same k
+# ladder, but the GPTQ Hessians come from the BALANCED 3500-record calibration (config qat.sqat +
+# --nsamples 3500) and the column ranking from build_rankperm_meta_bcal. Per-k exports are skipped
+# when present, so a walltime overrun is resubmittable.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+set -e
+mkdir -p logs/commonsense_170k
+python scripts/export_mixed_precision_sweep.py \
+    --model_path    outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-merged-eval \
+    --perm_meta_dir outputs/mixedprec_rankperm_k2048_bcal \
+    --config        configs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal.yaml \
+    --nsamples 3500 --batch_size 8 \
+    --bits 3 --group_size 64 \
+    --group_k 64 128 256 512 1024 2048 \
+    --output_root   outputs/mixedprec_int3_g64_span_rank_bcal \
+    2>&1 | tee logs/commonsense_170k/mixedprec_int3_g64_span_rank_bcal_export.log
+for K in 64 128 256 512 1024 2048; do
+    DIR=outputs/mixedprec_int3_g64_span_rank_bcal/k${K}
+    bash runs/eval_vllm.sh --model_path "$DIR" --dataset commonsense --gpus 0,1,2,3 \
+        --tag "mixedprec_int3_g64_span_rank_bcal_k${K}" \
+        > logs/commonsense_170k/mixedprec_int3_g64_span_rank_bcal_k${K}_eval.log 2>&1
+    echo "k=$K eval rc=$?"
+done
+echo "End time: $(date)"
