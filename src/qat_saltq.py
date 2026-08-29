@@ -258,7 +258,7 @@ def build_saltq_base(
         nsamples=nsamples,
         awq_scales=None,      # SALT-Q trains the salient weights directly; AWQ-S is redundant
         lsq_scales=None,
-        obs_salient=(salient_init == "gptq"),
+        obs_salient=(salient_init in ("gptq", "gptq_latent")),
     )
 
     del model
