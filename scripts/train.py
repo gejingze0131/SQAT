@@ -82,6 +82,18 @@ def _permuted_base_reusable(permuted_dir: str, cfg: dict, sp_cfg: dict):
         "awq_alpha":              awq.get("alpha", 0.5),
         "awq_max":                awq.get("max", 2.0),
     }
+    # Auto segmentation: the config omits boundary_sizes and the meta records the RESULT of the
+    # segment search. Comparing None against [2, 30] declared every autoseg base stale, so each
+    # autoseg run silently re-ran the calibration pass and rewrote the 13 GB base in place — even
+    # one named by --permuted_base_dir that another run's frozen codes sit on (2026-08-29). The
+    # base is reusable when it was itself auto-segmented under the same max_segments.
+    if want["boundary_sizes"] is None:
+        if not bool(meta.get("auto_segments", False)):
+            return None
+        _have_ms = meta.get("max_segments")
+        if _have_ms is not None and int(_have_ms) != int(sp_cfg.get("max_segments", 4)):
+            return None
+        want.pop("boundary_sizes")
     for key, wanted in want.items():
         have = meta.get(key)
         if isinstance(wanted, (list, tuple)) or isinstance(have, (list, tuple)):
@@ -561,6 +573,18 @@ def main():
             if accelerator.is_main_process:
                 print(f"\n[SQAT-Permute] 复用已有 permuted base（配置一致，不重建）: {permuted_dir}\n"
                       f"[SQAT-Permute]   {_perm_reuse}")
+        elif args.permuted_base_dir and os.path.exists(os.path.join(permuted_dir, "sqat_permute_meta.pt")):
+            # An EXPLICIT --permuted_base_dir means "reuse this permutation". If it does not match
+            # the config, rebuilding it in place would overwrite the base that another run's frozen
+            # codes and checkpoints were built on. Refuse; the caller picks a different dir or fixes
+            # the config.
+            raise RuntimeError(
+                f"[SQAT-Permute] --permuted_base_dir {permuted_dir} exists but does not match this "
+                f"config's saliency/segmentation settings (boundary_sizes / group_k / group_size / "
+                f"top_k_ratio / sigmas / awq / reorder). Refusing to rebuild it IN PLACE: other runs' "
+                f"frozen codes sit on that permutation. Use a different --permuted_base_dir (or none, "
+                f"to build under this run's output_dir) or align the config."
+            )
         elif accelerator.is_main_process:
             print("\n[SQAT-Permute] Building permuted fp16 base (permute BEFORE NF4)...")
             sp_tok = load_tokenizer(cfg)
