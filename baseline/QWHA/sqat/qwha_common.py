@@ -29,8 +29,11 @@ QWHA_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SQAT_REPO = os.path.dirname(os.path.dirname(QWHA_REPO))
 
 # Upstream's own imports are written for `python src/init/initialize.py` run from src/init, so both
-# directories go on the path before anything upstream is imported.
-for _p in (os.path.join(QWHA_REPO, "src"), os.path.join(QWHA_REPO, "src", "init")):
+# directories go on the path before anything upstream is imported. SQAT_REPO joins them so
+# `src.gptq` (which uses relative imports, hence must come in as part of the package) resolves
+# from any cwd -- make_bcal_base.py chdirs to the repo root for the data paths, which is not the
+# same thing as being importable from it.
+for _p in (os.path.join(QWHA_REPO, "src"), os.path.join(QWHA_REPO, "src", "init"), SQAT_REPO):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -166,6 +169,59 @@ def load_qwha_adapter(model, path: str, *, scale: float):
 
 # ---------------------------------------------------------------------------- data
 
+_SQAT_DATA = None
+
+
+def sqat_data_module():
+    """This repo's `src/data.py`, loaded by path and cached.
+
+    By path, not as `src.data`: importing the package would run src/__init__.py, which pulls
+    model_loader (bitsandbytes) and trainer -- neither belongs in the QWHA env. src/data.py
+    itself has no intra-repo imports. It is the single source of the cell's prompt, EOS
+    convention, `loss_span` masking, collator and calibration sampling, shared by the training
+    set, the GPTQ base's calibration and the AdaAlloc X^T X.
+    """
+    global _SQAT_DATA
+    if _SQAT_DATA is None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "sqat_data", os.path.join(SQAT_REPO, "src", "data.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _SQAT_DATA = module
+    return _SQAT_DATA
+
+
+def sqat_gptq_module():
+    """This repo's `src/gptq.py`, without running `src/__init__.py`.
+
+    src/gptq.py uses relative imports, so it has to come in as part of a `src` package -- but the
+    real package's __init__ pulls model_loader (bitsandbytes) and trainer, neither of which
+    belongs in the QWHA env. A synthetic package with just the four modules of gptq's dependency
+    chain (qat_base <- quant_primitives, permute_common, gptq -- all of which need only torch and
+    tqdm) gives the identical code with none of that.
+    """
+    if "src.gptq" in sys.modules:
+        return sys.modules["src.gptq"]
+
+    import importlib.util
+    import types
+
+    pkg = sys.modules.get("src")
+    if pkg is None:
+        pkg = types.ModuleType("src")
+        pkg.__path__ = [os.path.join(SQAT_REPO, "src")]
+        sys.modules["src"] = pkg
+    for name in ("qat_base", "quant_primitives", "permute_common", "gptq"):
+        spec = importlib.util.spec_from_file_location(
+            f"src.{name}", os.path.join(SQAT_REPO, "src", f"{name}.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[f"src.{name}"] = module
+        spec.loader.exec_module(module)
+    return sys.modules["src.gptq"]
+
+
 def load_sqat_data_module(cfg: dict, tokenizer):
     """Tokenized train set + collator, straight out of this repo's `src/data.py`.
 
@@ -173,15 +229,6 @@ def load_sqat_data_module(cfg: dict, tokenizer):
     cell is defined by the prompt, the EOS convention and `data.loss_span` -- so the tokenization
     comes from the same module those rows used, not from a copy.
     """
-    # Loaded by path, not as `src.data`: importing the package would pull src/__init__.py, whose
-    # model_loader wants bitsandbytes and this repo's peft version -- neither of which belongs in
-    # the QWHA env. src/data.py itself has no intra-repo imports.
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        "sqat_data", os.path.join(SQAT_REPO, "src", "data.py"))
-    data = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(data)
-
+    data = sqat_data_module()
     train_dataset, eval_dataset = data.load_dataset_for_training(cfg, tokenizer)
     return train_dataset, eval_dataset, data.build_data_collator(tokenizer)

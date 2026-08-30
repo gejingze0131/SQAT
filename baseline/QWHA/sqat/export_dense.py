@@ -49,21 +49,49 @@ def check_layer(module, w_eff: torch.Tensor, n: int = 4) -> float:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter_dir", required=True, help="trained QWHA output_dir")
+    ap.add_argument("--adapter_dir", required=True,
+                    help="trained QWHA output_dir, or 'none' to export the bare quantized base "
+                         "(this method's own floor) -- which then needs --config")
+    ap.add_argument("--config", default=None,
+                    help="required with --adapter_dir none: names the base, rank and scale")
     ap.add_argument("--out", required=True, help="dense fp16 checkpoint directory")
     ap.add_argument("--tol", type=float, default=1e-4,
                     help="max allowed relative error between the QWHA layer and its dense form")
     args = ap.parse_args()
 
-    with open(os.path.join(args.adapter_dir, "qwha_run_meta.json")) as f:
-        meta = json.load(f)
+    bare_base = args.adapter_dir.lower() == "none"
+    if bare_base:
+        if not args.config:
+            raise SystemExit("--adapter_dir none needs --config")
+        import yaml
+
+        with open(args.config) as f:
+            cfg = yaml.safe_load(f)
+        meta = dict(model_id=cfg["model"]["name"], bits=int(cfg["model"]["quant_bits"]),
+                    group_size=int(cfg["qwha"]["group_size"]), rank=int(cfg["qwha"]["rank"]),
+                    scale=float(cfg["qwha"]["scale"]), gptq_base=cfg["qwha"].get("gptq_base_dir"),
+                    adapter="none (bare quantized base)")
+    else:
+        with open(os.path.join(args.adapter_dir, "qwha_run_meta.json")) as f:
+            meta = json.load(f)
     model_id, bits, gs = meta["model_id"], meta["bits"], meta["group_size"]
     print(f"[export] {args.adapter_dir}: INT{bits} g{gs} rank{meta['rank']} scale{meta['scale']}")
 
+    # The base the adapter was TRAINED against, recorded by train_commonsense.py -- never
+    # recomputed from (bits, group_size): a QWHA spectrum initialized from one grid's
+    # quantization error says nothing about another's.
+    base_dir = meta.get("gptq_base") or gptq_base_dir(model_id, bits, gs)
+    print(f"[export] base {base_dir}")
+
     # fp32 so the identity check measures the export, not bf16 rounding.
-    qwha = build_qwha_model(gptq_base_dir(model_id, bits, gs), rank=meta["rank"],
+    qwha = build_qwha_model(base_dir, rank=meta["rank"],
                             scale=meta["scale"], device="cuda", dtype=torch.float32)
-    load_qwha_adapter(qwha, args.adapter_dir, scale=meta["scale"])
+    if bare_base:
+        # build_qwha_model starts every spectrum at zero, so delta W is exactly 0 and W_eff is
+        # the dequantized base -- scored through the same seam as the trained row.
+        print("[export] bare base: spectrum left at zero")
+    else:
+        load_qwha_adapter(qwha, args.adapter_dir, scale=meta["scale"])
     qwha.eval()
 
     dense = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float16,

@@ -1,0 +1,42 @@
+#!/bin/bash
+#PBS -N cs_qwha_int2_g32_bcal
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# QWHA INT2 g32, Commonsense-170k, 1 epoch, loss_span=instruction+response, BALANCED
+# calibration -- the bcal cell, next to QA-LoRA and SALT-Q's bcal rows.
+#
+# HOW TO READ IT. Only against the other bcal rows (fp16 77.75; floor 76.05 / 66.22; QA-LoRA
+# 77.71 / 72.96; SALT-Q 78.85 / 74.42 at INT3 / INT2). And not as a pure INT2 row: QWHA
+# deploys as INT2 codes PLUS an unmergeable fp16 spectrum (~160M values at the r=64 budget),
+# so it belongs next to the fp16-salient PTQ rows as "2 + fp16". --with_base scores the bare
+# quantized base through the same seam, which is this method's own floor.
+#
+# Depends on jobs/qwha_prep_int2_g32_bcal.pbs having produced the base + initialized adapter.
+# Train + export + eval + collection all land in the one log below.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_DISABLE_XET=1
+mkdir -p logs/commonsense_170k
+bash runs/qwha/run_qwha_commonsense.sh \
+    --config     baseline/QWHA/sqat/configs/qwha_cs170k_int2_g32_ep1_span_bcal.yaml \
+    --bits       2 \
+    --group_size 32 \
+    --skip_quant --skip_init \
+    --with_base \
+    --note       "bcal 3500 balanced; lr from QWHA paper (Llama-3.1-8B/Alpaca); deploys as 2+fp16" \
+    > logs/commonsense_170k/qwha_cs170k_int2_g32_ep1_span_bcal.log 2>&1
+rc=$?
+echo "rc=$rc"; echo "End time: $(date)"
+# The job's exit status IS the dependency signal: a downstream `-W depend=afterok:` job is
+# released on it. Ending on `echo` would hand PBS the echo's 0 no matter how the run went.
+exit $rc

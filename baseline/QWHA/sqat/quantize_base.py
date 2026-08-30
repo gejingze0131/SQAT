@@ -9,6 +9,13 @@ cache directory carries the group size.
 Deliberately NOT MagR. Upstream's README quantizes with MagR + GPTQ; this repo's INT3 g64 / INT2
 g32 rows (GPTQ floor, QA-LoRA, SALT-Q) all sit on a plain GPTQ base, and a baseline on a stronger
 base measures the base, not the adapter.
+
+NOT USED BY THE REPORTED ROWS. `dataset="wikitext2"` is generic-text calibration, which is what
+this repo measured as the thing that breaks low-bit bases here: the same merged checkpoint scored
+INT2 36.64 on the old first-N (BoolQ-only, 9.5k token) set and 66.22 on the task-balanced
+3500-record in-domain set, and C4 128x2048 loses the instruction template outright (30.67). The
+bcal rows are built by make_bcal_base.py instead. This script is kept as the upstream-faithful
+path -- for provenance, and for a calibration ablation on an otherwise identical pipeline.
 """
 
 import argparse

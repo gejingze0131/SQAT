@@ -1,0 +1,36 @@
+#!/bin/bash
+#PBS -N qwha_prep_int3_g64
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# QWHA baseline, INT3 g64: the two single-GPU stages that do not depend on the training
+# recipe, both on the BALANCED in-domain calibration this repo's bcal cell is defined by --
+# the GPTQ base (our grid, packed into GPTQModel's format, round trip asserted) and the AdaAlloc
+# adapter initialization (X^T X over the same 3500 records, padding masked). Upstream's own path
+# is optimum + wikitext2, which is the generic calibration measured here as the thing that
+# breaks low-bit bases (INT2 floor 36.64 first-N / 66.22 balanced / 30.67 C4).
+#
+# Both stages are idempotent and shared per width; the 4-GPU training job depends on this one.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+free -g | head -2
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_DISABLE_XET=1
+mkdir -p logs/commonsense_170k
+bash runs/qwha/run_qwha_commonsense.sh \
+    --config     baseline/QWHA/sqat/configs/qwha_cs170k_int3_g64_ep1_span_bcal.yaml \
+    --bits       3 \
+    --group_size 64 \
+    --skip_train --skip_export --skip_eval \
+    > logs/commonsense_170k/qwha_cs170k_int3_g64_ep1_span_bcal_prep.log 2>&1
+rc=$?
+echo "rc=$rc"; echo "End time: $(date)"
+# The job's exit status IS the dependency signal: a downstream `-W depend=afterok:` job is
+# released on it. Ending on `echo` would hand PBS the echo's 0 no matter how the run went.
+exit $rc

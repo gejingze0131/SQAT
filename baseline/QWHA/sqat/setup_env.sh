@@ -14,10 +14,19 @@
 # CONDA_BACKUP_CXX unguarded, and conda re-runs them after every `conda install` in the env.
 set -eo pipefail
 
-ENV_PREFIX=/scratch/users/nus/jingzege/conda_envs/qwha
-QWHA_DIR=/home/users/nus/jingzege/projects/SQAT/baseline/QWHA
+# Overridable so the env can be rebuilt anywhere; the defaults are this cluster's.
+#   ENV_PREFIX            where the env goes (a prefix path, or export CONDA_ENV_NAME instead)
+#   TORCH_CUDA_ARCH_LIST  compute capability to compile fast-hadamard-transform for.
+#                         8.0 = A100, 8.6 = A6000/3090, 8.9 = L40S/4090, 9.0 = H100.
+#   BUILD_GPTQMODEL_CUDA  1 to also build gptqmodel's CUDA kernels (not needed: QWHA only calls
+#                         QuantLinear.dequantize_weight(), which the torch kernel implements)
+ENV_PREFIX="${ENV_PREFIX:-/scratch/users/nus/jingzege/conda_envs/qwha}"
+export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0}"
+BUILD_GPTQMODEL_CUDA="${BUILD_GPTQMODEL_CUDA:-0}"
+# The vendored upstream tree (this script lives in baseline/QWHA/sqat/).
+QWHA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-source ~/miniforge3/etc/profile.d/conda.sh
+source "$(conda info --base 2>/dev/null || echo ~/miniforge3)/etc/profile.d/conda.sh"
 
 if [ ! -d "$ENV_PREFIX" ]; then
     conda create -y -p "$ENV_PREFIX" python=3.12
@@ -37,9 +46,8 @@ export CUDA_HOME="$ENV_PREFIX"
 export CC="$ENV_PREFIX/bin/x86_64-conda-linux-gnu-gcc"
 export CXX="$ENV_PREFIX/bin/x86_64-conda-linux-gnu-g++"
 export NVCC_PREPEND_FLAGS="-ccbin $CXX"
-export TORCH_CUDA_ARCH_LIST="8.0"
-export MAX_JOBS=16
-export PIP_CACHE_DIR=/scratch/users/nus/jingzege/cache/pip
+export MAX_JOBS="${MAX_JOBS:-16}"
+export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$HOME/.cache/pip}"
 
 pip install --upgrade pip setuptools wheel packaging ninja
 pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
@@ -64,7 +72,14 @@ pip install --no-build-isolation \
 # unset and no GPU is visible -- which is the login node -- turning a long, fragile build into a
 # pure-python install. QWHA only ever calls QuantLinear.dequantize_weight(), which the torch
 # kernel implements for 2/3/4/8 bits; the smoke test is what proves that end to end.
-env -u TORCH_CUDA_ARCH_LIST pip install --no-build-isolation --no-deps gptqmodel==2.2.0
+if [ "$BUILD_GPTQMODEL_CUDA" = "1" ]; then
+    pip install --no-build-isolation --no-deps gptqmodel==2.2.0
+else
+    # Hiding both the arch list AND the GPUs is what makes setup.py take the pure-python path:
+    # it only skips the extensions when TORCH_CUDA_ARCH_LIST is unset AND torch sees no device.
+    env -u TORCH_CUDA_ARCH_LIST CUDA_VISIBLE_DEVICES= \
+        pip install --no-build-isolation --no-deps gptqmodel==2.2.0
+fi
 
 # --no-deps: the fork's setup.py pins a transformers range that would otherwise move the pinned
 # 4.51.3 underneath the rest of the env.

@@ -1,0 +1,82 @@
+# =============================================================================
+# QWHA baseline — Commonsense-170k, INT3 g64, ONE epoch, span cell, BALANCED CALIBRATION.
+#
+# METHOD (upstream, untouched): a Walsh-Hadamard adapter at the LoRA-r64 parameter budget
+# n_frequency = 64*(in + out) per layer, AdaAlloc-initialized from the quantization error and
+# refined against the calibration X^T X, adapter scaling 4000, only the spectrum trained.
+#
+# BASE + CALIBRATION (this repo): the wikitext2 path upstream ships is exactly what this repo
+# measured as broken at low bit width — the same merged checkpoint scored INT2 36.64 on the old
+# first-N (100% BoolQ, 9.5k token) calibration and 66.22 on the task-balanced 3500-record set
+# (471k tokens), and generic C4 128x2048 loses the instruction template outright (30.67). So the
+# base is OUR GPTQ grid on the balanced in-domain set (make_bcal_base.py packs it into the
+# GPTQModel format the adapter wraps), and the AdaAlloc X^T X is estimated on the SAME records.
+# qat.gptq.nsamples must equal qat.sqat.calibration_samples: gptq_quantize_model_sequential only
+# consumes the first nsamples records of the calibration set.
+#
+# RECIPE (this repo): identical to configs/qalora_cs170k_int3_g64_ep1_span_bcal.yaml —
+# datasets/commonsense, loss_span instruction+response, 1 epoch, effective batch 80 (5 x 4 x 4
+# GPUs), cosine, warmup 0.03, wd 0.01, max_grad_norm 0.3, bf16, group_by_length false, seed 42.
+#
+# NOT matched, deliberately: learning_rate is QWHA's own. The paper (Table 9) has no Llama-2-7B
+# row; 3e-5 is its Llama-3.1-8B / Alpaca value at 3 bits — instruction tuning, nearest model.
+#
+# Deployment note: unlike QA-LoRA and SALT-Q, a QWHA checkpoint is INT3 codes PLUS an fp16
+# spectrum (~160M values, the r=64 budget) that has no lossless merge into 3-bit weights. Read
+# the row as "3 + fp16", and only against the other bcal rows.
+# =============================================================================
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 3
+  max_seq_len: 2048
+
+qwha:
+  group_size: 64
+  rank: 64                   # parameter budget: n_frequency = 64 * (in + out) per layer
+  scale: 4000.0              # paper Table 8
+  gptq_base_dir: "outputs/qwha_bases/Llama-2-7B_int3_64_asym_bcal"
+  init_ckpt_dir: "outputs/qwha_bases/Llama-2-7B_int3_64_asym_bcal-init-rank64"
+  init_calib_batch_size: 8
+
+qat:
+  symmetric: false
+  sqat:
+    calibration_samples: 3500      # task-balanced, ~471k real tokens
+    calibration_sampling: balanced
+    calibration_seq_len: 2048
+  gptq:
+    nsamples: 3500                 # MUST equal calibration_samples
+    percdamp: 0.01
+    blocksize: 128
+    batch_size: 8
+
+data:
+  train_dataset: "datasets/commonsense"
+  train_split: "train"
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null
+  shuffle_dataset: true
+  loss_span: instruction+response
+  num_proc: 32
+
+training:
+  output_dir: "outputs/qwha_cs170k_int3_g64_ep1_span_bcal"
+  num_epochs: 1
+  per_device_train_batch_size: 5
+  gradient_accumulation_steps: 4
+  group_by_length: false
+  learning_rate: 3.0e-5
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "none"
+  seed: 42

@@ -52,8 +52,10 @@ def main():
 
     model_id = mcfg["name"]
     bits, gs, rank = mcfg["quant_bits"], qcfg["group_size"], qcfg["rank"]
-    gptq_path = gptq_base_dir(model_id, bits, gs)
-    init_path = args.init_ckpt or init_ckpt_dir(model_id, bits, gs, rank)
+    # The bcal configs name both explicitly; the fall-backs are upstream's cache layout.
+    gptq_path = qcfg.get("gptq_base_dir") or gptq_base_dir(model_id, bits, gs)
+    init_path = (args.init_ckpt or qcfg.get("init_ckpt_dir")
+                 or init_ckpt_dir(model_id, bits, gs, rank))
 
     if local_rank == 0:
         print("=" * 70)
@@ -127,6 +129,7 @@ def main():
                     scale=qcfg["scale"], learning_rate=tcfg["learning_rate"],
                     gptq_base=gptq_path, init_ckpt=init_path,
                     loss_span=cfg["data"]["loss_span"],
+                    calibration=cfg.get("qat", {}).get("sqat"),
                     effective_batch=tcfg["per_device_train_batch_size"]
                     * tcfg["gradient_accumulation_steps"] * world_size,
                     epochs=tcfg["num_epochs"], config=os.path.abspath(args.config))
