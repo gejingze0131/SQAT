@@ -1,0 +1,343 @@
+====================================================================
+  SALT-Q end-to-end pipeline (tiny Llama, CPU)
+====================================================================
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 153.14it/s]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+
+[stage 1] build_permuted_fp16_checkpoint
+[SegPerm] Stage-2 pre-quant: loading /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/base in torch.float32 (no BNB) ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8207.21it/s]
+[SegPerm] Calibrating E[x²]:   0%|          | 0/4 [00:00<?, ?it/s][SegPerm] Calibrating E[x²]: 100%|██████████| 4/4 [00:00<00:00, 202.72it/s]
+[SegPerm] Manual segments + fixed global group_k + legacy top_k_ratio selection: boundary_sizes=[1, 3], group_k=32, top_k_ratio=0.1
+[SegPerm] Down-proj fixed global group_k: group_k=32, values=[32, 32, 32, 32]
+[SegPerm] Selective-QAT fakequant parameter coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+[SegPerm] Legacy seg 0 (L0-L0): group_k=32, top_k_ratio=0.1, union_topk=23, energy_cov=29.7%, first10=[0, 3, 4, 6, 20, 37, 40, 43, 50, 59]
+[SegPerm] Legacy seg 1 (L1-L3): group_k=32, top_k_ratio=0.1, union_topk=38, energy_cov=32.9%, first10=[2, 17, 19, 23, 28, 29, 31, 38, 46, 55]
+[SegPerm] WARNING: legacy seg 1 has top-ratio union size 38 > group_k=32; only the highest aggregate-score union channels fit.
+[SegPerm] Permuted residual stream: 2 segs, num_runtime_permutes=1
+[SegPerm] Applied P4 (down_proj) permutations: 4 layers
+[SegPerm] Hadamard rotation applied to 4/4 layers (head_dim=32, num_kv_heads=4)
+[SegPerm] Saving permuted fp16 base → /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 160.50it/s]
+[SegPerm] perm_meta saved → /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base/sqat_permute_meta.pt (num_runtime_permutes=1, num_P4=4)
+  [PASS] one runtime boundary gather (2 segments)
+
+[stage 2] build_saltq_base (GPTQ -> frozen codes)
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base in torch.float32 ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 9546.42it/s]
+[SALT-Q] Captured salient init for 24 projections (0.1M trainable weights)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[GPTQ] Captured 4 calibration batches (8 sequences, 256 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/4 [00:00<?, ?it/s][GPTQ] Sequential quantize:  50%|█████     | 2/4 [00:00<00:00, 13.85it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 14.10it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 14.06it/s]
+[SALT-Q] base saved -> /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/saltq_base
+[SALT-Q]   frozen codes:                    0.5M  (int8, zero freedom)
+[SALT-Q]   trainable salient weights:       0.1M  (full weight freedom)
+[SALT-Q]   trainable (s, z):                0.1M  (affine freedom)
+  [PASS] all three freedom tiers populated
+  [PASS] 28 SALT-Q layers recorded in meta
+  [PASS] o_proj has group_k=0 (pure affine-freedom layer)
+
+[stage 3] build_saltq_model + prepare_model
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 7852.24it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 42.4%, worst 50.2% (model.layers.0.mlp.down_proj)
+[SALT-Q] Replaced 28 linears; trainable 0.2M params (72.99% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 0.5M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.float32 (0.0 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 28 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 32], group_size=16, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 0.1M full-freedom salient weights + 0.1M affine (s,z) + 0.5M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+  [PASS] 28 SALTQLinear installed
+  [PASS] boundary gather registered on the live model
+  [PASS] trainable params = 180224
+  [PASS] codes stay on the host with no grad (66688 frozen float params remain: embed/norm/head)
+  [PASS] q*s precomputed as a frozen device buffer (z-only forward, no reconstruction)
+
+[stage 4] forward / backward / optimizer step
+  [PASS] loss finite: 5.5372
+  [PASS] 100/100 trainable tensors received a non-zero gradient
+  [PASS] frozen codes untouched by the optimizer step
+
+[stage 5] deployed == trained (exact)
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 28 layers (max|Δ| = 0, exact).
+  [PASS] every layer: max|Δ| == 0 between deployed and training weight
+
+[stage 6] trainable-only checkpoint round-trip
+[SALT-Q] Saved 100 trainable tensors (0.2M params) to /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/ckpt
+  [PASS] checkpoint files: ['saltq_ckpt_meta.pt', 'saltq_trainable.safetensors']
+  [PASS] checkpoint (732 kB) < frozen base (1392 kB) — codes are not duplicated per checkpoint
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8834.88it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 42.4%, worst 50.2% (model.layers.0.mlp.down_proj)
+[SALT-Q] Replaced 28 linears; trainable 0.2M params (72.99% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 0.5M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.float32 (0.0 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 28 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 32], group_size=16, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 0.1M full-freedom salient weights + 0.1M affine (s,z) + 0.5M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+[SALT-Q] Loaded 100 trainable tensors from /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/ckpt/saltq_trainable.safetensors
+  [PASS] reloaded checkpoint reproduces logits exactly, max|Δ|=0.000e+00
+
+[stage 7] export_saltq (merge-free)
+[SALT-Q] Verifying deploy == train equivalence ...
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 8 layers (max|Δ| = 0, exact).
+[SALT-Q] Materializing dense deployed weights (torch.float32) ...
+[SALT-Q] dense-storage cast error: max|Δ|=0.000e+00 (the only lossy step; a packed INT-b export would not have it)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 158.49it/s]
+[Export] Saved sqat_permute metadata to /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/exported/sqat_permute_meta.pt
+[SALT-Q] Exported deployed model to /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/exported
+  [PASS] boundary-gather metadata shipped with the export (eval needs it)
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 7842.08it/s]
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+  [PASS] exported model reproduces the training model's logits, max|Δ|=7.823e-07
+
+[stage 8] build_saltq_base(train_salient=False) — z-only-everywhere ablation
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base in torch.float32 ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8433.15it/s]
+[SALT-Q] train_salient=False: salient slice will NOT be captured as a trainable weight — it is folded into the frozen-codes + trainable-(s,z) pool (z-only ablation).
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[GPTQ] Captured 4 calibration batches (8 sequences, 256 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/4 [00:00<?, ?it/s][GPTQ] Sequential quantize:  50%|█████     | 2/4 [00:00<00:00, 12.35it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 13.47it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 13.28it/s]
+[SALT-Q] base saved -> /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/saltq_base_zonly
+[SALT-Q]   frozen codes:                    0.7M  (int8, zero freedom)
+[SALT-Q]   trainable salient weights:       0.0M  (full weight freedom)
+[SALT-Q]   trainable (s, z):                0.1M  (affine freedom)
+  [PASS] train_salient=False: zero trainable salient weights
+  [PASS] train_salient=False: frozen codes cover the whole width (more than the default run)
+  [PASS] train_salient=False: EVERY layer recorded with group_k=0, not just o_proj
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8730.67it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 40.6%, worst 49.5% (model.layers.0.self_attn.o_proj)
+[SALT-Q] Replaced 28 linears; trainable 0.0M params (38.05% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 0.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.float32 (0.0 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 28 SALT-Q linears, num_runtime_permutes=1, group_k values=[0], group_size=16, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 0.0M full-freedom salient weights + 0.1M affine (s,z) + 0.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+  [PASS] train_salient=False: no SALTQLinear has a weight_salient parameter
+  [PASS] train_salient=False: loss finite: 5.5372
+  [PASS] train_salient=False: all 28 trainable tensors (pure z/norms) got a non-zero gradient
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 28 layers (max|Δ| = 0, exact).
+  [PASS] train_salient=False: deployed == trained (exact) still holds
+
+[stage 9] build_saltq_base(salient_init='gptq')
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base in torch.float32 ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8484.33it/s]
+[SALT-Q] Captured salient init for 24 projections (0.1M trainable weights)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[GPTQ] Captured 4 calibration batches (8 sequences, 256 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/4 [00:00<?, ?it/s][GPTQ] Sequential quantize:  25%|██▌       | 1/4 [00:00<00:00,  9.75it/s][GPTQ] Sequential quantize:  75%|███████▌  | 3/4 [00:00<00:00, 11.25it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 11.34it/s]
+[SALT-Q] salient_init=gptq: whole-matrix OBS; 8.57% of 0.1M salient codes differ from min-max RTN; the LSQ start reproduces every code (asserted per layer)
+[SALT-Q] base saved -> /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/saltq_base_sgptq
+[SALT-Q]   frozen codes:                    0.5M  (int8, zero freedom)
+[SALT-Q]   trainable salient weights:       0.1M  (full weight freedom)
+[SALT-Q]   trainable (s, z):                0.1M  (affine freedom)
+  [PASS] salient_init recorded in the base meta
+  [PASS] default base records salient_init=minmax
+  [PASS] salient_init=gptq: same freedom split as the default base
+  [PASS] model.layers.0.mlp.down_proj: gptq start shares the min-max grid
+  [PASS] model.layers.0.mlp.gate_proj: gptq start shares the min-max grid
+  [PASS] model.layers.0.mlp.up_proj: gptq start shares the min-max grid
+  [PASS] model.layers.0.self_attn.k_proj: gptq start shares the min-max grid
+  [PASS] model.layers.0.self_attn.q_proj: gptq start shares the min-max grid
+  [PASS] model.layers.0.self_attn.v_proj: gptq start shares the min-max grid
+  [PASS] model.layers.1.mlp.down_proj: gptq start shares the min-max grid
+  [PASS] model.layers.1.mlp.gate_proj: gptq start shares the min-max grid
+  [PASS] model.layers.1.mlp.up_proj: gptq start shares the min-max grid
+  [PASS] model.layers.1.self_attn.k_proj: gptq start shares the min-max grid
+  [PASS] model.layers.1.self_attn.q_proj: gptq start shares the min-max grid
+  [PASS] model.layers.1.self_attn.v_proj: gptq start shares the min-max grid
+  [PASS] model.layers.2.mlp.down_proj: gptq start shares the min-max grid
+  [PASS] model.layers.2.mlp.gate_proj: gptq start shares the min-max grid
+  [PASS] model.layers.2.mlp.up_proj: gptq start shares the min-max grid
+  [PASS] model.layers.2.self_attn.k_proj: gptq start shares the min-max grid
+  [PASS] model.layers.2.self_attn.q_proj: gptq start shares the min-max grid
+  [PASS] model.layers.2.self_attn.v_proj: gptq start shares the min-max grid
+  [PASS] model.layers.3.mlp.down_proj: gptq start shares the min-max grid
+  [PASS] model.layers.3.mlp.gate_proj: gptq start shares the min-max grid
+  [PASS] model.layers.3.mlp.up_proj: gptq start shares the min-max grid
+  [PASS] model.layers.3.self_attn.k_proj: gptq start shares the min-max grid
+  [PASS] model.layers.3.self_attn.q_proj: gptq start shares the min-max grid
+  [PASS] model.layers.3.self_attn.v_proj: gptq start shares the min-max grid
+  [PASS] salient_init=gptq: all 24 salient starts lie exactly on their LSQ grid
+  [PASS] salient_init=gptq: OBS moved 11237 salient codes off the RTN choice
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8866.49it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 49.0%, worst 56.1% (model.layers.0.mlp.down_proj)
+[SALT-Q] Replaced 28 linears; trainable 0.2M params (72.99% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 0.5M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.float32 (0.0 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 28 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 32], group_size=16, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 0.1M full-freedom salient weights + 0.1M affine (s,z) + 0.5M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+  [PASS] salient_init=gptq: salient slices are trainable weights
+  [PASS] salient_init=gptq: loss finite: 5.5142
+  [PASS] salient_init=gptq: every salient weight gets a non-zero gradient from an on-grid start
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 28 layers (max|Δ| = 0, exact).
+  [PASS] salient_init=gptq: deployed == trained (exact) holds
+
+[stage 10] build_saltq_base(salient_init='gptq_latent')
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base in torch.float32 ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8382.16it/s]
+[SALT-Q] Captured salient init for 24 projections (0.1M trainable weights)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[GPTQ] Captured 4 calibration batches (8 sequences, 256 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/4 [00:00<?, ?it/s][GPTQ] Sequential quantize:  50%|█████     | 2/4 [00:00<00:00, 11.77it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 11.91it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 11.89it/s]
+[SALT-Q] salient_init=gptq_latent: whole-matrix OBS; 8.57% of 0.1M salient codes differ from min-max RTN (those start at the GPTQ cell centre, the rest at their fp16 value); the LSQ start reproduces every code (asserted per layer)
+[SALT-Q] base saved -> /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/saltq_base_sgptql
+[SALT-Q]   frozen codes:                    0.5M  (int8, zero freedom)
+[SALT-Q]   trainable salient weights:       0.1M  (full weight freedom)
+[SALT-Q]   trainable (s, z):                0.1M  (affine freedom)
+  [PASS] salient_init=gptq_latent recorded in meta
+  [PASS] gptq_latent: all 24 salient starts follow the rule (fp16 where RTN-on-grid == code, cell centre elsewhere)
+  [PASS] gptq_latent: 119835/131072 salient starts keep their fp16 value (off-grid)
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_l57hhcjj/permuted_fp16_base ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8902.20it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 49.0%, worst 56.1% (model.layers.0.mlp.down_proj)
+[SALT-Q] Replaced 28 linears; trainable 0.2M params (72.99% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 0.5M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.float32 (0.0 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 28 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 32], group_size=16, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 0.1M full-freedom salient weights + 0.1M affine (s,z) + 0.5M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 28 layers (max|Δ| = 0, exact).
+  [PASS] gptq_latent: deployed == trained (exact) holds
+
+====================================================================
+  SALT-Q e2e: 62 passed, 0 failed
+====================================================================

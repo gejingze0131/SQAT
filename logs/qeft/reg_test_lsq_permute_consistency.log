@@ -1,0 +1,45 @@
+== salient train==export (LSQ grid), no AWQ ==
+  [PASS] SYM  INT2 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT2 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT2 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT2 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT3 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT3 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g128: salient train==export (max|Δ|=0.00e+00)
+
+== salient train==export (LSQ grid), AWQ amplification ON ==
+  [PASS] SYM  INT2 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT2 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT2 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT2 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT3 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT3 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+
+== fused_qat_residual_outputs LSQ == reference delta ==
+  [PASS] SYM      : fused residual == reference (max|Δ|=0.00e+00)
+  [PASS] SYM  +AWQ: fused residual == reference (max|Δ|=0.00e+00)
+  [PASS] ASYM     : fused residual == reference (max|Δ|=0.00e+00)
+  [PASS] ASYM +AWQ: fused residual == reference (max|Δ|=0.00e+00)
+
+== group_quantize/dequantize(fixed) == group_fakequant(fixed) ==
+  [PASS] SYM : quantize→dequant == fakequant (max|Δ|=0.00e+00)
+  [PASS] ASYM: quantize→dequant == fakequant (max|Δ|=0.00e+00)
+
+== regression: fixed_scale=None == original min-max group_fakequant ==
+  [PASS] SYM : None path unchanged
+  [PASS] ASYM: None path unchanged
+
+====================================================
+  sqat_permute LSQ consistency: 32 passed, 0 failed
+====================================================

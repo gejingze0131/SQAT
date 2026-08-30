@@ -1,0 +1,380 @@
+===== saltq_zp5e3 : export =====
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+======================================================================
+  QLoRA Training — 2-bit | QAT mode: saltq | symmetric=False
+======================================================================
+  Train dataset:   metamath
+  Prompt template: metamath
+  Train split:     train
+  Val split:       None
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq/permuted_fp16_base ...
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   2%|▏         | 5/291 [00:00<00:09, 31.11it/s]Loading weights:   5%|▍         | 14/291 [00:00<00:05, 48.05it/s]Loading weights:   7%|▋         | 21/291 [00:00<00:05, 48.91it/s]Loading weights:   9%|▉         | 26/291 [00:00<00:06, 39.69it/s]Loading weights:  13%|█▎        | 37/291 [00:00<00:05, 48.30it/s]Loading weights:  21%|██        | 60/291 [00:01<00:03, 73.24it/s]Loading weights:  26%|██▌       | 76/291 [00:01<00:02, 86.04it/s]Loading weights:  32%|███▏      | 94/291 [00:01<00:02, 96.17it/s]Loading weights:  36%|███▌      | 104/291 [00:01<00:02, 92.62it/s]Loading weights:  41%|████      | 118/291 [00:01<00:01, 92.29it/s]Loading weights:  44%|████▍     | 129/291 [00:01<00:01, 95.38it/s]Loading weights:  48%|████▊     | 140/291 [00:01<00:01, 85.98it/s]Loading weights:  53%|█████▎    | 154/291 [00:02<00:01, 81.12it/s]Loading weights:  56%|█████▋    | 164/291 [00:02<00:01, 75.71it/s]Loading weights:  60%|██████    | 175/291 [00:02<00:01, 80.00it/s]Loading weights:  64%|██████▍   | 187/291 [00:02<00:01, 76.26it/s]Loading weights:  67%|██████▋   | 195/291 [00:02<00:01, 68.19it/s]Loading weights:  76%|███████▋  | 222/291 [00:02<00:00, 104.77it/s]Loading weights:  80%|████████  | 234/291 [00:02<00:00, 89.35it/s] Loading weights:  85%|████████▍ | 246/291 [00:03<00:00, 86.76it/s]Loading weights:  88%|████████▊ | 256/291 [00:03<00:00, 70.36it/s]Loading weights:  97%|█████████▋| 281/291 [00:03<00:00, 85.90it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 81.94it/s]
+[SALT-Q] Replaced 224 linears; trainable 364.6M params (58.15% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+[SALT-Q] Loaded 800 trainable tensors from outputs/saltq_zp5e3-2bit-saltq/final/saltq_trainable.safetensors
+[SALT-Q] Verifying deploy == train equivalence ...
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 8 layers (max|Δ| = 0, exact).
+[SALT-Q] Materializing dense deployed weights (torch.float16) ...
+[SALT-Q] dense-storage cast error: max|Δ|=7.834e-04 (the only lossy step; a packed INT-b export would not have it)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [01:04<00:00, 64.59s/it]Writing model shards: 100%|██████████| 1/1 [01:04<00:00, 64.59s/it]
+[Export] Saved sqat_permute metadata to outputs/saltq_zp5e3-2bit-saltq-deploy-eval/sqat_permute_meta.pt
+[SALT-Q] Exported deployed model to outputs/saltq_zp5e3-2bit-saltq-deploy-eval
+===== saltq_zp5e3 : eval with samples =====
+The following values were not passed to `accelerate launch` and had defaults used instead:
+		More than one GPU was found, enabling multi-GPU training.
+		If this was unintended please pass in `--num_processes=1`.
+	`--dynamo_backend` was set to a value of `'no'`
+To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
+[Eval] Model: outputs/saltq-2bit-saltq-deploy-eval
+[Eval] Tasks: ['gsm8k']
+[Eval] Num fewshot: 5
+[Eval] Batch size: 8
+[Eval] apply_chat_template: False
+[Eval] fewshot_as_multiturn: False
+[Eval] Model: outputs/saltq-2bit-saltq-deploy-eval
+[Eval] Tasks: ['gsm8k']
+[Eval] Num fewshot: 5
+[Eval] Batch size: 8
+[Eval] apply_chat_template: False
+[Eval] fewshot_as_multiturn: False
+[Eval] Model: outputs/saltq-2bit-saltq-deploy-eval
+[Eval] Tasks: ['gsm8k']
+[Eval] Num fewshot: 5
+[Eval] Batch size: 8
+[Eval] apply_chat_template: False
+[Eval] fewshot_as_multiturn: False
+[Eval] Model: outputs/saltq-2bit-saltq-deploy-eval
+[Eval] Tasks: ['gsm8k']
+[Eval] Num fewshot: 5
+[Eval] Batch size: 8
+[Eval] apply_chat_template: False
+[Eval] fewshot_as_multiturn: False
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+[rank2]: httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://huggingface.co/outputs/saltq-2bit-saltq-deploy-eval/resolve/main/config.json'
+[rank2]: For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+
+[rank2]: The above exception was the direct cause of the following exception:
+
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 437, in cached_files
+[rank2]:     hf_hub_download(
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+[rank2]:     return fn(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1019, in hf_hub_download
+[rank2]:     return _hf_hub_download_to_cache_dir(
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1166, in _hf_hub_download_to_cache_dir
+[rank2]:     _raise_on_head_call_error(head_call_error, force_download, local_files_only)
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1904, in _raise_on_head_call_error
+[rank2]:     raise head_call_error
+[rank2]: huggingface_hub.errors.RepositoryNotFoundError: 404 Client Error. (Request ID: Root=1-6a7eda57-2abdacbf13f351f56ee60198;9c13d8b5-8a22-4184-a89c-a09c76dd4b5b)
+
+[rank2]: Repository Not Found for url: https://huggingface.co/outputs/saltq-2bit-saltq-deploy-eval/resolve/main/config.json.
+[rank2]: Please make sure you specified the correct `repo_id` and `repo_type`.
+[rank2]: If you are trying to access a private or gated repo, make sure you are authenticated and your token has the required permissions.
+[rank2]: For more details, see https://huggingface.co/docs/huggingface_hub/authentication
+
+[rank2]: The above exception was the direct cause of the following exception:
+
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 207, in <module>
+[rank2]:     main()
+[rank2]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 192, in main
+[rank2]:     eval_with_lm_eval_harness(
+[rank2]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 100, in eval_with_lm_eval_harness
+[rank2]:     results = lm_eval.simple_evaluate(
+[rank2]:               ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/utils.py", line 575, in _wrapper
+[rank2]:     return fn(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/evaluator.py", line 257, in simple_evaluate
+[rank2]:     lm = lm_eval.api.registry.get_model(model).create_from_arg_string(
+[rank2]:          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/api/model.py", line 146, in create_from_arg_string
+[rank2]:     return cls(**args, **args2)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/models/huggingface.py", line 318, in __init__
+[rank2]:     self._get_config(
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/models/huggingface.py", line 740, in _get_config
+[rank2]:     self._config = transformers.AutoConfig.from_pretrained(
+[rank2]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/models/auto/configuration_auto.py", line 376, in from_pretrained
+[rank2]:     config_dict, unused_kwargs = PreTrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+[rank2]:                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/configuration_utils.py", line 721, in get_config_dict
+[rank2]:     config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+[rank2]:                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/configuration_utils.py", line 776, in _get_config_dict
+[rank2]:     resolved_config_file = cached_file(
+[rank2]:                            ^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 293, in cached_file
+[rank2]:     file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 469, in cached_files
+[rank2]:     raise OSError(
+[rank2]: OSError: outputs/saltq-2bit-saltq-deploy-eval is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+[rank2]: If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+[rank1]: httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://huggingface.co/outputs/saltq-2bit-saltq-deploy-eval/resolve/main/config.json'
+[rank1]: For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+
+[rank1]: The above exception was the direct cause of the following exception:
+
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 437, in cached_files
+[rank1]:     hf_hub_download(
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+[rank1]:     return fn(*args, **kwargs)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1019, in hf_hub_download
+[rank1]:     return _hf_hub_download_to_cache_dir(
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1166, in _hf_hub_download_to_cache_dir
+[rank1]:     _raise_on_head_call_error(head_call_error, force_download, local_files_only)
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1904, in _raise_on_head_call_error
+[rank1]:     raise head_call_error
+[rank1]: huggingface_hub.errors.RepositoryNotFoundError: 404 Client Error. (Request ID: Root=1-6a7eda57-41d65fa962f699f32fddfad3;a99514da-7783-498f-83b2-68bf92683ca3)
+
+[rank1]: Repository Not Found for url: https://huggingface.co/outputs/saltq-2bit-saltq-deploy-eval/resolve/main/config.json.
+[rank1]: Please make sure you specified the correct `repo_id` and `repo_type`.
+[rank1]: If you are trying to access a private or gated repo, make sure you are authenticated and your token has the required permissions.
+[rank1]: For more details, see https://huggingface.co/docs/huggingface_hub/authentication
+
+[rank1]: The above exception was the direct cause of the following exception:
+
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 207, in <module>
+[rank1]:     main()
+[rank1]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 192, in main
+[rank1]:     eval_with_lm_eval_harness(
+[rank1]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 100, in eval_with_lm_eval_harness
+[rank1]:     results = lm_eval.simple_evaluate(
+[rank1]:               ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/utils.py", line 575, in _wrapper
+[rank1]:     return fn(*args, **kwargs)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/evaluator.py", line 257, in simple_evaluate
+[rank1]:     lm = lm_eval.api.registry.get_model(model).create_from_arg_string(
+[rank1]:          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/api/model.py", line 146, in create_from_arg_string
+[rank1]:     return cls(**args, **args2)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/models/huggingface.py", line 318, in __init__
+[rank1]:     self._get_config(
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/models/huggingface.py", line 740, in _get_config
+[rank1]:     self._config = transformers.AutoConfig.from_pretrained(
+[rank1]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/models/auto/configuration_auto.py", line 376, in from_pretrained
+[rank1]:     config_dict, unused_kwargs = PreTrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+[rank1]:                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/configuration_utils.py", line 721, in get_config_dict
+[rank1]:     config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+[rank1]:                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/configuration_utils.py", line 776, in _get_config_dict
+[rank1]:     resolved_config_file = cached_file(
+[rank1]:                            ^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 293, in cached_file
+[rank1]:     file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 469, in cached_files
+[rank1]:     raise OSError(
+[rank1]: OSError: outputs/saltq-2bit-saltq-deploy-eval is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+[rank1]: If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+[rank0]: httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://huggingface.co/outputs/saltq-2bit-saltq-deploy-eval/resolve/main/config.json'
+[rank0]: For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+
+[rank0]: The above exception was the direct cause of the following exception:
+
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 437, in cached_files
+[rank0]:     hf_hub_download(
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+[rank0]:     return fn(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1019, in hf_hub_download
+[rank0]:     return _hf_hub_download_to_cache_dir(
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1166, in _hf_hub_download_to_cache_dir
+[rank0]:     _raise_on_head_call_error(head_call_error, force_download, local_files_only)
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1904, in _raise_on_head_call_error
+[rank0]:     raise head_call_error
+[rank0]: huggingface_hub.errors.RepositoryNotFoundError: 404 Client Error. (Request ID: Root=1-6a7eda57-03838471688f9cb766c3b52d;5a99ce22-4992-4b46-938f-6998b8a55aa6)
+
+[rank0]: Repository Not Found for url: https://huggingface.co/outputs/saltq-2bit-saltq-deploy-eval/resolve/main/config.json.
+[rank0]: Please make sure you specified the correct `repo_id` and `repo_type`.
+[rank0]: If you are trying to access a private or gated repo, make sure you are authenticated and your token has the required permissions.
+[rank0]: For more details, see https://huggingface.co/docs/huggingface_hub/authentication
+
+[rank0]: The above exception was the direct cause of the following exception:
+
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 207, in <module>
+[rank0]:     main()
+[rank0]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 192, in main
+[rank0]:     eval_with_lm_eval_harness(
+[rank0]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 100, in eval_with_lm_eval_harness
+[rank0]:     results = lm_eval.simple_evaluate(
+[rank0]:               ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/utils.py", line 575, in _wrapper
+[rank0]:     return fn(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/evaluator.py", line 257, in simple_evaluate
+[rank0]:     lm = lm_eval.api.registry.get_model(model).create_from_arg_string(
+[rank0]:          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/api/model.py", line 146, in create_from_arg_string
+[rank0]:     return cls(**args, **args2)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/models/huggingface.py", line 318, in __init__
+[rank0]:     self._get_config(
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/models/huggingface.py", line 740, in _get_config
+[rank0]:     self._config = transformers.AutoConfig.from_pretrained(
+[rank0]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/models/auto/configuration_auto.py", line 376, in from_pretrained
+[rank0]:     config_dict, unused_kwargs = PreTrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+[rank0]:                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/configuration_utils.py", line 721, in get_config_dict
+[rank0]:     config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+[rank0]:                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/configuration_utils.py", line 776, in _get_config_dict
+[rank0]:     resolved_config_file = cached_file(
+[rank0]:                            ^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 293, in cached_file
+[rank0]:     file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 469, in cached_files
+[rank0]:     raise OSError(
+[rank0]: OSError: outputs/saltq-2bit-saltq-deploy-eval is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+[rank0]: If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+[rank3]: httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://huggingface.co/outputs/saltq-2bit-saltq-deploy-eval/resolve/main/config.json'
+[rank3]: For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+
+[rank3]: The above exception was the direct cause of the following exception:
+
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 437, in cached_files
+[rank3]:     hf_hub_download(
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+[rank3]:     return fn(*args, **kwargs)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1019, in hf_hub_download
+[rank3]:     return _hf_hub_download_to_cache_dir(
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1166, in _hf_hub_download_to_cache_dir
+[rank3]:     _raise_on_head_call_error(head_call_error, force_download, local_files_only)
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/huggingface_hub/file_download.py", line 1904, in _raise_on_head_call_error
+[rank3]:     raise head_call_error
+[rank3]: huggingface_hub.errors.RepositoryNotFoundError: 404 Client Error. (Request ID: Root=1-6a7eda57-487fe57004d23eea1d2570f6;aedeb335-ff2f-46fe-b255-0cd01c40104f)
+
+[rank3]: Repository Not Found for url: https://huggingface.co/outputs/saltq-2bit-saltq-deploy-eval/resolve/main/config.json.
+[rank3]: Please make sure you specified the correct `repo_id` and `repo_type`.
+[rank3]: If you are trying to access a private or gated repo, make sure you are authenticated and your token has the required permissions.
+[rank3]: For more details, see https://huggingface.co/docs/huggingface_hub/authentication
+
+[rank3]: The above exception was the direct cause of the following exception:
+
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 207, in <module>
+[rank3]:     main()
+[rank3]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 192, in main
+[rank3]:     eval_with_lm_eval_harness(
+[rank3]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/eval_math.py", line 100, in eval_with_lm_eval_harness
+[rank3]:     results = lm_eval.simple_evaluate(
+[rank3]:               ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/utils.py", line 575, in _wrapper
+[rank3]:     return fn(*args, **kwargs)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/evaluator.py", line 257, in simple_evaluate
+[rank3]:     lm = lm_eval.api.registry.get_model(model).create_from_arg_string(
+[rank3]:          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/api/model.py", line 146, in create_from_arg_string
+[rank3]:     return cls(**args, **args2)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/models/huggingface.py", line 318, in __init__
+[rank3]:     self._get_config(
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/lm_eval/models/huggingface.py", line 740, in _get_config
+[rank3]:     self._config = transformers.AutoConfig.from_pretrained(
+[rank3]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/models/auto/configuration_auto.py", line 376, in from_pretrained
+[rank3]:     config_dict, unused_kwargs = PreTrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+[rank3]:                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/configuration_utils.py", line 721, in get_config_dict
+[rank3]:     config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+[rank3]:                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/configuration_utils.py", line 776, in _get_config_dict
+[rank3]:     resolved_config_file = cached_file(
+[rank3]:                            ^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 293, in cached_file
+[rank3]:     file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/utils/hub.py", line 469, in cached_files
+[rank3]:     raise OSError(
+[rank3]: OSError: outputs/saltq-2bit-saltq-deploy-eval is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+[rank3]: If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+[rank0]:[W814 17:05:28.647681521 ProcessGroupNCCL.cpp:1575] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+W0814 17:05:29.010000 2677470 site-packages/torch/distributed/elastic/multiprocessing/api.py:1012] Sending process 2677656 closing signal SIGTERM
+W0814 17:05:29.011000 2677470 site-packages/torch/distributed/elastic/multiprocessing/api.py:1012] Sending process 2677658 closing signal SIGTERM
+W0814 17:05:29.011000 2677470 site-packages/torch/distributed/elastic/multiprocessing/api.py:1012] Sending process 2677659 closing signal SIGTERM
+E0814 17:05:29.176000 2677470 site-packages/torch/distributed/elastic/multiprocessing/api.py:986] failed (exitcode: 1) local_rank: 1 (pid: 2677657) of binary: /home/users/nus/jingzege/miniforge3/envs/saltq/bin/python
+Traceback (most recent call last):
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/bin/accelerate", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/accelerate/commands/accelerate_cli.py", line 50, in main
+    args.func(args)
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/accelerate/commands/launch.py", line 1398, in launch_command
+    multi_gpu_launcher(args)
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/accelerate/commands/launch.py", line 1023, in multi_gpu_launcher
+    distrib_run.run(args)
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/run.py", line 981, in run
+    elastic_launch(
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+scripts/eval_math.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-08-14_17:05:29
+  host      : x1000c3s7b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 2677656)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[2]:
+  time      : 2026-08-14_17:05:29
+  host      : x1000c3s7b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 2 (local_rank: 2)
+  exitcode  : 1 (pid: 2677658)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[3]:
+  time      : 2026-08-14_17:05:29
+  host      : x1000c3s7b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 2677659)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-08-14_17:05:29
+  host      : x1000c3s7b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 2677657)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

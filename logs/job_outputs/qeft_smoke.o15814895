@@ -1,0 +1,54 @@
+Sun Aug 30 18:55:17 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:81:00.0 Off |                    0 |
+| N/A   42C    P0             58W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+rc=1
+W0830 18:58:46.225000 632825 site-packages/torch/distributed/elastic/multiprocessing/api.py:1012] Sending process 632867 closing signal SIGTERM
+E0830 18:58:46.390000 632825 site-packages/torch/distributed/elastic/multiprocessing/api.py:986] failed (exitcode: 1) local_rank: 0 (pid: 632866) of binary: /home/users/nus/jingzege/miniforge3/envs/saltq/bin/python3.11
+Traceback (most recent call last):
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/bin/torchrun", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/run.py", line 990, in main
+    run(args)
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/run.py", line 981, in run
+    elastic_launch(
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+/home/users/nus/jingzege/projects/SQAT/baseline/QEFT/sqat/train_commonsense.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-08-30_18:58:46
+  host      : x1000c2s3b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 632867)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-08-30_18:58:46
+  host      : x1000c2s3b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 632866)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
+End time: Sun Aug 30 18:58:46 +08 2026

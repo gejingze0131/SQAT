@@ -1,0 +1,183 @@
+[smoke] /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/tiny-llama exists
+[smoke] wrote /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/smoke.yaml
+===== unit tests (selection, salient_ids, QEFTLinear, checkpoint I/O) =====
+
+1) _front_permutation
+  [PASS] contiguous prefix -> identity
+  [PASS] irregular set -> [ids sorted, rest in order]
+  [PASS] permutation is a bijection
+  [PASS] order of the ids does not matter
+
+2) gptq_quantize_model_sequential(salient_ids=...)
+[GPTQ] Captured 4 calibration batches (8 sequences, 128 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize:  50%|█████     | 1/2 [00:00<00:00,  9.76it/s][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:00<00:00, 14.64it/s]
+  [PASS] weak columns (irregular AND contiguous) are bit-identical — max drift 0.00e+00
+  [PASS] every other column was quantized — min change 1.16e-02
+[GPTQ] Captured 4 calibration batches (8 sequences, 128 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:00<00:00, 27.91it/s]
+[GPTQ] Captured 4 calibration batches (8 sequences, 128 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:00<00:00, 27.83it/s]
+  [PASS] salient_ids=None is byte-identical to omitting it
+
+3) select_global_weak_columns
+[QEFT] global weak columns: k=3 of 16 (18.75% of the residual stream), 15 layer votes, sensitivity share=92.1%, first10=[3, 7, 9]
+  [PASS] the channel every layer agrees on is selected
+  [PASS] a single layer's outlier cannot dominate the vote — selected [3, 7, 9] (per-layer mean normalization caps 7's contribution)
+  [PASS] returns exactly k sorted indices
+  [PASS] local selection is a plain top-k
+
+4) OGR is output-preserving
+[SegPerm] Permuted residual stream: 1 segs, num_runtime_permutes=0
+  [PASS] a single segment needs no runtime gather
+  [PASS] logits unchanged by the global reordering — max |Δ| 2.09e-07
+
+5) QEFTLinear
+  [PASS] contiguous weak columns take the slice path
+  [PASS] effective weight == base weight at init
+  [PASS] forward == dense forward at init
+  [PASS] effective weight tracks the trained columns
+  [PASS] forward == dense forward after an update
+  [PASS] irregular weak columns take the gather path
+  [PASS] irregular: forward == dense forward
+  [PASS] only the weak columns are trainable
+  [PASS] the frozen half really is zeroed where the weak columns are
+
+6/7) base build → model → train step → checkpoint → export (2-layer random Llama)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 321.58it/s]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[QEFT] loading /scratch/users/nus/jingzege/tmp/tmpoxy8hb69/src_model in torch.float32 (no bnb, no adapter)
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 8161.64it/s]
+[SegPerm] Calibrating E[x²]:   0%|          | 0/6 [00:00<?, ?it/s][SegPerm] Calibrating E[x²]: 100%|██████████| 6/6 [00:00<00:00, 482.80it/s]
+[QEFT] global weak columns: k=16 of 64 (25.00% of the residual stream), 10 layer votes, sensitivity share=31.6%, first10=[1, 3, 7, 8, 9, 16, 18, 28, 34, 38]
+[SegPerm] Permuted residual stream: 1 segs, num_runtime_permutes=0
+[SegPerm] Applied P4 (down_proj) permutations: 2 layers
+[QEFT] fp16 share of the target weights = 22.50% → effective 5.93 bits (the row is '3 + fp16', not 3-bit)
+[SegPerm] register_boundary_gathers_from_meta: no boundaries (single segment) — nothing to register
+[GPTQ] Captured 6 calibration batches (12 sequences, 192 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:00<00:00, 27.20it/s]
+[QEFT] weak-column max drift = 0.000e+00 (must be 0) | quantized-bulk relative error p50 = 0.1740
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 409.36it/s]
+[QEFT] base saved → /scratch/users/nus/jingzege/tmp/tmpoxy8hb69/base
+  [PASS] meta records one global weak set
+  [PASS] o_proj got its own per-layer irregular set
+  [PASS] fp16 share and effective bits are recorded — 22.5% fp16 → 5.93 bits
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9978.52it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.0M / 0.1M (15.75%) | k=16 INT3 g16
+  [PASS] every target linear became a QEFTLinear
+  [PASS] the weak columns are the only trainable tensors — 18432 == 18432
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9505.76it/s]
+  [PASS] effective weight == the base checkpoint, exactly — max |Δ| 0.00e+00
+  [PASS] weak columns receive gradient
+  [PASS] the frozen bulk did not move
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9241.46it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.0M / 0.1M (15.75%) | k=16 INT3 g16
+  [PASS] checkpoint round-trips the trained columns
+  [PASS] checkpoint holds only the weak columns
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9266.74it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.0M / 0.1M (15.75%) | k=16 INT3 g16
+  [PASS] a shape-mismatched checkpoint is refused
+  [PASS] the exported dense model reproduces the trained model — max |Δ| 2.09e-07
+
+======================================================================
+  34 passed, 0 failed
+===== stage 0: mixed-precision base (OGR + GPTQ around the fp16 weak columns) =====
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[Data] calibration: 200 records, sampling=balanced, task mix={'siqa': 25, 'arc_easy': 25, 'openbookqa': 25, 'arc_challenge': 25, 'hellaswag': 25, 'piqa': 25, 'boolq': 25, 'winogrande': 25}
+==============================================================================
+  QEFT base — INT3 g32, k=64 weak columns, asym
+  model       /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/tiny-llama
+  calibration 200 records, sampling=balanced, seq_len=512
+  out         /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/base_int3_g32_k64
+==============================================================================
+[QEFT] loading /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/tiny-llama in torch.bfloat16 (no bnb, no adapter)
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 13542.49it/s]
+[SegPerm] Calibrating E[x²]:   0%|          | 0/25 [00:00<?, ?it/s][SegPerm] Calibrating E[x²]:   4%|▍         | 1/25 [00:01<00:30,  1.25s/it][SegPerm] Calibrating E[x²]:  36%|███▌      | 9/25 [00:01<00:01,  8.91it/s][SegPerm] Calibrating E[x²]:  68%|██████▊   | 17/25 [00:01<00:00, 17.74it/s][SegPerm] Calibrating E[x²]: 100%|██████████| 25/25 [00:01<00:00, 16.08it/s]
+[QEFT] global weak columns: k=64 of 512 (12.50% of the residual stream), 10 layer votes, sensitivity share=22.6%, first10=[12, 13, 22, 27, 28, 33, 39, 40, 68, 74]
+[SegPerm] Permuted residual stream: 1 segs, num_runtime_permutes=0
+[SegPerm] Applied P4 (down_proj) permutations: 2 layers
+[QEFT] fp16 share of the target weights = 11.25% → effective 4.46 bits (the row is '3 + fp16', not 3-bit)
+[SegPerm] register_boundary_gathers_from_meta: no boundaries (single segment) — nothing to register
+[GPTQ] Captured 25 calibration batches (200 sequences, 26799 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize:  50%|█████     | 1/2 [00:01<00:01,  1.45s/it][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:01<00:00,  1.09it/s][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:01<00:00,  1.01it/s]
+[QEFT] weak-column max drift = 0.000e+00 (must be 0) | quantized-bulk relative error p50 = 0.2128
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 10.92it/s]
+[QEFT] base saved → /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/base_int3_g32_k64
+===== stage 0b: the base build is idempotent =====
+[QEFT] base already at /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/base_int3_g32_k64 (settings match) — skipping
+===== stage 1: weak-column tuning (2 ranks) =====
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 8474.16it/s]
+Loading weights: 100%|██████████| 21/21 [00:00<00:00, 7979.02it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.6M / 38.6M (1.53%) | k=64 INT3 g32
+==============================================================================
+  QEFT — weak column tuning | INT3 g32 k=64 | fp16 share 11.25% (4.46 effective bits)
+  base   /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/base_int3_g32_k64
+  lr     5e-06   eff batch 8   epochs 1
+  out    /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/run
+==============================================================================
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[QEFT] 14 QEFTLinear layers | trainable 0.6M / 38.6M (1.53%) | k=64 INT3 g32
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+Tokenizing train (num_proc=4):   0%|          | 0/200 [00:00<?, ? examples/s]Tokenizing train (num_proc=4):  25%|██▌       | 50/200 [00:00<00:02, 51.78 examples/s]Tokenizing train (num_proc=4):  50%|█████     | 100/200 [00:01<00:01, 67.55 examples/s]Tokenizing train (num_proc=4):  75%|███████▌  | 150/200 [00:01<00:00, 99.29 examples/s]Tokenizing train (num_proc=4): 100%|██████████| 200/200 [00:02<00:00, 109.78 examples/s]Tokenizing train (num_proc=4): 100%|██████████| 200/200 [00:02<00:00, 88.00 examples/s] 
+[Data] loss_span=instruction+response: 121.6 supervised tokens/record (80.7% of all tokens, first 2000 records)
+/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[rank0]:[W830 19:04:04.986364491 ProcessGroupNCCL.cpp:5188] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'pad_token_id': 2}.
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] loss_span=instruction+response: 121.6 supervised tokens/record (80.7% of all tokens, first 2000 records)
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'pad_token_id': 2}.
+  0%|          | 0/25 [00:00<?, ?it/s]  4%|▍         | 1/25 [00:01<00:28,  1.20s/it] 16%|█▌        | 4/25 [00:01<00:05,  3.87it/s]                                              {'loss': '10.53', 'grad_norm': '3.298', 'learning_rate': '4.81e-06', 'epoch': '0.2'}
+ 20%|██        | 5/25 [00:01<00:05,  3.87it/s] 28%|██▊       | 7/25 [00:01<00:02,  7.13it/s] 40%|████      | 10/25 [00:01<00:01, 10.42it/s]                                               {'loss': '10.48', 'grad_norm': '4.165', 'learning_rate': '3.75e-06', 'epoch': '0.4'}
+ 40%|████      | 10/25 [00:01<00:01, 10.42it/s] 52%|█████▏    | 13/25 [00:01<00:00, 13.57it/s]                                               {'loss': '10.48', 'grad_norm': '3.176', 'learning_rate': '2.174e-06', 'epoch': '0.6'}
+ 60%|██████    | 15/25 [00:01<00:00, 13.57it/s] 64%|██████▍   | 16/25 [00:01<00:00, 16.32it/s] 76%|███████▌  | 19/25 [00:01<00:00, 18.71it/s]                                               {'loss': '10.48', 'grad_norm': '2.839', 'learning_rate': '7.322e-07', 'epoch': '0.8'}
+ 80%|████████  | 20/25 [00:01<00:00, 18.71it/s] 88%|████████▊ | 22/25 [00:02<00:00, 20.60it/s]100%|██████████| 25/25 [00:02<00:00, 21.01it/s]                                               {'loss': '10.47', 'grad_norm': '2.833', 'learning_rate': '2.139e-08', 'epoch': '1'}
+100%|██████████| 25/25 [00:02<00:00, 21.01it/s]                                               {'train_runtime': '2.195', 'train_samples_per_second': '91.12', 'train_steps_per_second': '11.39', 'train_loss': '10.49', 'epoch': '1'}
+100%|██████████| 25/25 [00:02<00:00, 21.01it/s]100%|██████████| 25/25 [00:02<00:00, 11.39it/s]
+[QEFT] peak GPU 0.4 GB
+[QEFT] saved trained weak columns to /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/run/final
+[rank0]:[W830 19:04:09.002378031 ProcessGroupNCCL.cpp:1575] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+===== stage 2: dense export + per-layer equivalence check =====
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[export] base /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/base_int3_g32_k64: INT3 g32 k=64 (11.25% fp16 → 4.46 effective bits)
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 10773.04it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.6M / 38.6M (1.53%) | k=64 INT3 g32
+[export] loaded 14 trained weak-column tensors from /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/run/final
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 11923.70it/s]
+Materializing:   0%|          | 0/14 [00:00<?, ?it/s]Materializing:   7%|▋         | 1/14 [00:00<00:03,  4.14it/s]Materializing: 100%|██████████| 14/14 [00:00<00:00, 48.08it/s]
+[export] 14 layers; worst relative forward error 2.87e-07 (tol 1e-04)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  9.15it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  9.13it/s]
+[export] wrote /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/export
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[export] base /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/base_int3_g32_k64: INT3 g32 k=64 (11.25% fp16 → 4.46 effective bits)
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 12142.32it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.6M / 38.6M (1.53%) | k=64 INT3 g32
+[export] bare base: weak columns left at their quantization-time values
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9442.58it/s]
+Materializing:   0%|          | 0/14 [00:00<?, ?it/s]Materializing:  14%|█▍        | 2/14 [00:00<00:00, 19.61it/s]Materializing: 100%|██████████| 14/14 [00:00<00:00, 96.20it/s]
+[export] 14 layers; worst relative forward error 2.15e-07 (tol 1e-04)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  1.98it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  1.98it/s]
+[export] wrote /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/export_base
+===== stage 3: the exported model is a plain Llama, and it differs from the base =====
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 532.56it/s]
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 1021.12it/s]
+[smoke] trained vs untrained base: max |Δlogits| = 1.011e-02
+[smoke] export is a plain dense Llama
+
+SMOKE TEST OK

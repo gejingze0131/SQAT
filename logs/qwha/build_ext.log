@@ -1,0 +1,1460 @@
+START Fri Aug 28 16:23:06 +08 2026
+===== fast-hadamard-transform =====
+Using pip 26.2.1 from /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/pip (python 3.12)
+Collecting fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1
+  Cloning https://github.com/Dao-AILab/fast-hadamard-transform.git (to revision v1.0.4.post1) to /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e
+  Running command git version
+  git version 2.43.7
+  Running command git clone --filter=blob:none https://github.com/Dao-AILab/fast-hadamard-transform.git /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e
+  Cloning into '/scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e'...
+  Running command git show-ref v1.0.4.post1
+  4ea722e434e3d4f2a14522341959ebdbe62be2de refs/tags/v1.0.4.post1
+  Running command git rev-parse HEAD
+  e7706faf8d1c3b9f241e36860640ad1dac644ede
+  Running command git checkout -q 4ea722e434e3d4f2a14522341959ebdbe62be2de
+  Resolved https://github.com/Dao-AILab/fast-hadamard-transform.git to commit 4ea722e434e3d4f2a14522341959ebdbe62be2de
+  Running command git rev-parse HEAD
+  4ea722e434e3d4f2a14522341959ebdbe62be2de
+  Preparing metadata (pyproject.toml): started
+  Running command Preparing metadata (pyproject.toml)
+  /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/wheel/bdist_wheel.py:4: FutureWarning: The 'wheel' package is no longer the canonical location of the 'bdist_wheel' command, and will be removed in a future release. Please update to setuptools v70.1 or later which contains an integrated version of this command.
+    warn(
+  No CUDA runtime is found, using CUDA_HOME='/scratch/users/nus/jingzege/conda_envs/qwha'
+  /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/setuptools/dist.py:765: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+  !!
+
+          ********************************************************************************
+          Please consider removing the following classifiers in favor of a SPDX license expression:
+
+          License :: OSI Approved :: BSD License
+
+          See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+          ********************************************************************************
+
+  !!
+    self._finalize_license_expression()
+
+
+  torch.__version__  = 2.5.1+cu124
+
+
+  running dist_info
+  creating /scratch/users/nus/jingzege/tmp/pip-modern-metadata-q8szxs7m/fast_hadamard_transform.egg-info
+  writing /scratch/users/nus/jingzege/tmp/pip-modern-metadata-q8szxs7m/fast_hadamard_transform.egg-info/PKG-INFO
+  writing dependency_links to /scratch/users/nus/jingzege/tmp/pip-modern-metadata-q8szxs7m/fast_hadamard_transform.egg-info/dependency_links.txt
+  writing requirements to /scratch/users/nus/jingzege/tmp/pip-modern-metadata-q8szxs7m/fast_hadamard_transform.egg-info/requires.txt
+  writing top-level names to /scratch/users/nus/jingzege/tmp/pip-modern-metadata-q8szxs7m/fast_hadamard_transform.egg-info/top_level.txt
+  writing manifest file '/scratch/users/nus/jingzege/tmp/pip-modern-metadata-q8szxs7m/fast_hadamard_transform.egg-info/SOURCES.txt'
+  reading manifest file '/scratch/users/nus/jingzege/tmp/pip-modern-metadata-q8szxs7m/fast_hadamard_transform.egg-info/SOURCES.txt'
+  adding license file 'LICENSE'
+  adding license file 'AUTHORS'
+  writing manifest file '/scratch/users/nus/jingzege/tmp/pip-modern-metadata-q8szxs7m/fast_hadamard_transform.egg-info/SOURCES.txt'
+  creating '/scratch/users/nus/jingzege/tmp/pip-modern-metadata-q8szxs7m/fast_hadamard_transform-1.0.4.post1.dist-info'
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: torch in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (2.5.1+cu124)
+Requirement already satisfied: packaging in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (26.3)
+Requirement already satisfied: ninja in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (1.13.0)
+Requirement already satisfied: filelock in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (3.32.3)
+Requirement already satisfied: typing-extensions>=4.8.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (4.16.0)
+Requirement already satisfied: networkx in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (3.6.1)
+Requirement already satisfied: jinja2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (3.1.6)
+Requirement already satisfied: fsspec in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (2024.12.0)
+Requirement already satisfied: nvidia-cuda-nvrtc-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (12.4.127)
+Requirement already satisfied: nvidia-cuda-runtime-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (12.4.127)
+Requirement already satisfied: nvidia-cuda-cupti-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (12.4.127)
+Requirement already satisfied: nvidia-cudnn-cu12==9.1.0.70 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (9.1.0.70)
+Requirement already satisfied: nvidia-cublas-cu12==12.4.5.8 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (12.4.5.8)
+Requirement already satisfied: nvidia-cufft-cu12==11.2.1.3 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (11.2.1.3)
+Requirement already satisfied: nvidia-curand-cu12==10.3.5.147 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (10.3.5.147)
+Requirement already satisfied: nvidia-cusolver-cu12==11.6.1.9 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (11.6.1.9)
+Requirement already satisfied: nvidia-cusparse-cu12==12.3.1.170 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (12.3.1.170)
+Requirement already satisfied: nvidia-nccl-cu12==2.21.5 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (2.21.5)
+Requirement already satisfied: nvidia-nvtx-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (12.4.127)
+Requirement already satisfied: nvidia-nvjitlink-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (12.4.127)
+Requirement already satisfied: triton==3.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (3.1.0)
+Requirement already satisfied: setuptools in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (84.0.0)
+Requirement already satisfied: sympy==1.13.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (1.13.1)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from sympy==1.13.1->torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (1.3.0)
+Requirement already satisfied: MarkupSafe>=2.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from jinja2->torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (3.0.3)
+Building wheels for collected packages: fast-hadamard-transform
+  Running command git rev-parse HEAD
+  4ea722e434e3d4f2a14522341959ebdbe62be2de
+  Building wheel for fast-hadamard-transform (pyproject.toml): started
+  Running command Building wheel for fast-hadamard-transform (pyproject.toml)
+  /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/wheel/bdist_wheel.py:4: FutureWarning: The 'wheel' package is no longer the canonical location of the 'bdist_wheel' command, and will be removed in a future release. Please update to setuptools v70.1 or later which contains an integrated version of this command.
+    warn(
+  No CUDA runtime is found, using CUDA_HOME='/scratch/users/nus/jingzege/conda_envs/qwha'
+  /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/setuptools/dist.py:765: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+  !!
+
+          ********************************************************************************
+          Please consider removing the following classifiers in favor of a SPDX license expression:
+
+          License :: OSI Approved :: BSD License
+
+          See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+          ********************************************************************************
+
+  !!
+    self._finalize_license_expression()
+
+
+  torch.__version__  = 2.5.1+cu124
+
+
+  running bdist_wheel
+  Guessing wheel URL:  https://github.com/Dao-AILab/fast-hadamard-transform/releases/download/v1.0.4.post1/fast_hadamard_transform-1.0.4.post1+cu122torch2.5cxx11abiFALSE-cp312-cp312-linux_x86_64.whl
+  Precompiled wheel not found. Building from source...
+  running build
+  running build_py
+  creating build/lib.linux-x86_64-cpython-312/fast_hadamard_transform
+  copying fast_hadamard_transform/fast_hadamard_transform_interface.py -> build/lib.linux-x86_64-cpython-312/fast_hadamard_transform
+  copying fast_hadamard_transform/__init__.py -> build/lib.linux-x86_64-cpython-312/fast_hadamard_transform
+  running build_ext
+  /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/utils/cpp_extension.py:426: UserWarning: There are no /scratch/users/nus/jingzege/conda_envs/qwha/bin/x86_64-conda-linux-gnu-g++ version bounds defined for CUDA version 12.4
+    warnings.warn(f'There are no {compiler_name} version bounds defined for CUDA version {cuda_str_version}')
+  building 'fast_hadamard_transform_cuda' extension
+  Emitting ninja build file /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e/build/temp.linux-x86_64-cpython-312/build.ninja...
+  Compiling objects...
+  Using envvar MAX_JOBS (8) as the number of workers...
+  [1/2] /scratch/users/nus/jingzege/conda_envs/qwha/bin/x86_64-conda-linux-gnu-g++ -MMD -MF /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e/build/temp.linux-x86_64-cpython-312/csrc/fast_hadamard_transform.o.d -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /scratch/users/nus/jingzege/conda_envs/qwha/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /scratch/users/nus/jingzege/conda_envs/qwha/include -fPIC -I/scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e -I/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/include -I/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -I/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/include/TH -I/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/include/THC -I/scratch/users/nus/jingzege/conda_envs/qwha/include -I/scratch/users/nus/jingzege/conda_envs/qwha/include/python3.12 -c -c /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e/csrc/fast_hadamard_transform.cpp -o /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e/build/temp.linux-x86_64-cpython-312/csrc/fast_hadamard_transform.o -O3 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1011"' -DTORCH_EXTENSION_NAME=fast_hadamard_transform_cuda -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++17
+  [2/2] /scratch/users/nus/jingzege/conda_envs/qwha/bin/nvcc --generate-dependencies-with-compile --dependency-output /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e/build/temp.linux-x86_64-cpython-312/csrc/fast_hadamard_transform_cuda.o.d -I/scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e -I/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/include -I/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/include/torch/csrc/api/include -I/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/include/TH -I/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/include/THC -I/scratch/users/nus/jingzege/conda_envs/qwha/include -I/scratch/users/nus/jingzege/conda_envs/qwha/include/python3.12 -c -c /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e/csrc/fast_hadamard_transform_cuda.cu -o /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e/build/temp.linux-x86_64-cpython-312/csrc/fast_hadamard_transform_cuda.o -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options ''"'"'-fPIC'"'"'' -O3 -U__CUDA_NO_HALF_OPERATORS__ -U__CUDA_NO_HALF_CONVERSIONS__ -U__CUDA_NO_BFLOAT16_OPERATORS__ -U__CUDA_NO_BFLOAT16_CONVERSIONS__ -U__CUDA_NO_BFLOAT162_OPERATORS__ -U__CUDA_NO_BFLOAT162_CONVERSIONS__ --expt-relaxed-constexpr --expt-extended-lambda --use_fast_math --ptxas-options=-v -lineinfo -gencode arch=compute_70,code=sm_70 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90 --threads 4 -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1011"' -DTORCH_EXTENSION_NAME=fast_hadamard_transform_cuda -D_GLIBCXX_USE_CXX11_ABI=0 -ccbin /scratch/users/nus/jingzege/conda_envs/qwha/bin/x86_64-conda-linux-gnu-gcc -std=c++17
+  nvcc warning : incompatible redefinition for option 'compiler-bindir', the last value of this option was used
+  ptxas info    : 3 bytes gmem
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 167 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 189 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 212 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 167 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 189 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 202 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 128 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 128 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 127 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 148 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 158 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 150 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 150 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 150 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 152 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 128 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 127 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 128 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 150 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 156 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 150 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 160 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 158 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 152 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 191 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 155 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 157 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 157 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 156 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 153 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 159 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 127 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 48 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 42 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 31 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 30 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 41 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 23 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 23 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 22 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 22 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 21 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 16 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 128 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 48 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 42 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 31 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 30 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 41 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 22 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 22 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 23 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 23 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 22 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c104HalfEEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 14 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 128 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 64 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 48 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 31 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 48 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 26 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 26 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 26 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EfEEv18HadamardParamsBase' for 'sm_90'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers
+  ptxas info    : 3 bytes gmem, 24 bytes cmem[4]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 220 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 226 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 226 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 216 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 246 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 222 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 224 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 220 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 222 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 220 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 246 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 226 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 204 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 204 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 208 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 204 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 200 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 200 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 188 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 211 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 186 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 192 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 195 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 191 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 186 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 190 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 210 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 167 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 167 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 167 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 155 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 156 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 164 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 127 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 48 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 42 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 43 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 27 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 27 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 28 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 25 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 25 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 18 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 116 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 63 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 42 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 41 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 27 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 27 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 26 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 26 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c104HalfEEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 18 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EfEEv18HadamardParamsBase
+      48 bytes stack frame, 44 bytes spill stores, 44 bytes spill loads
+  ptxas info    : Used 255 registers, 48 bytes cumulative stack size, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 128 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 64 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 48 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 31 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 47 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 25 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 25 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 23 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EfEEv18HadamardParamsBase' for 'sm_80'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers, 408 bytes cmem[0]
+  ptxas info    : 3 bytes gmem, 24 bytes cmem[4]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase
+      16 bytes stack frame, 16 bytes spill stores, 16 bytes spill loads
+  ptxas info    : Used 255 registers, 16 bytes cumulative stack size, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 240 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 216 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 218 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 220 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 214 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 214 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 225 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 254 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 212 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 212 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 212 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 216 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 210 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_28N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 201 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 192 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 167 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 202 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi256ELi10EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 210 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi128ELi9EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi64ELi8EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi32ELi7EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 158 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi16ELi6EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 160 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi8ELi5EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 168 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi4ELi4EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 155 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi2ELi3EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 167 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI41fast_hadamard_transform_20N_kernel_traitsILi1ELi2EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 164 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 127 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 64 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 44 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 29 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 31 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 29 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 30 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 27 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c108BFloat16EEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c108BFloat16EEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 28 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 255 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 127 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 63 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 44 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 26 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 26 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 22 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c104HalfEEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EN3c104HalfEEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 20 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi15EfEEv18HadamardParamsBase
+      48 bytes stack frame, 44 bytes spill stores, 44 bytes spill loads
+  ptxas info    : Used 255 registers, 48 bytes cumulative stack size, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi14EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 128 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi13EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 64 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi12EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 40 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi256ELi11EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi128ELi10EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 32 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi9EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 50 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi32ELi8EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 31 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi16ELi7EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 31 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi8ELi6EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 31 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi4ELi5EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 31 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi2ELi4EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 28 registers, 408 bytes cmem[0]
+  ptxas info    : Compiling entry function '_Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EfEEv18HadamardParamsBase' for 'sm_70'
+  ptxas info    : Function properties for _Z30fast_hadamard_transform_kernelI37fast_hadamard_transform_kernel_traitsILi1ELi3EfEEv18HadamardParamsBase
+      0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+  ptxas info    : Used 24 registers, 408 bytes cmem[0]
+  /scratch/users/nus/jingzege/conda_envs/qwha/bin/x86_64-conda-linux-gnu-g++ -fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /scratch/users/nus/jingzege/conda_envs/qwha/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /scratch/users/nus/jingzege/conda_envs/qwha/include -pthread -B /scratch/users/nus/jingzege/conda_envs/qwha/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/scratch/users/nus/jingzege/conda_envs/qwha/lib -Wl,-rpath-link,/scratch/users/nus/jingzege/conda_envs/qwha/lib -L/scratch/users/nus/jingzege/conda_envs/qwha/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/scratch/users/nus/jingzege/conda_envs/qwha/lib -Wl,-rpath-link,/scratch/users/nus/jingzege/conda_envs/qwha/lib -L/scratch/users/nus/jingzege/conda_envs/qwha/lib -Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/scratch/users/nus/jingzege/conda_envs/qwha/lib -Wl,-rpath-link,/scratch/users/nus/jingzege/conda_envs/qwha/lib -L/scratch/users/nus/jingzege/conda_envs/qwha/lib -fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /scratch/users/nus/jingzege/conda_envs/qwha/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /scratch/users/nus/jingzege/conda_envs/qwha/include /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e/build/temp.linux-x86_64-cpython-312/csrc/fast_hadamard_transform.o /scratch/users/nus/jingzege/tmp/pip-install-emhat26r/fast-hadamard-transform_6a7f3a8c50ce4fcfafeafeba8724da4e/build/temp.linux-x86_64-cpython-312/csrc/fast_hadamard_transform_cuda.o -L/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/torch/lib -L/scratch/users/nus/jingzege/conda_envs/qwha/lib -lc10 -ltorch -ltorch_cpu -ltorch_python -lcudart -lc10_cuda -ltorch_cuda -o build/lib.linux-x86_64-cpython-312/fast_hadamard_transform_cuda.cpython-312-x86_64-linux-gnu.so
+  installing to build/bdist.linux-x86_64/wheel
+  running install
+  running install_lib
+  creating build/bdist.linux-x86_64/wheel
+  copying build/lib.linux-x86_64-cpython-312/fast_hadamard_transform_cuda.cpython-312-x86_64-linux-gnu.so -> build/bdist.linux-x86_64/wheel/.
+  creating build/bdist.linux-x86_64/wheel/fast_hadamard_transform
+  copying build/lib.linux-x86_64-cpython-312/fast_hadamard_transform/fast_hadamard_transform_interface.py -> build/bdist.linux-x86_64/wheel/./fast_hadamard_transform
+  copying build/lib.linux-x86_64-cpython-312/fast_hadamard_transform/__init__.py -> build/bdist.linux-x86_64/wheel/./fast_hadamard_transform
+  running install_egg_info
+  running egg_info
+  creating fast_hadamard_transform.egg-info
+  writing fast_hadamard_transform.egg-info/PKG-INFO
+  writing dependency_links to fast_hadamard_transform.egg-info/dependency_links.txt
+  writing requirements to fast_hadamard_transform.egg-info/requires.txt
+  writing top-level names to fast_hadamard_transform.egg-info/top_level.txt
+  writing manifest file 'fast_hadamard_transform.egg-info/SOURCES.txt'
+  reading manifest file 'fast_hadamard_transform.egg-info/SOURCES.txt'
+  adding license file 'LICENSE'
+  adding license file 'AUTHORS'
+  writing manifest file 'fast_hadamard_transform.egg-info/SOURCES.txt'
+  Copying fast_hadamard_transform.egg-info to build/bdist.linux-x86_64/wheel/./fast_hadamard_transform-1.0.4.post1-py3.12.egg-info
+  running install_scripts
+  creating build/bdist.linux-x86_64/wheel/fast_hadamard_transform-1.0.4.post1.dist-info/WHEEL
+  creating '/scratch/users/nus/jingzege/tmp/pip-ephem-wheel-cache-hliksfre/wheels/1f/4b/49/ce9a6d6a904db38df9132bbcd6065b074ff363b409c0530ca2/tmp_u1ltint/.tmp-dd3sj39m/fast_hadamard_transform-1.0.4.post1-cp312-cp312-linux_x86_64.whl' and adding 'build/bdist.linux-x86_64/wheel' to it
+  adding 'fast_hadamard_transform_cuda.cpython-312-x86_64-linux-gnu.so'
+  adding 'fast_hadamard_transform/__init__.py'
+  adding 'fast_hadamard_transform/fast_hadamard_transform_interface.py'
+  adding 'fast_hadamard_transform-1.0.4.post1.dist-info/licenses/AUTHORS'
+  adding 'fast_hadamard_transform-1.0.4.post1.dist-info/licenses/LICENSE'
+  adding 'fast_hadamard_transform-1.0.4.post1.dist-info/METADATA'
+  adding 'fast_hadamard_transform-1.0.4.post1.dist-info/WHEEL'
+  adding 'fast_hadamard_transform-1.0.4.post1.dist-info/top_level.txt'
+  adding 'fast_hadamard_transform-1.0.4.post1.dist-info/RECORD'
+  removing build/bdist.linux-x86_64/wheel
+  Building wheel for fast-hadamard-transform (pyproject.toml): finished with status 'done'
+  Created wheel for fast-hadamard-transform: filename=fast_hadamard_transform-1.0.4.post1-cp312-cp312-linux_x86_64.whl size=9068091 sha256=1d972b508b92f5936194078cb5f6e511e27f08d52a0b8ca635222616eed356cf
+  Stored in directory: /scratch/users/nus/jingzege/tmp/pip-ephem-wheel-cache-hliksfre/wheels/1f/4b/49/ce9a6d6a904db38df9132bbcd6065b074ff363b409c0530ca2
+Successfully built fast-hadamard-transform
+Installing collected packages: fast-hadamard-transform
+Successfully installed fast-hadamard-transform-1.0.4.post1
+fht rc=0  Fri Aug 28 17:22:19 +08 2026
+===== gptqmodel =====
+Collecting gptqmodel==2.2.0
+  Using cached gptqmodel-2.2.0.tar.gz (284 kB)
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): still running...
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: accelerate>=1.3.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (1.6.0)
+Requirement already satisfied: datasets>=3.2.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (3.4.1)
+Requirement already satisfied: numpy>=1.26.4 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (2.2.2)
+Requirement already satisfied: torch>=2.2.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (2.5.1+cu124)
+Requirement already satisfied: safetensors>=0.5.2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (0.5.3)
+Requirement already satisfied: transformers>=4.49.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (4.51.3)
+Requirement already satisfied: threadpoolctl>=3.6.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (3.6.0)
+Requirement already satisfied: packaging>=24.2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (26.3)
+Requirement already satisfied: device-smi==0.4.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (0.4.1)
+Requirement already satisfied: protobuf>=5.29.3 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (5.29.6)
+Requirement already satisfied: pillow>=11.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (11.1.0)
+Collecting hf_transfer>=0.1.9 (from gptqmodel==2.2.0)
+  Using cached hf_transfer-0.1.9-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.7 kB)
+Requirement already satisfied: huggingface_hub>=0.28.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (0.31.1)
+Collecting random_word==1.0.13 (from gptqmodel==2.2.0)
+  Using cached random_word-1.0.13-py3-none-any.whl.metadata (4.3 kB)
+Requirement already satisfied: tokenicer==0.0.4 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (0.0.4)
+Requirement already satisfied: logbar==0.0.4 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from gptqmodel==2.2.0) (0.0.4)
+Collecting autopep8<3.0.0,>=2.3.1 (from random_word==1.0.13->gptqmodel==2.2.0)
+  Using cached autopep8-2.3.2-py2.py3-none-any.whl.metadata (16 kB)
+Collecting pytest<9.0.0,>=8.3.3 (from random_word==1.0.13->gptqmodel==2.2.0)
+  Using cached pytest-8.4.2-py3-none-any.whl.metadata (7.7 kB)
+Requirement already satisfied: pyyaml<7.0.0,>=6.0.2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from random_word==1.0.13->gptqmodel==2.2.0) (6.0.2)
+Requirement already satisfied: requests<3.0.0,>=2.32.3 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from random_word==1.0.13->gptqmodel==2.2.0) (2.32.3)
+Collecting pycodestyle>=2.12.0 (from autopep8<3.0.0,>=2.3.1->random_word==1.0.13->gptqmodel==2.2.0)
+  Using cached pycodestyle-2.14.0-py2.py3-none-any.whl.metadata (4.5 kB)
+Collecting iniconfig>=1 (from pytest<9.0.0,>=8.3.3->random_word==1.0.13->gptqmodel==2.2.0)
+  Using cached iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+Collecting pluggy<2,>=1.5 (from pytest<9.0.0,>=8.3.3->random_word==1.0.13->gptqmodel==2.2.0)
+  Using cached pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+Collecting pygments>=2.7.2 (from pytest<9.0.0,>=8.3.3->random_word==1.0.13->gptqmodel==2.2.0)
+  Using cached pygments-2.21.0-py3-none-any.whl.metadata (2.5 kB)
+Requirement already satisfied: charset-normalizer<4,>=2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from requests<3.0.0,>=2.32.3->random_word==1.0.13->gptqmodel==2.2.0) (3.5.1)
+Requirement already satisfied: idna<4,>=2.5 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from requests<3.0.0,>=2.32.3->random_word==1.0.13->gptqmodel==2.2.0) (3.19)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from requests<3.0.0,>=2.32.3->random_word==1.0.13->gptqmodel==2.2.0) (2.7.0)
+Requirement already satisfied: certifi>=2017.4.17 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from requests<3.0.0,>=2.32.3->random_word==1.0.13->gptqmodel==2.2.0) (2026.7.22)
+Requirement already satisfied: psutil in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from accelerate>=1.3.0->gptqmodel==2.2.0) (7.2.2)
+Requirement already satisfied: filelock in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from datasets>=3.2.0->gptqmodel==2.2.0) (3.32.3)
+Requirement already satisfied: pyarrow>=15.0.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from datasets>=3.2.0->gptqmodel==2.2.0) (19.0.1)
+Requirement already satisfied: dill<0.3.9,>=0.3.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from datasets>=3.2.0->gptqmodel==2.2.0) (0.3.8)
+Requirement already satisfied: pandas in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from datasets>=3.2.0->gptqmodel==2.2.0) (2.2.3)
+Requirement already satisfied: tqdm>=4.66.3 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from datasets>=3.2.0->gptqmodel==2.2.0) (4.67.1)
+Requirement already satisfied: xxhash in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from datasets>=3.2.0->gptqmodel==2.2.0) (4.0.1)
+Requirement already satisfied: multiprocess<0.70.17 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from datasets>=3.2.0->gptqmodel==2.2.0) (0.70.16)
+Requirement already satisfied: fsspec<=2024.12.0,>=2023.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from fsspec[http]<=2024.12.0,>=2023.1.0->datasets>=3.2.0->gptqmodel==2.2.0) (2024.12.0)
+Requirement already satisfied: aiohttp in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from datasets>=3.2.0->gptqmodel==2.2.0) (3.14.3)
+Requirement already satisfied: aiohappyeyeballs>=2.5.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from aiohttp->datasets>=3.2.0->gptqmodel==2.2.0) (2.7.1)
+Requirement already satisfied: aiosignal>=1.4.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from aiohttp->datasets>=3.2.0->gptqmodel==2.2.0) (1.4.0)
+Requirement already satisfied: attrs>=17.3.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from aiohttp->datasets>=3.2.0->gptqmodel==2.2.0) (26.1.0)
+Requirement already satisfied: frozenlist>=1.1.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from aiohttp->datasets>=3.2.0->gptqmodel==2.2.0) (1.8.0)
+Requirement already satisfied: multidict<7.0,>=4.5 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from aiohttp->datasets>=3.2.0->gptqmodel==2.2.0) (6.7.1)
+Requirement already satisfied: propcache>=0.2.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from aiohttp->datasets>=3.2.0->gptqmodel==2.2.0) (0.5.2)
+Requirement already satisfied: typing_extensions>=4.4 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from aiohttp->datasets>=3.2.0->gptqmodel==2.2.0) (4.16.0)
+Requirement already satisfied: yarl<2.0,>=1.17.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from aiohttp->datasets>=3.2.0->gptqmodel==2.2.0) (1.24.5)
+Requirement already satisfied: hf-xet<2.0.0,>=1.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from huggingface_hub>=0.28.1->gptqmodel==2.2.0) (1.6.0)
+Requirement already satisfied: networkx in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (3.6.1)
+Requirement already satisfied: jinja2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (3.1.6)
+Requirement already satisfied: nvidia-cuda-nvrtc-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (12.4.127)
+Requirement already satisfied: nvidia-cuda-runtime-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (12.4.127)
+Requirement already satisfied: nvidia-cuda-cupti-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (12.4.127)
+Requirement already satisfied: nvidia-cudnn-cu12==9.1.0.70 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (9.1.0.70)
+Requirement already satisfied: nvidia-cublas-cu12==12.4.5.8 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (12.4.5.8)
+Requirement already satisfied: nvidia-cufft-cu12==11.2.1.3 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (11.2.1.3)
+Requirement already satisfied: nvidia-curand-cu12==10.3.5.147 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (10.3.5.147)
+Requirement already satisfied: nvidia-cusolver-cu12==11.6.1.9 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (11.6.1.9)
+Requirement already satisfied: nvidia-cusparse-cu12==12.3.1.170 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (12.3.1.170)
+Requirement already satisfied: nvidia-nccl-cu12==2.21.5 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (2.21.5)
+Requirement already satisfied: nvidia-nvtx-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (12.4.127)
+Requirement already satisfied: nvidia-nvjitlink-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (12.4.127)
+Requirement already satisfied: triton==3.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (3.1.0)
+Requirement already satisfied: setuptools in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (84.0.0)
+Requirement already satisfied: sympy==1.13.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=2.2.0->gptqmodel==2.2.0) (1.13.1)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from sympy==1.13.1->torch>=2.2.0->gptqmodel==2.2.0) (1.3.0)
+Requirement already satisfied: regex!=2019.12.17 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from transformers>=4.49.0->gptqmodel==2.2.0) (2024.11.6)
+Requirement already satisfied: tokenizers<0.22,>=0.21 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from transformers>=4.49.0->gptqmodel==2.2.0) (0.21.1)
+Requirement already satisfied: MarkupSafe>=2.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from jinja2->torch>=2.2.0->gptqmodel==2.2.0) (3.0.3)
+Requirement already satisfied: python-dateutil>=2.8.2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from pandas->datasets>=3.2.0->gptqmodel==2.2.0) (2.9.0.post0)
+Requirement already satisfied: pytz>=2020.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from pandas->datasets>=3.2.0->gptqmodel==2.2.0) (2026.3.post1)
+Requirement already satisfied: tzdata>=2022.7 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from pandas->datasets>=3.2.0->gptqmodel==2.2.0) (2026.3)
+Requirement already satisfied: six>=1.5 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from python-dateutil>=2.8.2->pandas->datasets>=3.2.0->gptqmodel==2.2.0) (1.17.0)
+Using cached random_word-1.0.13-py3-none-any.whl (1.2 MB)
+Using cached autopep8-2.3.2-py2.py3-none-any.whl (45 kB)
+Using cached pytest-8.4.2-py3-none-any.whl (365 kB)
+Using cached pluggy-1.6.0-py3-none-any.whl (20 kB)
+Using cached hf_transfer-0.1.9-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.6 MB)
+Using cached iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+Using cached pycodestyle-2.14.0-py2.py3-none-any.whl (31 kB)
+Using cached pygments-2.21.0-py3-none-any.whl (1.3 MB)
+Building wheels for collected packages: gptqmodel
+  Building wheel for gptqmodel (pyproject.toml): started
+  Building wheel for gptqmodel (pyproject.toml): still running...
+  Building wheel for gptqmodel (pyproject.toml): finished with status 'done'
+  Created wheel for gptqmodel: filename=gptqmodel-2.2.0+cu124torch2.5-cp312-cp312-linux_x86_64.whl size=85442157 sha256=55d707f7d8a7274110d4d1fcc2a590d694ed50e183fc299c4cb45a4c0defab85
+  Stored in directory: /scratch/users/nus/jingzege/cache/pip/wheels/fe/2f/a0/248f3914be29a1c850d3e11657c51c1729d02fcf673b1e44fb
+Successfully built gptqmodel
+Installing collected packages: pygments, pycodestyle, pluggy, iniconfig, hf_transfer, pytest, autopep8, random_word, gptqmodel
+
+Successfully installed autopep8-2.3.2 gptqmodel-2.2.0+cu124torch2.5 hf_transfer-0.1.9 iniconfig-2.3.0 pluggy-1.6.0 pycodestyle-2.14.0 pygments-2.21.0 pytest-8.4.2 random_word-1.0.13
+gptqmodel rc=0  Fri Aug 28 17:57:05 +08 2026
+===== peft fork =====
+Obtaining file:///home/users/nus/jingzege/projects/SQAT/baseline/QWHA/peft
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Checking if build backend supports build_editable: started
+  Checking if build backend supports build_editable: finished with status 'done'
+  Getting requirements to build editable: started
+  Getting requirements to build editable: finished with status 'done'
+  Preparing editable metadata (pyproject.toml): started
+  Preparing editable metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: numpy>=1.17 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (2.2.2)
+Requirement already satisfied: packaging>=20.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (26.3)
+Requirement already satisfied: psutil in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (7.2.2)
+Requirement already satisfied: pyyaml in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (6.0.2)
+Requirement already satisfied: torch>=1.13.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (2.5.1+cu124)
+Requirement already satisfied: transformers in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (4.51.3)
+Requirement already satisfied: tqdm in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (4.67.1)
+Requirement already satisfied: accelerate>=0.21.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (1.6.0)
+Requirement already satisfied: safetensors in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (0.5.3)
+Requirement already satisfied: huggingface_hub>=0.25.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from peft==0.14.0.dev0) (0.31.1)
+Requirement already satisfied: filelock in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from huggingface_hub>=0.25.0->peft==0.14.0.dev0) (3.32.3)
+Requirement already satisfied: fsspec>=2023.5.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from huggingface_hub>=0.25.0->peft==0.14.0.dev0) (2024.12.0)
+Requirement already satisfied: requests in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from huggingface_hub>=0.25.0->peft==0.14.0.dev0) (2.32.3)
+Requirement already satisfied: typing-extensions>=3.7.4.3 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from huggingface_hub>=0.25.0->peft==0.14.0.dev0) (4.16.0)
+Requirement already satisfied: hf-xet<2.0.0,>=1.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from huggingface_hub>=0.25.0->peft==0.14.0.dev0) (1.6.0)
+Requirement already satisfied: networkx in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (3.6.1)
+Requirement already satisfied: jinja2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (3.1.6)
+Requirement already satisfied: nvidia-cuda-nvrtc-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (12.4.127)
+Requirement already satisfied: nvidia-cuda-runtime-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (12.4.127)
+Requirement already satisfied: nvidia-cuda-cupti-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (12.4.127)
+Requirement already satisfied: nvidia-cudnn-cu12==9.1.0.70 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (9.1.0.70)
+Requirement already satisfied: nvidia-cublas-cu12==12.4.5.8 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (12.4.5.8)
+Requirement already satisfied: nvidia-cufft-cu12==11.2.1.3 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (11.2.1.3)
+Requirement already satisfied: nvidia-curand-cu12==10.3.5.147 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (10.3.5.147)
+Requirement already satisfied: nvidia-cusolver-cu12==11.6.1.9 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (11.6.1.9)
+Requirement already satisfied: nvidia-cusparse-cu12==12.3.1.170 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (12.3.1.170)
+Requirement already satisfied: nvidia-nccl-cu12==2.21.5 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (2.21.5)
+Requirement already satisfied: nvidia-nvtx-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (12.4.127)
+Requirement already satisfied: nvidia-nvjitlink-cu12==12.4.127 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (12.4.127)
+Requirement already satisfied: triton==3.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (3.1.0)
+Requirement already satisfied: setuptools in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (84.0.0)
+Requirement already satisfied: sympy==1.13.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch>=1.13.0->peft==0.14.0.dev0) (1.13.1)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from sympy==1.13.1->torch>=1.13.0->peft==0.14.0.dev0) (1.3.0)
+Requirement already satisfied: MarkupSafe>=2.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from jinja2->torch>=1.13.0->peft==0.14.0.dev0) (3.0.3)
+Requirement already satisfied: charset-normalizer<4,>=2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from requests->huggingface_hub>=0.25.0->peft==0.14.0.dev0) (3.5.1)
+Requirement already satisfied: idna<4,>=2.5 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from requests->huggingface_hub>=0.25.0->peft==0.14.0.dev0) (3.19)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from requests->huggingface_hub>=0.25.0->peft==0.14.0.dev0) (2.7.0)
+Requirement already satisfied: certifi>=2017.4.17 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from requests->huggingface_hub>=0.25.0->peft==0.14.0.dev0) (2026.7.22)
+Requirement already satisfied: regex!=2019.12.17 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from transformers->peft==0.14.0.dev0) (2024.11.6)
+Requirement already satisfied: tokenizers<0.22,>=0.21 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from transformers->peft==0.14.0.dev0) (0.21.1)
+Building wheels for collected packages: peft
+  Building editable for peft (pyproject.toml): started
+  Building editable for peft (pyproject.toml): finished with status 'done'
+  Created wheel for peft: filename=peft-0.14.0.dev0-0.editable-py3-none-any.whl size=10551 sha256=cd7420a8c070d3a000cd08e3b60a3510eaffde9d42fe52d6e6a4c93a623876be
+  Stored in directory: /scratch/users/nus/jingzege/tmp/pip-ephem-wheel-cache-0zfa8y_1/wheels/f8/4a/49/9245a4df30e4381948108094a044e1d5ad91dc8369eb578bb0
+Successfully built peft
+Installing collected packages: peft
+  Attempting uninstall: peft
+    Found existing installation: peft 0.14.0.dev0
+    Uninstalling peft-0.14.0.dev0:
+      Successfully uninstalled peft-0.14.0.dev0
+Successfully installed peft-0.14.0.dev0
+peft rc=0
+===== verify =====
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+
+[32mINFO[0m  ENV: Auto setting PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True' for memory saving.
+[32mINFO[0m  ENV: Auto setting CUDA_DEVICE_ORDER=PCI_BUS_ID for correctness.          
+torch 2.5.1+cu124 | transformers 4.51.3 | peft 0.14.0 | gptqmodel 2.2.0
+VERIFY OK
+DONE Fri Aug 28 18:23:47 +08 2026

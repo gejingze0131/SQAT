@@ -1,0 +1,38 @@
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base ...
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   5%|▌         | 15/291 [00:00<00:02, 136.34it/s]Loading weights:  10%|▉         | 29/291 [00:00<00:02, 123.01it/s]Loading weights:  14%|█▍        | 42/291 [00:00<00:02, 113.77it/s]Loading weights:  19%|█▉        | 56/291 [00:00<00:02, 106.47it/s]Loading weights:  23%|██▎       | 68/291 [00:00<00:02, 106.53it/s]Loading weights:  29%|██▉       | 84/291 [00:00<00:01, 115.85it/s]Loading weights:  33%|███▎      | 96/291 [00:00<00:01, 110.77it/s]Loading weights:  41%|████      | 118/291 [00:00<00:01, 126.35it/s]Loading weights:  45%|████▌     | 131/291 [00:01<00:01, 120.19it/s]Loading weights:  49%|████▉     | 143/291 [00:01<00:01, 75.55it/s] Loading weights:  53%|█████▎    | 153/291 [00:01<00:01, 76.98it/s]Loading weights:  59%|█████▉    | 171/291 [00:01<00:01, 92.44it/s]Loading weights:  63%|██████▎   | 182/291 [00:01<00:01, 90.55it/s]Loading weights:  67%|██████▋   | 195/291 [00:02<00:01, 80.89it/s]Loading weights:  73%|███████▎  | 211/291 [00:02<00:01, 59.95it/s]Loading weights:  80%|████████  | 234/291 [00:02<00:00, 72.40it/s]Loading weights:  85%|████████▍ | 246/291 [00:02<00:00, 68.76it/s]Loading weights:  88%|████████▊ | 257/291 [00:03<00:00, 59.47it/s]Loading weights:  96%|█████████▌| 279/291 [00:03<00:00, 82.46it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 89.70it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 54.1%, worst 60.2% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 364.6M params (58.15% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 11
+[SegPerm] num_runtime_permutes=3
+[probe] registered 3 boundary gathers
+
+== base
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     5.1098    4.0005    0.062     0.219
+arc_easy          5.0004    3.9001    0.062     0.141
+boolq             5.3398    4.4195    0.000     0.641
+hellaswag         5.7956    4.1381    0.125     0.156
+openbookqa        4.9122    3.8776    0.016     0.344
+piqa              4.9630    2.6046    0.188     0.438
+siqa              5.2570    4.0594    0.047     0.422
+winogrande        5.3241    2.2881    0.328     0.453
+MEAN              5.2127    3.6610    0.104
+[SALT-Q] Loaded 800 trainable tensors from outputs/saltq_cs170k_int2_g32_ep1-2bit-saltq/final/saltq_trainable.safetensors
+
+== outputs/saltq_cs170k_int2_g32_ep1-2bit-saltq/final
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     0.1465    1.1722    0.469     0.219
+arc_easy          0.1019    0.8151    0.688     0.141
+boolq             0.0898    0.6287    0.641     0.641
+hellaswag         0.0620    0.4956    0.781     0.156
+openbookqa        0.1324    1.0593    0.562     0.344
+piqa              0.0776    0.6206    0.688     0.438
+siqa              0.0883    0.7064    0.609     0.422
+winogrande        0.0753    0.6023    0.719     0.453
+MEAN              0.0967    0.7625    0.645
+wrote results/probe/saltq_cs170k_int2_g32_ep1_anchor.json

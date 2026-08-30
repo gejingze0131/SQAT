@@ -1,0 +1,13 @@
+[OK] asym INT4 gs64 gk128 (q/k/v/gate/up/down)  salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.424e+06 GPTQ=1.380e+06  (GPTQ/RTN=0.969)
+[OK] asym INT4 gs64 gk0   (o_proj: fully GPTQ)  salient max|Δ|=0.0e+00  non-sal OBS: RTN=3.123e+06 GPTQ=2.923e+06  (GPTQ/RTN=0.936)
+[OK] sym  INT4 gs64 gk128                       salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.948e+06 GPTQ=1.890e+06  (GPTQ/RTN=0.970)
+[OK] asym INT3 gs64 gk128                       salient max|Δ|=0.0e+00  non-sal OBS: RTN=6.826e+06 GPTQ=6.593e+06  (GPTQ/RTN=0.966)
+[OK] asym INT4 gs32 gk128                       salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.098e+06 GPTQ=1.065e+06  (GPTQ/RTN=0.971)
+[OK] asym INT4 gs128 gk128 (1 salient group)    salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.749e+06 GPTQ=1.693e+06  (GPTQ/RTN=0.968)
+[OK] asym INT4 gs64 gk128 (q/k/v/gate/up/down)  AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] sym  INT4 gs64 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT3 gs64 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT4 gs32 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT4 gs128 gk128 (1 salient group)    AWQ salient (post-/S) max|Δ|=0.0e+00
+
+All GPTQ non-salient sanity tests passed.

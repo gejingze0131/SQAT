@@ -1,0 +1,29 @@
+Fri Aug 28 16:03:23 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:41:00.0 Off |                    0 |
+| N/A   42C    P0             53W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
++ for cell in "3 64" "2 32"
++ set -- 3 64
++ echo '>>> quantizing INT3 g64'
++ tee -a logs/commonsense_170k/lota_quantize_bases.log
+>>> quantizing INT3 g64
++ lota_py baseline/LoTA-QAF/sqat/quantize_base.py --bits 3 --group_size 64 --out outputs/lota_bases --cpu_cache
++ for cell in "3 64" "2 32"
++ set -- 2 32
++ echo '>>> quantizing INT2 g32'
++ tee -a logs/commonsense_170k/lota_quantize_bases.log
+>>> quantizing INT2 g32
++ lota_py baseline/LoTA-QAF/sqat/quantize_base.py --bits 2 --group_size 32 --out outputs/lota_bases --cpu_cache
++ echo '>>> smoke: 5 steps on the INT3 base'
++ tee -a logs/commonsense_170k/lota_quantize_bases.log
+>>> smoke: 5 steps on the INT3 base
++ lota_py baseline/LoTA-QAF/sqat/train_lota.py --config baseline/LoTA-QAF/sqat/configs/lota_cs170k_int3_g64_ep1_span.yaml --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym --output_dir outputs/lota_smoke_int3 --max_steps 5 --max_train_samples 400
++ exit 1

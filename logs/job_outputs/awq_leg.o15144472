@@ -1,0 +1,235 @@
+===== JOB INFO =====
+Job ID: 15144472.pbs101
+Host: x1000c0s5b0n1
+Workdir: /home/users/nus/jingzege/projects/SQAT
+CUDA_VISIBLE_DEVICES=GPU-ad0b7a8e-bf08-966f-b72a-743fd4930590,GPU-0434d48e-ebe7-c900-d783-da98ab50a5e4,GPU-d81fa9f9-019b-ab90-94e9-c64abf3efdea,GPU-7c579e25-824c-6368-a8a5-4734f95d30b7
+Start time: Wed Aug 12 20:09:52 +08 2026
+Python: /home/users/nus/jingzege/miniforge3/envs/saltq/bin/python
+Python 3.11.15
+===== GPU INFO =====
+Wed Aug 12 20:09:53 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   43C    P0             56W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA A100-SXM4-40GB          On  |   00000000:41:00.0 Off |                    0 |
+| N/A   42C    P0             56W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   2  NVIDIA A100-SXM4-40GB          On  |   00000000:81:00.0 Off |                    0 |
+| N/A   42C    P0             53W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   3  NVIDIA A100-SXM4-40GB          On  |   00000000:C1:00.0 Off |                    0 |
+| N/A   41C    P0             56W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
++ python scripts/test_awq_folding.py
+test_awq_folding — output equivalence of the offline AWQ fold
+
+fp32 (fold should be exact up to reassociation):
+[SegPerm] Folded AWQ per-channel scales into 3 layers (salient cols amplified, producers divided — model output unchanged)
+  hidden=64 gk=32 gkd=64     layers folded=3  max|Δlogits|=1.788e-07  relative=2.503e-07
+[SegPerm] Folded AWQ per-channel scales into 3 layers (salient cols amplified, producers divided — model output unchanged)
+  hidden=64 gk=16 gkd=32     layers folded=3  max|Δlogits|=2.086e-07  relative=2.920e-07
+
+fp16 (the dtype the real permuted base is saved in):
+[SegPerm] Folded AWQ per-channel scales into 3 layers (salient cols amplified, producers divided — model output unchanged)
+  hidden=64 gk=32 gkd=64     layers folded=3  max|Δlogits|=6.104e-04  relative=8.538e-04
+
+no-op path:
+  awq_scales=None is a no-op folded=0  identical=True
+
+==================================================================
+PASS — fp32 exact to 2.9e-07 relative; fp16 costs 8.5e-04 relative from one weight rounding (INT2 quantization error is ~1e-1).
++ python scripts/test_saltq.py
+====================================================================
+  SALT-Q — Saliency-Allocated Low-bit Trainability
+====================================================================
+
+test_deploy_equals_train  (gate: max|Δ| == 0, merge-free)
+  [PASS] asym INT2 gs32 gk64                deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               deployed == effective, max|Δ|=0.000e+00
+  [PASS] sym  INT3 gs64 gk64                deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      deployed == effective, max|Δ|=0.000e+00
+
+test_deployed_tensors_roundtrip  (canonical group_dequantize reproduces the weight)
+  [PASS] asym INT2 gs32 gk64                group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] sym  INT3 gs64 gk64                group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      group_dequantize round-trip, max|Δ|=0.000e+00
+
+test_step0_matches_gptq_reconstruction  (asym LSQ+ init IS the canonical grid)
+  [PASS] asym INT2 gs32 gk64                step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+
+test_freedom_allocation  (who gets gradients)
+  [PASS] asym INT2 gs32 gk64                salient weights + z receive gradients
+  [PASS] asym INT2 gs32 gk64                frozen codes unchanged after an optimizer step
+  [PASS] asym INT2 gs32 gk64                codes are a non-grad int tensor
+  [PASS] asym INT3 gs32 gk64                salient weights + z receive gradients
+  [PASS] asym INT3 gs32 gk64                frozen codes unchanged after an optimizer step
+  [PASS] asym INT3 gs32 gk64                codes are a non-grad int tensor
+  [PASS] asym INT4 gs64 gk128               salient weights + z receive gradients
+  [PASS] asym INT4 gs64 gk128               frozen codes unchanged after an optimizer step
+  [PASS] asym INT4 gs64 gk128               codes are a non-grad int tensor
+  [PASS] sym  INT3 gs64 gk64                salient weights + z receive gradients
+  [PASS] sym  INT3 gs64 gk64                frozen codes unchanged after an optimizer step
+  [PASS] sym  INT3 gs64 gk64                codes are a non-grad int tensor
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   salient weights + z receive gradients
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   frozen codes unchanged after an optimizer step
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   codes are a non-grad int tensor
+  [PASS] asym INT3 gs32 mostly-salient      salient weights + z receive gradients
+  [PASS] asym INT3 gs32 mostly-salient      frozen codes unchanged after an optimizer step
+  [PASS] asym INT3 gs32 mostly-salient      codes are a non-grad int tensor
+
+test_codes_not_in_state_dict  (checkpoints must not carry the frozen codes)
+  [PASS] codes and the precomputed q*s stay out of state_dict (keys=['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] trainable set == ['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient']
+
+test_forward_matches_linear  (fast path == x @ W_eff^T)
+  [PASS] asym INT2 gs32 gk64                rel err 6.40e-07
+  [PASS] asym INT3 gs32 gk64                rel err 7.33e-07
+  [PASS] asym INT4 gs64 gk128               rel err 7.15e-07
+  [PASS] sym  INT3 gs64 gk64                rel err 3.45e-07
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   rel err 8.20e-07
+  [PASS] asym INT3 gs32 mostly-salient      rel err 2.68e-07
+
+test_z_only_freedom  (s must be frozen by default)
+  [PASS] asym INT2 gs32 gk64                trainable: z yes, s no (['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] asym INT2 gs32 gk64                q*s precomputed as a frozen buffer
+  [PASS] asym INT2 gs32 gk64                codes kept on the host
+  [PASS] asym INT2 gs32 gk64                z receives a gradient
+  [PASS] asym INT3 gs32 gk64                trainable: z yes, s no (['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] asym INT3 gs32 gk64                q*s precomputed as a frozen buffer
+  [PASS] asym INT3 gs32 gk64                codes kept on the host
+  [PASS] asym INT3 gs32 gk64                z receives a gradient
+  [PASS] asym INT4 gs64 gk128               trainable: z yes, s no (['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] asym INT4 gs64 gk128               q*s precomputed as a frozen buffer
+  [PASS] asym INT4 gs64 gk128               codes kept on the host
+  [PASS] asym INT4 gs64 gk128               z receives a gradient
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   trainable: z yes, s no (['saltq_z'])
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   q*s precomputed as a frozen buffer
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   codes kept on the host
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   z receives a gradient
+  [PASS] asym INT3 gs32 mostly-salient      trainable: z yes, s no (['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] asym INT3 gs32 mostly-salient      q*s precomputed as a frozen buffer
+  [PASS] asym INT3 gs32 mostly-salient      codes kept on the host
+  [PASS] asym INT3 gs32 mostly-salient      z receives a gradient
+
+test_train_scale_ablation
+  [PASS] asym INT2 gs32 gk64                s is trainable in the ablation path
+  [PASS] asym INT2 gs32 gk64                s receives a gradient
+  [PASS] asym INT2 gs32 gk64                deployed == effective still exact, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                s is trainable in the ablation path
+  [PASS] asym INT3 gs32 gk64                s receives a gradient
+  [PASS] asym INT3 gs32 gk64                deployed == effective still exact, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               s is trainable in the ablation path
+  [PASS] asym INT4 gs64 gk128               s receives a gradient
+  [PASS] asym INT4 gs64 gk128               deployed == effective still exact, max|Δ|=0.000e+00
+
+test_zero_point_can_actually_move  (the dead-zone regression)
+  [PASS] asym INT2 gs32 gk64                continuous z: a 0.01-level nudge moves W (|Δ|=4.21e-04)
+  [PASS] asym INT2 gs32 gk64                integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT2 gs32 gk64                continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk64                integer    z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                continuous z: a 0.01-level nudge moves W (|Δ|=1.81e-04)
+  [PASS] asym INT3 gs32 gk64                integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT3 gs32 gk64                continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                integer    z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               continuous z: a 0.01-level nudge moves W (|Δ|=8.43e-05)
+  [PASS] asym INT4 gs64 gk128               integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT4 gs64 gk128               continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               integer    z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   continuous z: a 0.01-level nudge moves W (|Δ|=4.24e-04)
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   integer    z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      continuous z: a 0.01-level nudge moves W (|Δ|=1.68e-04)
+  [PASS] asym INT3 gs32 mostly-salient      integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT3 gs32 mostly-salient      continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      integer    z: deployed == effective, max|Δ|=0.000e+00
+
+test_optimizer_group_units
+  [PASS] scale and zero-point name fragments are disjoint
+  [PASS] zero-points ['saltq_z', 'lsq_w_zp'] classified apart from scales ['lsq_w_scale']
+
+====================================================================
+  SALT-Q: 94 passed, 0 failed
+====================================================================
++ python scripts/test_qat_permute_sqat.py
+test_fakequant
+  [PASS] shape invariance (sym+asym)
+  [PASS] group_k % group_size assert
+  [PASS] per-row per-group independence
+  [PASS] symmetric error within one scale
+  [PASS] STE backward (asymmetric)
+test_fused_residual
+  [PASS] QKV-MHA-asym: fused == separate + split shapes
+  [PASS] QKV-MHA-sym: fused == separate + split shapes
+  [PASS] QKV-GQA-asym: fused == separate + split shapes
+  [PASS] GateUp-asym: fused == separate + split shapes
+test_attn_injector
+  [PASS] no full-weight materialization (salient slice only)
+  [PASS] BnB/LoRA projection objects not replaced
+  [PASS] q/k/v outputs = original forward + fused QAT delta
+  [PASS] remove() uninstalls hooks cleanly
+test_mlp_and_down_injectors
+  [PASS] gate/up fused injector matches reference
+  [PASS] down_proj single injector matches reference
+test_grad_flow_to_lora
+  [PASS] gradients reach LoRA A/B through the fused STE residual
+test_awq_scale
+  [PASS] awq injection matches amplified-space reference
+  [PASS] training injection == export /S bake-back (bit-equivalent deploy)
+  [PASS] awq_s=1 == plain path; non-trivial S differs
+  [PASS] FusedAttnQATInjector(awq_s=S) end-to-end
+test_per_module_group_k_meta
+  [PASS] down_proj uses down_layer_group_ks; legacy meta still falls back to residual k
+test_fixed_group_k_auto_segments
+  [PASS] fixed group_k applies to every auto-selected residual segment
+test_fakequant_param_stats
+  [PASS] fakequant parameter coverage counts salient columns only
+test_legacy_topk_ratio_salient_selection
+[SegPerm] Legacy seg 0 (L0-L0): group_k=4, top_k_ratio=0.2, union_topk=4, energy_cov=76.0%, first10=[0, 1, 2, 3]
+  [PASS] manual fixed mode uses legacy top_k_ratio union-first selection
+
+ALL TESTS PASSED
++ python scripts/test_gptq_nonsalient.py
+[OK] asym INT4 gs64 gk128 (q/k/v/gate/up/down)  salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.424e+06 GPTQ=1.380e+06  (GPTQ/RTN=0.969)
+[OK] asym INT4 gs64 gk0   (o_proj: fully GPTQ)  salient max|Δ|=0.0e+00  non-sal OBS: RTN=3.123e+06 GPTQ=2.923e+06  (GPTQ/RTN=0.936)
+[OK] sym  INT4 gs64 gk128                       salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.948e+06 GPTQ=1.890e+06  (GPTQ/RTN=0.970)
+[OK] asym INT3 gs64 gk128                       salient max|Δ|=0.0e+00  non-sal OBS: RTN=6.826e+06 GPTQ=6.593e+06  (GPTQ/RTN=0.966)
+[OK] asym INT4 gs32 gk128                       salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.098e+06 GPTQ=1.065e+06  (GPTQ/RTN=0.971)
+[OK] asym INT4 gs128 gk128 (1 salient group)    salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.749e+06 GPTQ=1.693e+06  (GPTQ/RTN=0.968)
+[OK] asym INT4 gs64 gk128 (q/k/v/gate/up/down)  AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] sym  INT4 gs64 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT3 gs64 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT4 gs32 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT4 gs128 gk128 (1 salient group)    AWQ salient (post-/S) max|Δ|=0.0e+00
+
+All GPTQ non-salient sanity tests passed.
++ set +x
+End time: Wed Aug 12 20:20:31 +08 2026

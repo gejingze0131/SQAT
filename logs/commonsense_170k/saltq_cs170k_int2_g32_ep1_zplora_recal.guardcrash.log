@@ -1,0 +1,362 @@
+============================================================
+  SALT-Q — Saliency-Allocated Low-bit Trainability
+  Config:        configs/saltq_cs170k_int2_g32_ep1_zplora_recal.yaml
+  Model:         meta-llama/Llama-2-7b-hf
+  Bits:          INT2 (asymmetric affine)
+  GPUs:          4 (train) / [0,1,2,3] (eval, vLLM tensor-parallel)
+  salient_lr:    <from yaml>   (REAL weights — not an adapter lr)
+  scales_lr:     <from yaml>   ((s, z) of both segments)
+  train_LN:      false
+  Frozen codes:  outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32
+  Permuted base: outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base
+============================================================
+
+>>> Stage 1: SALT-Q training
+======================================================================
+======================================================================  QLoRA Training — 2-bit | QAT mode: saltq | symmetric=False======================================================================
+
+
+  QLoRA Training — 2-bit | QAT mode: saltq | symmetric=False======================================================================  QLoRA Training — 2-bit | QAT mode: saltq | symmetric=False
+
+
+======================================================================  Train dataset:   datasets/commonsense======================================================================
+
+
+  Train dataset:   datasets/commonsense  Train split:     train  Train dataset:   datasets/commonsense
+
+
+  Train split:     train  Val split:       None  Train split:     train
+
+
+  Val split:       None  Sub-tasks:       all  Val split:       None
+
+
+  Sub-tasks:       all======================================================================  Sub-tasks:       all
+
+
+  QLoRA Training — 2-bit | QAT mode: saltq | symmetric=False
+======================================================================
+  Train dataset:   datasets/commonsense
+  Train split:     train
+  Val split:       None
+  Sub-tasks:       all
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+
+[SQAT-Permute] Building permuted fp16 base (permute BEFORE NF4)...
+[SegPerm] Stage-2 pre-quant: loading meta-llama/Llama-2-7b-hf in torch.bfloat16 (no BNB) ...
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:02<10:42,  2.21s/it]Loading weights:   2%|▏         | 6/291 [00:02<01:36,  2.96it/s]Loading weights:   3%|▎         | 10/291 [00:02<00:56,  4.95it/s]Loading weights:   4%|▍         | 12/291 [00:03<00:49,  5.67it/s]Loading weights:   5%|▍         | 14/291 [00:03<00:44,  6.18it/s]Loading weights:   5%|▌         | 15/291 [00:03<00:46,  5.95it/s]Loading weights:   7%|▋         | 19/291 [00:03<00:33,  8.18it/s]Loading weights:   8%|▊         | 22/291 [00:04<00:30,  8.81it/s]Loading weights:   8%|▊         | 24/291 [00:04<00:35,  7.46it/s]Loading weights:   9%|▉         | 27/291 [00:04<00:31,  8.45it/s]Loading weights:  11%|█         | 31/291 [00:05<00:32,  7.96it/s]Loading weights:  11%|█         | 32/291 [00:05<00:41,  6.21it/s]Loading weights:  12%|█▏        | 36/291 [00:06<00:35,  7.22it/s]Loading weights:  14%|█▎        | 40/291 [00:06<00:29,  8.61it/s]Loading weights:  14%|█▍        | 41/291 [00:07<00:44,  5.65it/s]Loading weights:  16%|█▌        | 47/291 [00:07<00:24, 10.15it/s]Loading weights:  17%|█▋        | 49/291 [00:07<00:24,  9.98it/s]Loading weights:  18%|█▊        | 51/291 [00:08<00:38,  6.28it/s]Loading weights:  19%|█▉        | 56/291 [00:08<00:24,  9.67it/s]Loading weights:  20%|██        | 59/291 [00:08<00:22, 10.18it/s]Loading weights:  21%|██        | 61/291 [00:08<00:25,  8.88it/s]Loading weights:  22%|██▏       | 63/291 [00:09<00:25,  8.98it/s]Loading weights:  22%|██▏       | 65/291 [00:09<00:25,  8.71it/s]Loading weights:  23%|██▎       | 67/291 [00:09<00:28,  7.75it/s]Loading weights:  23%|██▎       | 68/291 [00:10<00:53,  4.20it/s]Loading weights:  26%|██▋       | 77/291 [00:11<00:29,  7.33it/s]Loading weights:  28%|██▊       | 82/291 [00:11<00:20,  9.98it/s]Loading weights:  29%|██▉       | 85/291 [00:11<00:20, 10.08it/s]Loading weights:  30%|██▉       | 87/291 [00:12<00:32,  6.21it/s]Loading weights:  32%|███▏      | 94/291 [00:13<00:22,  8.90it/s]Loading weights:  33%|███▎      | 96/291 [00:13<00:22,  8.49it/s]Loading weights:  34%|███▍      | 99/291 [00:14<00:33,  5.70it/s]Loading weights:  35%|███▌      | 103/291 [00:14<00:24,  7.78it/s]Loading weights:  36%|███▌      | 105/291 [00:15<00:43,  4.27it/s]Loading weights:  37%|███▋      | 109/291 [00:16<00:34,  5.31it/s]Loading weights:  39%|███▉      | 113/291 [00:16<00:30,  5.88it/s]Loading weights:  41%|████      | 118/291 [00:17<00:28,  6.03it/s]Loading weights:  42%|████▏     | 122/291 [00:18<00:27,  6.10it/s]Loading weights:  44%|████▎     | 127/291 [00:18<00:21,  7.76it/s]Loading weights:  44%|████▍     | 129/291 [00:18<00:19,  8.43it/s]Loading weights:  45%|████▌     | 131/291 [00:19<00:20,  7.78it/s]Loading weights:  45%|████▌     | 132/291 [00:19<00:20,  7.72it/s]Loading weights:  46%|████▋     | 135/291 [00:19<00:15, 10.21it/s]Loading weights:  47%|████▋     | 137/291 [00:19<00:17,  8.84it/s]Loading weights:  48%|████▊     | 139/291 [00:19<00:18,  8.24it/s]Loading weights:  48%|████▊     | 141/291 [00:21<00:35,  4.23it/s]Loading weights:  51%|█████     | 149/291 [00:21<00:23,  6.05it/s]Loading weights:  52%|█████▏    | 150/291 [00:22<00:24,  5.80it/s]Loading weights:  54%|█████▍    | 157/291 [00:22<00:17,  7.48it/s]Loading weights:  54%|█████▍    | 158/291 [00:23<00:26,  4.98it/s]Loading weights:  57%|█████▋    | 167/291 [00:24<00:15,  7.88it/s]Loading weights:  59%|█████▉    | 173/291 [00:24<00:13,  8.97it/s]Loading weights:  60%|██████    | 176/291 [00:25<00:13,  8.64it/s]Loading weights:  63%|██████▎   | 182/291 [00:25<00:11,  9.22it/s]Loading weights:  63%|██████▎   | 184/291 [00:26<00:13,  7.73it/s]Loading weights:  66%|██████▋   | 193/291 [00:26<00:09, 10.49it/s]Loading weights:  67%|██████▋   | 195/291 [00:27<00:11,  8.50it/s]Loading weights:  68%|██████▊   | 198/291 [00:27<00:11,  7.98it/s]Loading weights:  70%|██████▉   | 203/291 [00:28<00:12,  6.78it/s]Loading weights:  72%|███████▏  | 209/291 [00:29<00:09,  8.86it/s]Loading weights:  73%|███████▎  | 211/291 [00:29<00:08,  9.50it/s]Loading weights:  73%|███████▎  | 213/291 [00:29<00:09,  7.98it/s]Loading weights:  76%|███████▌  | 220/291 [00:30<00:09,  7.82it/s]Loading weights:  76%|███████▋  | 222/291 [00:30<00:08,  8.52it/s]Loading weights:  77%|███████▋  | 225/291 [00:31<00:08,  7.95it/s]Loading weights:  78%|███████▊  | 226/291 [00:31<00:10,  6.20it/s]Loading weights:  79%|███████▉  | 230/291 [00:32<00:10,  5.62it/s]Loading weights:  81%|████████  | 235/291 [00:33<00:09,  6.15it/s]Loading weights:  82%|████████▏ | 239/291 [00:33<00:06,  7.91it/s]Loading weights:  84%|████████▍ | 244/291 [00:34<00:07,  6.52it/s]Loading weights:  85%|████████▍ | 247/291 [00:34<00:05,  7.95it/s]Loading weights:  86%|████████▌ | 249/291 [00:34<00:06,  6.45it/s]Loading weights:  87%|████████▋ | 253/291 [00:35<00:05,  7.23it/s]Loading weights:  88%|████████▊ | 256/291 [00:35<00:05,  6.99it/s]Loading weights:  88%|████████▊ | 257/291 [00:36<00:07,  4.26it/s]Loading weights:  90%|█████████ | 263/291 [00:37<00:03,  7.29it/s]Loading weights:  91%|█████████▏| 266/291 [00:38<00:04,  5.10it/s]Loading weights:  94%|█████████▍| 274/291 [00:38<00:02,  7.71it/s]Loading weights:  95%|█████████▍| 276/291 [00:39<00:02,  6.65it/s]Loading weights:  96%|█████████▌| 280/291 [00:39<00:01,  7.13it/s]Loading weights:  97%|█████████▋| 283/291 [00:39<00:00,  8.13it/s]Loading weights:  99%|█████████▉| 289/291 [00:40<00:00,  9.63it/s]Loading weights: 100%|██████████| 291/291 [00:40<00:00,  7.22it/s]
+[SegPerm] Calibrating E[x²]:   0%|          | 0/64 [00:00<?, ?it/s][SegPerm] Calibrating E[x²]:   2%|▏         | 1/64 [00:01<01:55,  1.84s/it][SegPerm] Calibrating E[x²]:   3%|▎         | 2/64 [00:02<00:53,  1.15it/s][SegPerm] Calibrating E[x²]:   5%|▍         | 3/64 [00:02<00:33,  1.81it/s][SegPerm] Calibrating E[x²]:   6%|▋         | 4/64 [00:02<00:25,  2.40it/s][SegPerm] Calibrating E[x²]:   8%|▊         | 5/64 [00:02<00:19,  3.02it/s][SegPerm] Calibrating E[x²]:   9%|▉         | 6/64 [00:02<00:16,  3.62it/s][SegPerm] Calibrating E[x²]:  11%|█         | 7/64 [00:02<00:13,  4.14it/s][SegPerm] Calibrating E[x²]:  12%|█▎        | 8/64 [00:03<00:12,  4.50it/s][SegPerm] Calibrating E[x²]:  14%|█▍        | 9/64 [00:03<00:11,  4.67it/s][SegPerm] Calibrating E[x²]:  16%|█▌        | 10/64 [00:03<00:10,  4.97it/s][SegPerm] Calibrating E[x²]:  17%|█▋        | 11/64 [00:03<00:10,  5.18it/s][SegPerm] Calibrating E[x²]:  19%|█▉        | 12/64 [00:03<00:09,  5.39it/s][SegPerm] Calibrating E[x²]:  20%|██        | 13/64 [00:03<00:09,  5.54it/s][SegPerm] Calibrating E[x²]:  22%|██▏       | 14/64 [00:04<00:08,  5.56it/s][SegPerm] Calibrating E[x²]:  23%|██▎       | 15/64 [00:04<00:08,  5.62it/s][SegPerm] Calibrating E[x²]:  25%|██▌       | 16/64 [00:04<00:08,  5.54it/s][SegPerm] Calibrating E[x²]:  27%|██▋       | 17/64 [00:04<00:08,  5.24it/s][SegPerm] Calibrating E[x²]:  28%|██▊       | 18/64 [00:04<00:08,  5.38it/s][SegPerm] Calibrating E[x²]:  30%|██▉       | 19/64 [00:05<00:08,  5.46it/s][SegPerm] Calibrating E[x²]:  31%|███▏      | 20/64 [00:05<00:07,  5.52it/s][SegPerm] Calibrating E[x²]:  33%|███▎      | 21/64 [00:05<00:07,  5.53it/s][SegPerm] Calibrating E[x²]:  34%|███▍      | 22/64 [00:05<00:07,  5.55it/s][SegPerm] Calibrating E[x²]:  36%|███▌      | 23/64 [00:05<00:07,  5.58it/s][SegPerm] Calibrating E[x²]:  38%|███▊      | 24/64 [00:05<00:07,  5.64it/s][SegPerm] Calibrating E[x²]:  39%|███▉      | 25/64 [00:06<00:07,  5.43it/s][SegPerm] Calibrating E[x²]:  41%|████      | 26/64 [00:06<00:07,  5.39it/s][SegPerm] Calibrating E[x²]:  42%|████▏     | 27/64 [00:06<00:06,  5.43it/s][SegPerm] Calibrating E[x²]:  44%|████▍     | 28/64 [00:06<00:06,  5.51it/s][SegPerm] Calibrating E[x²]:  45%|████▌     | 29/64 [00:06<00:06,  5.60it/s][SegPerm] Calibrating E[x²]:  47%|████▋     | 30/64 [00:07<00:06,  5.59it/s][SegPerm] Calibrating E[x²]:  48%|████▊     | 31/64 [00:07<00:05,  5.63it/s][SegPerm] Calibrating E[x²]:  50%|█████     | 32/64 [00:07<00:05,  5.68it/s][SegPerm] Calibrating E[x²]:  52%|█████▏    | 33/64 [00:07<00:05,  5.71it/s][SegPerm] Calibrating E[x²]:  53%|█████▎    | 34/64 [00:07<00:05,  5.59it/s][SegPerm] Calibrating E[x²]:  55%|█████▍    | 35/64 [00:07<00:05,  5.58it/s][SegPerm] Calibrating E[x²]:  56%|█████▋    | 36/64 [00:08<00:04,  5.63it/s][SegPerm] Calibrating E[x²]:  58%|█████▊    | 37/64 [00:08<00:04,  5.59it/s][SegPerm] Calibrating E[x²]:  59%|█████▉    | 38/64 [00:08<00:04,  5.59it/s][SegPerm] Calibrating E[x²]:  61%|██████    | 39/64 [00:08<00:04,  5.61it/s][SegPerm] Calibrating E[x²]:  62%|██████▎   | 40/64 [00:08<00:04,  5.58it/s][SegPerm] Calibrating E[x²]:  64%|██████▍   | 41/64 [00:09<00:04,  5.46it/s][SegPerm] Calibrating E[x²]:  66%|██████▌   | 42/64 [00:09<00:03,  5.52it/s][SegPerm] Calibrating E[x²]:  67%|██████▋   | 43/64 [00:09<00:03,  5.60it/s][SegPerm] Calibrating E[x²]:  69%|██████▉   | 44/64 [00:09<00:03,  5.61it/s][SegPerm] Calibrating E[x²]:  70%|███████   | 45/64 [00:09<00:03,  5.53it/s][SegPerm] Calibrating E[x²]:  72%|███████▏  | 46/64 [00:09<00:03,  5.58it/s][SegPerm] Calibrating E[x²]:  73%|███████▎  | 47/64 [00:10<00:03,  5.66it/s][SegPerm] Calibrating E[x²]:  75%|███████▌  | 48/64 [00:10<00:02,  5.74it/s][SegPerm] Calibrating E[x²]:  77%|███████▋  | 49/64 [00:10<00:02,  5.46it/s][SegPerm] Calibrating E[x²]:  78%|███████▊  | 50/64 [00:10<00:02,  5.58it/s][SegPerm] Calibrating E[x²]:  80%|███████▉  | 51/64 [00:10<00:02,  5.68it/s][SegPerm] Calibrating E[x²]:  81%|████████▏ | 52/64 [00:10<00:02,  5.70it/s][SegPerm] Calibrating E[x²]:  83%|████████▎ | 53/64 [00:11<00:01,  5.72it/s][SegPerm] Calibrating E[x²]:  84%|████████▍ | 54/64 [00:11<00:01,  5.76it/s][SegPerm] Calibrating E[x²]:  86%|████████▌ | 55/64 [00:11<00:01,  5.76it/s][SegPerm] Calibrating E[x²]:  88%|████████▊ | 56/64 [00:11<00:01,  5.74it/s][SegPerm] Calibrating E[x²]:  89%|████████▉ | 57/64 [00:11<00:01,  5.42it/s][SegPerm] Calibrating E[x²]:  91%|█████████ | 58/64 [00:12<00:01,  5.52it/s][SegPerm] Calibrating E[x²]:  92%|█████████▏| 59/64 [00:12<00:00,  5.58it/s][SegPerm] Calibrating E[x²]:  94%|█████████▍| 60/64 [00:12<00:00,  5.64it/s][SegPerm] Calibrating E[x²]:  95%|█████████▌| 61/64 [00:12<00:00,  5.69it/s][SegPerm] Calibrating E[x²]:  97%|█████████▋| 62/64 [00:12<00:00,  5.72it/s][SegPerm] Calibrating E[x²]:  98%|█████████▊| 63/64 [00:12<00:00,  5.61it/s][SegPerm] Calibrating E[x²]: 100%|██████████| 64/64 [00:13<00:00,  5.66it/s][SegPerm] Calibrating E[x²]: 100%|██████████| 64/64 [00:13<00:00,  4.88it/s]
+[SegPerm] WARNING: fixed group_k=128 cannot cover all true residual outliers with <= 4 segments; selected minimum-overflow split with 94 outliers outside the protected buckets.
+[SegPerm] Auto segments + fixed global group_k: boundary_sizes=[1, 1, 10, 20], group_k=128
+[SegPerm] WARNING: Layer 0 down_proj has 194 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 1 down_proj has 189 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 2 down_proj has 187 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 3 down_proj has 176 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 4 down_proj has 155 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 5 down_proj has 138 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 6 down_proj has 137 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 7 down_proj has 155 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 8 down_proj has 143 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 10 down_proj has 134 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 12 down_proj has 136 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 13 down_proj has 135 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 14 down_proj has 158 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 15 down_proj has 157 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 16 down_proj has 156 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 17 down_proj has 169 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 18 down_proj has 158 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 19 down_proj has 166 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 20 down_proj has 177 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 21 down_proj has 181 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 22 down_proj has 187 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 23 down_proj has 178 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 24 down_proj has 173 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 25 down_proj has 171 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 26 down_proj has 202 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 27 down_proj has 211 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 28 down_proj has 248 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 29 down_proj has 182 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] WARNING: Layer 31 down_proj has 182 true outliers (sigma=3), larger than fixed group_k=128. Only the top-128 down_proj channels will be protected.
+[SegPerm] Down-proj fixed global group_k: group_k=128, values=[128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128]
+[SegPerm] Selective-QAT fakequant parameter coverage: fakequant_params=157,286,400; of_qat_target_weights=2.65% (5,939,134,464 params); of_lora_target_weights=2.43% (6,476,005,376 params); of_model_params=2.33% (6,738,415,616 params)
+[SegPerm] Seg 0 (L0-L0): group_k=128, outliers=106, energy_cov=82.3%, first10=[22, 89, 94, 102, 124, 125, 210, 216, 257, 288]
+[SegPerm] Seg 1 (L1-L1): group_k=128, outliers=136, energy_cov=71.4%, first10=[28, 81, 89, 94, 192, 216, 257, 261, 263, 310]
+[SegPerm] WARNING: seg 1 has 136 true outliers but group_k=128; only the highest aggregate-score outliers fit.
+[SegPerm] Seg 2 (L2-L11): group_k=128, outliers=126, energy_cov=35.5%, first10=[94, 137, 156, 204, 216, 257, 278, 299, 309, 310]
+[SegPerm] Seg 3 (L12-L31): group_k=128, outliers=214, energy_cov=20.8%, first10=[94, 149, 167, 204, 257, 268, 294, 310, 317, 339]
+[SegPerm] WARNING: seg 3 has 214 true outliers but group_k=128; only the highest aggregate-score outliers fit.
+[SegPerm] Permuted residual stream: 4 segs, num_runtime_permutes=3
+[SegPerm] Applied P4 (down_proj) permutations: 32 layers
+[SegPerm] Hadamard rotation applied to 32/32 layers (head_dim=128, num_kv_heads=32)
+[SegPerm] Saving permuted fp16 base → outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:16<00:00, 16.77s/it]Writing model shards: 100%|██████████| 1/1 [00:16<00:00, 16.77s/it]
+[SegPerm] perm_meta saved → outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base/sqat_permute_meta.pt (num_runtime_permutes=3, num_P4=32)
+[SQAT-Permute] Using permuted base outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base (num_runtime_permutes=3)
+[SQAT-Permute] Using permuted base outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base (num_runtime_permutes=3)
+[SQAT-Permute] Using permuted base outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base (num_runtime_permutes=3)
+[SQAT-Permute] Using permuted base outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base (num_runtime_permutes=3)
+
+[SALT-Q] 复用已有 frozen-code base（INT2 g32 asym，配置一致，不重新 GPTQ）: outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32
+[SALT-Q] Using frozen-code base outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32[SALT-Q] Using frozen-code base outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32[SALT-Q] Using frozen-code base outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32[SALT-Q] Using frozen-code base outputs/saltq_cs170k_int2_g32_ep1/saltq_base_2bit_g32
+
+
+
+
+[1/5] Loading model and tokenizer...
+[1/5] Loading model and tokenizer...
+[1/5] Loading model and tokenizer...
+[1/5] Loading model and tokenizer...
+
+
+
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base ...
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 8212.89it/s]
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base ...
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base ...
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base ...
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 7551.46it/s]
+Loading weights: 100%|██████████| 291/291 [00:00<00:00, 6482.18it/s]
+Loading weights: 100%|██████████| 291/291 [00:00<00:00, 10510.05it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 54.1%, worst 60.2% (model.layers.0.self_attn.q_proj)
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 54.1%, worst 60.2% (model.layers.0.self_attn.q_proj)
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 54.1%, worst 60.2% (model.layers.0.self_attn.q_proj)
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 54.1%, worst 60.2% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 256.4M params (35.79% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+
+[2/5] Loading datasets...
+[SALT-Q] Replaced 224 linears; trainable 256.4M params (35.79% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+
+[2/5] Loading datasets...
+[SALT-Q] Replaced 224 linears; trainable 256.4M params (35.79% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+
+[2/5] Loading datasets...
+[SALT-Q] Replaced 224 linears; trainable 256.4M params (35.79% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+
+[2/5] Loading datasets...
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+  Train: 147580 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 11
+[SegPerm] num_runtime_permutes=3
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=3, group_k values=[0, 128], group_size=32, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 157.3M full-freedom salient weights + 404.8M affine (s,z) + 6318.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=157,286,400; of_qat_target_weights=2.65% (5,939,134,464 params); of_lora_target_weights=2.43% (6,476,005,376 params); of_model_params=2.33% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+  Train: 147580 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 11
+[SegPerm] num_runtime_permutes=3
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=3, group_k values=[0, 128], group_size=32, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 157.3M full-freedom salient weights + 404.8M affine (s,z) + 6318.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=157,286,400; of_qat_target_weights=2.65% (5,939,134,464 params); of_lora_target_weights=2.43% (6,476,005,376 params); of_model_params=2.33% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+  Train: 147580 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 11
+[SegPerm] num_runtime_permutes=3
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=3, group_k values=[0, 128], group_size=32, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 157.3M full-freedom salient weights + 404.8M affine (s,z) + 6318.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=157,286,400; of_qat_target_weights=2.65% (5,939,134,464 params); of_lora_target_weights=2.43% (6,476,005,376 params); of_model_params=2.33% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+  Train: 147580 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 11
+[SegPerm] num_runtime_permutes=3
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=3, group_k values=[0, 128], group_size=32, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 157.3M full-freedom salient weights + 404.8M affine (s,z) + 6318.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=157,286,400; of_qat_target_weights=2.65% (5,939,134,464 params); of_lora_target_weights=2.43% (6,476,005,376 params); of_model_params=2.33% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+
+[5/5] Starting training...
+[5/5] Starting training...
+
+
+[5/5] Starting training...
+
+[5/5] Starting training...
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/train.py", line 938, in <module>
+[rank1]:     main()
+[rank1]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/train.py", line 855, in main
+[rank1]:     trainer.train()
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1437, in train
+[rank1]:     return inner_training_loop(
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1476, in _inner_training_loop
+[rank1]:     model, train_dataloader = self._prepare_for_training(max_steps, train_dataloader, resume_from_checkpoint)
+[rank1]:                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1586, in _prepare_for_training
+[rank1]:     self.create_optimizer()
+[rank1]:   File "/home/users/nus/jingzege/projects/SQAT/src/trainer.py", line 348, in create_optimizer
+[rank1]:     raise RuntimeError(
+[rank1]: RuntimeError: [SALT-Q] zp-LoRA is active (89.3M factors) but the zero-point group is ALSO trainable (4.9M params). The adapter replaces the full-rank z; training both means the run is not the experiment its config describes. Check SALTQLinear.param_is_trainable and the freedom-allocation loop in build_saltq_model.
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/train.py", line 938, in <module>
+[rank0]:     main()
+[rank0]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/train.py", line 855, in main
+[rank0]:     trainer.train()
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1437, in train
+[rank0]:     return inner_training_loop(
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1476, in _inner_training_loop
+[rank0]:     model, train_dataloader = self._prepare_for_training(max_steps, train_dataloader, resume_from_checkpoint)
+[rank0]:                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1586, in _prepare_for_training
+[rank0]:     self.create_optimizer()
+[rank0]:   File "/home/users/nus/jingzege/projects/SQAT/src/trainer.py", line 348, in create_optimizer
+[rank0]:     raise RuntimeError(
+[rank0]: RuntimeError: [SALT-Q] zp-LoRA is active (89.3M factors) but the zero-point group is ALSO trainable (4.9M params). The adapter replaces the full-rank z; training both means the run is not the experiment its config describes. Check SALTQLinear.param_is_trainable and the freedom-allocation loop in build_saltq_model.
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/train.py", line 938, in <module>
+[rank3]:     main()
+[rank3]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/train.py", line 855, in main
+[rank3]:     trainer.train()
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1437, in train
+[rank3]:     return inner_training_loop(
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1476, in _inner_training_loop
+[rank3]:     model, train_dataloader = self._prepare_for_training(max_steps, train_dataloader, resume_from_checkpoint)
+[rank3]:                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1586, in _prepare_for_training
+[rank3]:     self.create_optimizer()
+[rank3]:   File "/home/users/nus/jingzege/projects/SQAT/src/trainer.py", line 348, in create_optimizer
+[rank3]:     raise RuntimeError(
+[rank3]: RuntimeError: [SALT-Q] zp-LoRA is active (89.3M factors) but the zero-point group is ALSO trainable (4.9M params). The adapter replaces the full-rank z; training both means the run is not the experiment its config describes. Check SALTQLinear.param_is_trainable and the freedom-allocation loop in build_saltq_model.
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/train.py", line 938, in <module>
+[rank2]:     main()
+[rank2]:   File "/home/users/nus/jingzege/projects/SQAT/scripts/train.py", line 855, in main
+[rank2]:     trainer.train()
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1437, in train
+[rank2]:     return inner_training_loop(
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1476, in _inner_training_loop
+[rank2]:     model, train_dataloader = self._prepare_for_training(max_steps, train_dataloader, resume_from_checkpoint)
+[rank2]:                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/transformers/trainer.py", line 1586, in _prepare_for_training
+[rank2]:     self.create_optimizer()
+[rank2]:   File "/home/users/nus/jingzege/projects/SQAT/src/trainer.py", line 348, in create_optimizer
+[rank2]:     raise RuntimeError(
+[rank2]: RuntimeError: [SALT-Q] zp-LoRA is active (89.3M factors) but the zero-point group is ALSO trainable (4.9M params). The adapter replaces the full-rank z; training both means the run is not the experiment its config describes. Check SALTQLinear.param_is_trainable and the freedom-allocation loop in build_saltq_model.
+[rank0]:[W825 20:39:29.200848753 ProcessGroupNCCL.cpp:1575] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+W0825 20:39:31.393000 2538093 site-packages/torch/distributed/elastic/multiprocessing/api.py:1012] Sending process 2538422 closing signal SIGTERM
+W0825 20:39:31.395000 2538093 site-packages/torch/distributed/elastic/multiprocessing/api.py:1012] Sending process 2538423 closing signal SIGTERM
+W0825 20:39:31.395000 2538093 site-packages/torch/distributed/elastic/multiprocessing/api.py:1012] Sending process 2538424 closing signal SIGTERM
+E0825 20:39:32.611000 2538093 site-packages/torch/distributed/elastic/multiprocessing/api.py:986] failed (exitcode: 1) local_rank: 3 (pid: 2538425) of binary: /home/users/nus/jingzege/miniforge3/envs/saltq/bin/python
+Traceback (most recent call last):
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/bin/accelerate", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/accelerate/commands/accelerate_cli.py", line 50, in main
+    args.func(args)
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/accelerate/commands/launch.py", line 1398, in launch_command
+    multi_gpu_launcher(args)
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/accelerate/commands/launch.py", line 1023, in multi_gpu_launcher
+    distrib_run.run(args)
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/run.py", line 981, in run
+    elastic_launch(
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+scripts/train.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-08-25_20:39:32
+  host      : x1000c2s0b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 2538422)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[2]:
+  time      : 2026-08-25_20:39:32
+  host      : x1000c2s0b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 2538423)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+[3]:
+  time      : 2026-08-25_20:39:32
+  host      : x1000c2s0b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 2 (local_rank: 2)
+  exitcode  : 1 (pid: 2538424)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-08-25_20:39:31
+  host      : x1000c2s0b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 2538425)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

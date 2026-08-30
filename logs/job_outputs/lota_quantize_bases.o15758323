@@ -1,0 +1,19 @@
+Fri Aug 28 15:50:32 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:41:00.0 Off |                    0 |
+| N/A   42C    P0             55W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
++ for cell in "3 64" "2 32"
++ set -- 3 64
++ echo '>>> quantizing INT3 g64'
++ tee -a logs/commonsense_170k/lota_quantize_bases.log
+>>> quantizing INT3 g64
++ lota_py baseline/LoTA-QAF/sqat/quantize_base.py --bits 3 --group_size 64 --out outputs/lota_bases --cpu_cache
++ exit 1

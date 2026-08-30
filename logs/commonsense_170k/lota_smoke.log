@@ -1,0 +1,193 @@
+>>> smoke: 5 steps on the INT3 base
++ env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=/scratch/users/nus/jingzege/conda_envs/lota/lib:/opt/cray/pe/papi/6.0.0.14/lib64:/opt/cray/libfabric/1.11.0.4.125/lib64 /scratch/users/nus/jingzege/conda_envs/lota/bin/python baseline/LoTA-QAF/sqat/train_lota.py --config baseline/LoTA-QAF/sqat/configs/lota_cs170k_int3_g64_ep1_span.yaml --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym --output_dir outputs/lota_smoke_int3 --max_steps 5 --max_train_samples 400
+
+======================================================================
+  LoTA-QAF  |  base outputs/lota_bases/Llama-2-7B_int3_64_asym
+  omega=48  sigma_t 0.95 -> 0.999 -> 0.9999  residual=True
+  out   /home/users/nus/jingzege/projects/SQAT/outputs/lota_smoke_int3
+======================================================================
+from_quantized: adapter: None
+[32mINFO[0m  Estimated Quantization BPW (bits per weight): 3.459375 bpw, based on [bits: 3, group_size: 64]
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+[32mINFO[0m  Kernel: candidates -> `[TorchQuantLinear]`                               
+[32mINFO[0m  Kernel: selected -> `TorchQuantLinear`.                                  
+[32mINFO[0m  Format: Converting `checkpoint_format` from `gptq` to internal `gptq_v2`.
+[32mINFO[0m  Format: Converting GPTQ v1 to v2                                         
+[32mINFO[0m  Format: Conversion complete: 1.7962779998779297s                         
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+INFO:tokenicer.tokenicer:Tokenicer: Auto fixed pad_token_id=0 (token='<unk>').
+[32mINFO[0m  Model: Loaded `generation_config`: GenerationConfig {
+  "bos_token_id": 1,
+  "eos_token_id": 2
+}
+
+[32mINFO[0m  Model: Auto-fixed `generation_config` mismatch between model and `generation_config.json`.
+[32mINFO[0m  Model: Updated `generation_config`: GenerationConfig {
+  "bos_token_id": 1,
+  "do_sample": true,
+  "eos_token_id": 2,
+  "max_length": 4096,
+  "pad_token_id": 0,
+  "temperature": 0.6,
+  "top_p": 0.9
+}
+
+[32mINFO[0m  Kernel: loaded -> `[TorchQuantLinear]`                                   
+[32mINFO[0m  Compiling qlinear modules with backend: `inductor`, mode: `None`         
+[32mINFO[0m  Compiling model with backend: `inductor`, mode: `None`                   
+/home/users/nus/jingzege/projects/SQAT/baseline/LoTA-QAF/vendor/peft/src/peft/tuners/lora/layer.py:112: UserWarning: Unsupported layer type '<class 'gptqmodel.nn_modules.qlinear.torch.TorchQuantLinear'>' encountered, proceed at your own risk.
+  warnings.warn(
+WARNING:accelerate.utils.other:Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+wandb: Tracking run with wandb version 0.29.0
+wandb: W&B syncing is set to `offline` in this directory. Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
+wandb: Run data is saved locally in /scratch/users/nus/jingzege/cache/wandb/wandb/offline-run-20260828_173903-s50atj9c
+wandb: View this run in the terminal with `wandb leet`
+wandb: Detected [huggingface_hub.inference] in use.
+wandb: Use W&B Weave for improved LLM call tracing. Install Weave with `pip install weave` then add `import weave` to the top of your script.
+wandb: For more information, check out the docs at: https://weave-docs.wandb.ai
+trainable params: 159,907,840 || all params: 422,318,080 || trainable%: 37.8643
+[lota] meta-llama/Llama-2-7b-hf -> /scratch/users/nus/jingzege/cache/huggingface/hub/models--meta-llama--Llama-2-7b-hf/snapshots/01c7f73d771dfac7d292323805ebc428287df4f9
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] loss_span=instruction+response: 131.9 supervised tokens/record (82.0% of all tokens, first 2000 records)
+[LoTA] ternary adapter tensors: 448
+INT params count: 448
+[LoTA] t-SignSGD sigma schedule over 5 optimizer steps
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [15:01<1:00:07, 901.85s/it] 40%|████      | 2/5 [15:11<18:51, 377.00s/it]   60%|██████    | 3/5 [22:31<13:31, 405.89s/it] 80%|████████  | 4/5 [29:53<07:00, 420.25s/it]100%|██████████| 5/5 [30:04<00:00, 272.38s/it]                                              100%|██████████| 5/5 [30:04<00:00, 272.38s/it]100%|██████████| 5/5 [30:04<00:00, 360.84s/it]
+Grad norm: 2.187213897705078#  {'train_runtime': 1807.4256, 'train_samples_per_second': 0.221, 'train_steps_per_second': 0.003, 'train_loss': 2.7951345443725586, 'epoch': 1.0}
+[LoTA] peak GPU memory: 12082 MB
+[LoTA] adapter saved to /home/users/nus/jingzege/projects/SQAT/outputs/lota_smoke_int3/final
+[1;34mwandb[0m: 
+[1;34mwandb[0m: You can sync this run to the cloud by running:
+[1;34mwandb[0m: [1mwandb sync /scratch/users/nus/jingzege/cache/wandb/wandb/offline-run-20260828_173903-s50atj9c[0m
+[1;34mwandb[0m: Find logs at: [1;35m../../../../../../scratch/users/nus/jingzege/cache/wandb/wandb/offline-run-20260828_173903-s50atj9c/logs[0m
+>>> smoke: export consistency, both widths
++ env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=/scratch/users/nus/jingzege/conda_envs/lota/lib:/opt/cray/pe/papi/6.0.0.14/lib64:/opt/cray/libfabric/1.11.0.4.125/lib64 /scratch/users/nus/jingzege/conda_envs/lota/bin/python baseline/LoTA-QAF/sqat/tests/test_export_consistency.py --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym --adapter_dir outputs/lota_smoke_int3/final
+
+from_quantized: adapter: None
+[32mINFO[0m  Estimated Quantization BPW (bits per weight): 3.459375 bpw, based on [bits: 3, group_size: 64]
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+[32mINFO[0m  Kernel: candidates -> `[TorchQuantLinear]`                               
+[32mINFO[0m  Kernel: selected -> `TorchQuantLinear`.                                  
+[32mINFO[0m  Format: Converting `checkpoint_format` from `gptq` to internal `gptq_v2`.
+[32mINFO[0m  Format: Converting GPTQ v1 to v2                                         
+[32mINFO[0m  Format: Conversion complete: 0.13808250427246094s                        
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+INFO:tokenicer.tokenicer:Tokenicer: Auto fixed pad_token_id=0 (token='<unk>').
+[32mINFO[0m  Model: Loaded `generation_config`: GenerationConfig {
+  "bos_token_id": 1,
+  "eos_token_id": 2
+}
+
+[32mINFO[0m  Model: Auto-fixed `generation_config` mismatch between model and `generation_config.json`.
+[32mINFO[0m  Model: Updated `generation_config`: GenerationConfig {
+  "bos_token_id": 1,
+  "do_sample": true,
+  "eos_token_id": 2,
+  "max_length": 4096,
+  "pad_token_id": 0,
+  "temperature": 0.6,
+  "top_p": 0.9
+}
+
+[32mINFO[0m  Kernel: loaded -> `[TorchQuantLinear]`                                   
+/home/users/nus/jingzege/projects/SQAT/baseline/LoTA-QAF/vendor/peft/src/peft/tuners/lora/layer.py:112: UserWarning: Unsupported layer type '<class 'gptqmodel.nn_modules.qlinear.torch.TorchQuantLinear'>' encountered, proceed at your own risk.
+  warnings.warn(
+/home/users/nus/jingzege/projects/SQAT/baseline/LoTA-QAF/vendor/peft/src/peft/tuners/lora/layer.py:112: UserWarning: Unsupported layer type '<class 'gptqmodel.nn_modules.qlinear.torch.TorchQuantLinear'>' encountered, proceed at your own risk.
+  warnings.warn(
+[export] adapter tensors for 224 modules from outputs/lota_smoke_int3/final/adapter_model.safetensors
+[test] 224 quantized linears; checking 4
+[test] model.layers.0.self_attn.q_proj                  trained markers=         0  rel.max|d|=0.00e+00
+[test] model.layers.8.self_attn.q_proj                  trained markers=         0  rel.max|d|=0.00e+00
+[test] model.layers.16.self_attn.q_proj                 trained markers=         1  rel.max|d|=0.00e+00
+[test] model.layers.24.self_attn.q_proj                 trained markers=        35  rel.max|d|=0.00e+00
+[test] worst relative deviation 0.00e+00 (tol 5e-03)
+[test] OK — train == deploy
++ env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=/scratch/users/nus/jingzege/conda_envs/lota/lib:/opt/cray/pe/papi/6.0.0.14/lib64:/opt/cray/libfabric/1.11.0.4.125/lib64 /scratch/users/nus/jingzege/conda_envs/lota/bin/python baseline/LoTA-QAF/sqat/tests/test_export_consistency.py --quantized_model_dir outputs/lota_bases/Llama-2-7B_int2_32_asym
+
+from_quantized: adapter: None
+[32mINFO[0m  Estimated Quantization BPW (bits per weight): 2.7875 bpw, based on [bits: 2, group_size: 32]
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TritonV2QuantLinear`          
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+[32mINFO[0m  Kernel: candidates -> `[TritonV2QuantLinear, TorchQuantLinear]`          
+[32mINFO[0m  Kernel: selected -> `TritonV2QuantLinear`.                               
+[32mINFO[0m  Format: Converting `checkpoint_format` from `gptq` to internal `gptq_v2`.
+[32mINFO[0m  Format: Converting GPTQ v1 to v2                                         
+[32mINFO[0m  Format: Conversion complete: 0.011022329330444336s                       
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TritonV2QuantLinear`          
+[32mINFO[0m  Optimize: `TritonV2QuantLinear` compilation triggered.                   
+INFO:tokenicer.tokenicer:Tokenicer: Auto fixed pad_token_id=0 (token='<unk>').
+[32mINFO[0m  Model: Loaded `generation_config`: GenerationConfig {
+  "bos_token_id": 1,
+  "eos_token_id": 2
+}
+
+[32mINFO[0m  Model: Auto-fixed `generation_config` mismatch between model and `generation_config.json`.
+[32mINFO[0m  Model: Updated `generation_config`: GenerationConfig {
+  "bos_token_id": 1,
+  "do_sample": true,
+  "eos_token_id": 2,
+  "max_length": 4096,
+  "pad_token_id": 0,
+  "temperature": 0.6,
+  "top_p": 0.9
+}
+
+[32mINFO[0m  Kernel: loaded -> `[TritonV2QuantLinear]`                                
+/home/users/nus/jingzege/projects/SQAT/baseline/LoTA-QAF/vendor/peft/src/peft/tuners/lora/layer.py:112: UserWarning: Unsupported layer type '<class 'gptqmodel.nn_modules.qlinear.tritonv2.TritonV2QuantLinear'>' encountered, proceed at your own risk.
+  warnings.warn(
+/home/users/nus/jingzege/projects/SQAT/baseline/LoTA-QAF/vendor/peft/src/peft/tuners/lora/layer.py:112: UserWarning: Unsupported layer type '<class 'gptqmodel.nn_modules.qlinear.tritonv2.TritonV2QuantLinear'>' encountered, proceed at your own risk.
+  warnings.warn(
+[test] 224 quantized linears; checking 4
+[test] model.layers.0.self_attn.q_proj                  random  markers=         0  rel.max|d|=0.00e+00
+[test] model.layers.8.self_attn.q_proj                  random  markers=         0  rel.max|d|=0.00e+00
+[test] model.layers.16.self_attn.q_proj                 random  markers=         0  rel.max|d|=0.00e+00
+[test] model.layers.24.self_attn.q_proj                 random  markers=         0  rel.max|d|=0.00e+00
+[test] worst relative deviation 0.00e+00 (tol 5e-03)
+[test] OK — train == deploy
+>>> smoke: dense export writes a loadable checkpoint
++ env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=/scratch/users/nus/jingzege/conda_envs/lota/lib:/opt/cray/pe/papi/6.0.0.14/lib64:/opt/cray/libfabric/1.11.0.4.125/lib64 /scratch/users/nus/jingzege/conda_envs/lota/bin/python baseline/LoTA-QAF/sqat/export_lota_dense.py --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym --adapter_dir outputs/lota_smoke_int3/final --out outputs/lota_smoke_int3-3bit-lota-dequant-eval
+
+[export] omega=48 residual=True
+[lota] meta-llama/Llama-2-7b-hf -> /scratch/users/nus/jingzege/cache/huggingface/hub/models--meta-llama--Llama-2-7b-hf/snapshots/01c7f73d771dfac7d292323805ebc428287df4f9
+[export] fp16 skeleton from /scratch/users/nus/jingzege/cache/huggingface/hub/models--meta-llama--Llama-2-7b-hf/snapshots/01c7f73d771dfac7d292323805ebc428287df4f9
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:03<00:03,  3.19s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:04<00:00,  1.86s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:04<00:00,  2.06s/it]
+[export] GPTQ base from outputs/lota_bases/Llama-2-7B_int3_64_asym
+from_quantized: adapter: None
+[32mINFO[0m  Estimated Quantization BPW (bits per weight): 3.459375 bpw, based on [bits: 3, group_size: 64]
+[32mINFO[0m   Kernel: selected: `TorchQuantLinear`                                    
+[32mINFO[0m  Kernel: candidates -> `[TorchQuantLinear]`                               
+[32mINFO[0m  Kernel: selected -> `TorchQuantLinear`.                                  
+[32mINFO[0m  Format: Converting `checkpoint_format` from `gptq` to internal `gptq_v2`.
+[32mINFO[0m  Format: Converting GPTQ v1 to v2                                         
+[32mINFO[0m  Format: Conversion complete: 0.13602995872497559s                        
+[32mINFO[0m   Kernel: selected: `TorchQuantLinear`                                    
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+INFO:tokenicer.tokenicer:Tokenicer: Auto fixed pad_token_id=0 (token='<unk>').
+[32mINFO[0m  Model: Loaded `generation_config`: GenerationConfig {
+  "bos_token_id": 1,
+  "eos_token_id": 2
+}
+
+[32mINFO[0m  Model: Auto-fixed `generation_config` mismatch between model and `generation_config.json`.
+[32mINFO[0m  Model: Updated `generation_config`: GenerationConfig {
+  "bos_token_id": 1,
+  "do_sample": true,
+  "eos_token_id": 2,
+  "max_length": 4096,
+  "pad_token_id": 0,
+  "temperature": 0.6,
+  "top_p": 0.9
+}
+
+[32mINFO[0m  Kernel: loaded -> `[TorchQuantLinear]`                                   
+[export] adapter tensors for 224 modules from outputs/lota_smoke_int3/final/adapter_model.safetensors
+[export] rewrote 224 projections (224 with a ternary adapter)
+[export] wrote outputs/lota_smoke_int3-3bit-lota-dequant-eval

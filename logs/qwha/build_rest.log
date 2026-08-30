@@ -1,0 +1,62 @@
+conda activate rc=0  prefix=/scratch/users/nus/jingzege/conda_envs/qwha
+CXX=/scratch/users/nus/jingzege/conda_envs/qwha/bin/x86_64-conda-linux-gnu-g++
+x86_64-conda-linux-gnu-g++ (conda-forge gcc 12.4.0-2) 12.4.0
+Cuda compilation tools, release 12.4, V12.4.99
+Build cuda_12.4.r12.4/compiler.33961263_0
+===== stage: deps =====
+Requirement already satisfied: pathvalidate<4,>=2.3.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from pytablewriter->lm-eval==0.4.8) (3.3.1)
+Requirement already satisfied: tabledata<2,>=1.3.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from pytablewriter->lm-eval==0.4.8) (1.3.5)
+Requirement already satisfied: tcolorpy<1,>=0.0.5 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from pytablewriter->lm-eval==0.4.8) (0.1.7)
+Requirement already satisfied: typepy<2,>=1.3.2 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from typepy[datetime]<2,>=1.3.2->pytablewriter->lm-eval==0.4.8) (1.3.5)
+Requirement already satisfied: chardet<7,>=3.0.4 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from mbstrdecoder<2,>=1.0.0->pytablewriter->lm-eval==0.4.8) (6.0.0.post1)
+deps rc=0
+===== stage: fast-hadamard-transform =====
+Requirement already satisfied: triton==3.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (3.1.0)
+Requirement already satisfied: setuptools in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (84.0.0)
+Requirement already satisfied: sympy==1.13.1 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (1.13.1)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from sympy==1.13.1->torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (1.3.0)
+Requirement already satisfied: MarkupSafe>=2.0 in /scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages (from jinja2->torch->fast-hadamard-transform @ git+https://github.com/Dao-AILab/fast-hadamard-transform.git@v1.0.4.post1) (3.0.3)
+Building wheels for collected packages: fast-hadamard-transform
+  Building wheel for fast-hadamard-transform (pyproject.toml): started
+  Building wheel for fast-hadamard-transform (pyproject.toml): still running...
+  Building wheel for fast-hadamard-transform (pyproject.toml): still running...
+  Building wheel for fast-hadamard-transform (pyproject.toml): finished with status 'done'
+  Created wheel for fast-hadamard-transform: filename=fast_hadamard_transform-1.0.4.post1-cp312-cp312-linux_x86_64.whl size=9068085 sha256=d4d362eba3f5703c188b3a87394075f08c7d1e07e8a0c478a8f2e9d0807bb113
+  Stored in directory: /scratch/users/nus/jingzege/tmp/pip-ephem-wheel-cache-jjsqgnbn/wheels/1f/4b/49/ce9a6d6a904db38df9132bbcd6065b074ff363b409c0530ca2
+Successfully built fast-hadamard-transform
+Installing collected packages: fast-hadamard-transform
+Successfully installed fast-hadamard-transform-1.0.4.post1
+fht rc=0
+===== stage: gptqmodel =====
+Using cached hf_transfer-0.1.9-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.6 MB)
+Using cached iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+Using cached pycodestyle-2.14.0-py2.py3-none-any.whl (31 kB)
+Using cached pygments-2.21.0-py3-none-any.whl (1.3 MB)
+Building wheels for collected packages: gptqmodel
+  Building wheel for gptqmodel (pyproject.toml): started
+  Building wheel for gptqmodel (pyproject.toml): still running...
+  Building wheel for gptqmodel (pyproject.toml): still running...
+  Building wheel for gptqmodel (pyproject.toml): finished with status 'done'
+  Created wheel for gptqmodel: filename=gptqmodel-2.2.0+cu124torch2.5-cp312-cp312-linux_x86_64.whl size=85442157 sha256=55d707f7d8a7274110d4d1fcc2a590d694ed50e183fc299c4cb45a4c0defab85
+  Stored in directory: /scratch/users/nus/jingzege/cache/pip/wheels/fe/2f/a0/248f3914be29a1c850d3e11657c51c1729d02fcf673b1e44fb
+Successfully built gptqmodel
+Installing collected packages: pygments, pycodestyle, pluggy, iniconfig, hf_transfer, pytest, autopep8, random_word, gptqmodel
+
+Successfully installed autopep8-2.3.2 gptqmodel-2.2.0+cu124torch2.5 hf_transfer-0.1.9 iniconfig-2.3.0 pluggy-1.6.0 pycodestyle-2.14.0 pygments-2.21.0 pytest-8.4.2 random_word-1.0.13
+gptqmodel rc=0
+===== stage: peft fork =====
+  Attempting uninstall: peft
+    Found existing installation: peft 0.14.0.dev0
+    Uninstalling peft-0.14.0.dev0:
+      Successfully uninstalled peft-0.14.0.dev0
+Successfully installed peft-0.14.0.dev0
+peft rc=0
+===== stage: verify =====
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+
+[32mINFO[0m  ENV: Auto setting PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True' for memory saving.
+[32mINFO[0m  ENV: Auto setting CUDA_DEVICE_ORDER=PCI_BUS_ID for correctness.          
+torch 2.5.1+cu124 | transformers 4.51.3 | peft 0.14.0 | gptqmodel 2.2.0
+QWHAConfig + fast_hadamard_transform import OK
+ENV BUILD FINISHED rc=0

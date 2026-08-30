@@ -1,0 +1,26 @@
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base ...
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 8256.06it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 54.1%, worst 60.2% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 364.6M params (58.15% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 11
+[SegPerm] num_runtime_permutes=3
+[probe] registered 3 boundary gathers
+[SALT-Q] Loaded 800 trainable tensors from outputs/saltq_cs170k_int2_g32_ep1_span-2bit-saltq-ckpts/checkpoint-1500/saltq_trainable.safetensors
+
+== outputs/saltq_cs170k_int2_g32_ep1_span-2bit-saltq-ckpts/checkpoint-1500
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     0.1317    1.0533    0.516     0.219
+arc_easy          0.1012    0.8098    0.688     0.141
+boolq             0.0883    0.6182    0.672     0.641
+hellaswag         0.0764    0.6109    0.750     0.156
+openbookqa        0.1060    0.8484    0.672     0.344
+piqa              0.0702    0.5615    0.641     0.438
+siqa              0.0747    0.5977    0.719     0.422
+winogrande        0.0890    0.7117    0.656     0.453
+MEAN              0.0922    0.7264    0.664
+wrote results/probe/saltq_cs170k_int2_g32_ep1_span_ckpt1500.json

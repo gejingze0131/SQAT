@@ -1,0 +1,28 @@
+Fri Aug 28 17:33:29 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:81:00.0 Off |                    0 |
+| N/A   45C    P0             55W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
++ echo '>>> smoke: 5 steps on the INT3 base'
++ tee -a logs/commonsense_170k/lota_smoke.log
+>>> smoke: 5 steps on the INT3 base
++ lota_py baseline/LoTA-QAF/sqat/train_lota.py --config baseline/LoTA-QAF/sqat/configs/lota_cs170k_int3_g64_ep1_span.yaml --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym --output_dir outputs/lota_smoke_int3 --max_steps 5 --max_train_samples 400
++ echo '>>> smoke: export consistency, both widths'
++ tee -a logs/commonsense_170k/lota_smoke.log
+>>> smoke: export consistency, both widths
++ lota_py baseline/LoTA-QAF/sqat/tests/test_export_consistency.py --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym --adapter_dir outputs/lota_smoke_int3/final
++ lota_py baseline/LoTA-QAF/sqat/tests/test_export_consistency.py --quantized_model_dir outputs/lota_bases/Llama-2-7B_int2_32_asym
++ echo '>>> smoke: dense export writes a loadable checkpoint'
++ tee -a logs/commonsense_170k/lota_smoke.log
+>>> smoke: dense export writes a loadable checkpoint
++ lota_py baseline/LoTA-QAF/sqat/export_lota_dense.py --quantized_model_dir outputs/lota_bases/Llama-2-7B_int3_64_asym --adapter_dir outputs/lota_smoke_int3/final --out outputs/lota_smoke_int3-3bit-lota-dequant-eval
++ set +x
+rc=0
+End time: Fri Aug 28 18:23:09 +08 2026

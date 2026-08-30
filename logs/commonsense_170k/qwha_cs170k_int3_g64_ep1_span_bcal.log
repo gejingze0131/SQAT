@@ -1,0 +1,16 @@
+============================================================
+  QWHA — Quantization-aware Walsh-Hadamard Adaptation (baseline)
+  Config:     baseline/QWHA/sqat/configs/qwha_cs170k_int3_g64_ep1_span_bcal.yaml
+  Dataset:    commonsense
+  Bits:       INT3 g64 (asymmetric, balanced in-domain calibration)
+  GPTQ base:  outputs/qwha_bases/Llama-2-7B_int3_64_asym_bcal
+  Init ckpt:  outputs/qwha_bases/Llama-2-7B_int3_64_asym_bcal-init-rank64
+  Output dir: outputs/qwha_cs170k_int3_g64_ep1_span_bcal
+  Env:        /scratch/users/nus/jingzege/conda_envs/qwha
+  GPUs:       4 (train) / [0,1,2,3] (eval)
+============================================================
+
+>>> Stage 0: base present at outputs/qwha_bases/Llama-2-7B_int3_64_asym_bcal (skipped)
+
+>>> Stage 1: initialized adapter present at outputs/qwha_bases/Llama-2-7B_int3_64_asym_bcal-init-rank64 (skipped)
+ERROR: no initialized adapter at outputs/qwha_bases/Llama-2-7B_int3_64_asym_bcal-init-rank64

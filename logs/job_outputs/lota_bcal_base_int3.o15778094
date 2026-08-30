@@ -1,0 +1,18 @@
+Sun Aug 30 06:34:37 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:C1:00.0 Off |                    0 |
+| N/A   42C    P0             58W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
++ lota_py baseline/LoTA-QAF/sqat/make_matched_base.py --config configs/qalora_cs170k_int3_g64_ep1_span_bcal.yaml --out outputs/lota_bases --tag Llama-2-7B_bcal --nsamples 3500 --calib_batch_size 8
++ set +x
+[Data] calibration: 3500 records, sampling=balanced, task mix={'arc_easy': 438, 'winogrande': 438, 'piqa': 438, 'arc_challenge': 438, 'boolq': 438, 'hellaswag': 435, 'siqa': 437, 'openbookqa': 438}
+[GPTQ] Captured 438 calibration batches (3500 sequences, 470882 real tokens; padded positions are excluded from every Hessian).
+rc=0
+End time: Sun Aug 30 06:53:31 +08 2026

@@ -1,0 +1,33 @@
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1/permuted_fp16_base ...
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   4%|▍         | 13/291 [00:00<00:03, 91.90it/s]Loading weights:  10%|▉         | 28/291 [00:00<00:02, 116.50it/s]Loading weights:  15%|█▍        | 43/291 [00:00<00:02, 113.98it/s]Loading weights:  19%|█▉        | 55/291 [00:00<00:02, 101.90it/s]Loading weights:  23%|██▎       | 66/291 [00:00<00:04, 52.84it/s] Loading weights:  32%|███▏      | 92/291 [00:01<00:02, 88.80it/s]Loading weights:  36%|███▋      | 106/291 [00:01<00:02, 89.06it/s]Loading weights:  41%|████      | 118/291 [00:01<00:02, 82.33it/s]Loading weights:  44%|████▍     | 129/291 [00:01<00:03, 47.76it/s]Loading weights:  47%|████▋     | 137/291 [00:02<00:02, 51.94it/s]Loading weights:  53%|█████▎    | 153/291 [00:02<00:02, 67.79it/s]Loading weights:  57%|█████▋    | 167/291 [00:02<00:01, 76.30it/s]Loading weights:  63%|██████▎   | 182/291 [00:02<00:01, 86.73it/s]Loading weights:  66%|██████▋   | 193/291 [00:02<00:01, 88.14it/s]Loading weights:  70%|███████   | 205/291 [00:02<00:00, 90.08it/s]Loading weights:  78%|███████▊  | 226/291 [00:02<00:00, 113.68it/s]Loading weights:  82%|████████▏ | 240/291 [00:02<00:00, 116.41it/s]Loading weights:  87%|████████▋ | 253/291 [00:03<00:00, 95.24it/s] Loading weights:  92%|█████████▏| 268/291 [00:03<00:00, 97.49it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 89.65it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 54.1%, worst 60.2% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 364.6M params (58.15% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+
+== base
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge    11.1819   11.2164    0.000     0.219
+arc_easy         11.1503   10.9237    0.000     0.141
+boolq            11.9256   15.3218    0.000     0.641
+hellaswag        11.1652   12.0934    0.000     0.156
+openbookqa       11.1675   10.6858    0.000     0.344
+piqa             11.2931   11.1779    0.000     0.438
+siqa             11.1203   10.6370    0.000     0.422
+winogrande       11.4441   12.3901    0.000     0.453
+MEAN             11.3060   11.8058    0.000
+[SALT-Q] Loaded 800 trainable tensors from outputs/saltq_cs170k_int2_g32_ep1-2bit-saltq/final/saltq_trainable.safetensors
+
+== outputs/saltq_cs170k_int2_g32_ep1-2bit-saltq/final
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     6.0219    6.0349    0.000     0.219
+arc_easy          5.9449    5.4353    0.000     0.141
+boolq             5.5970    3.2159    0.281     0.641
+hellaswag         6.5785    6.9540    0.000     0.156
+openbookqa        5.9525    5.4089    0.000     0.344
+piqa              5.7928    4.3054    0.000     0.438
+siqa              6.0286    5.6057    0.000     0.422
+winogrande        6.5342    6.0369    0.000     0.453
+MEAN              6.0563    5.3746    0.035
+wrote results/probe/saltq_cs170k_int2_g32_ep1_anchor.json

@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/users/nus/jingzege/projects/SQAT/analyze_boundary_salient_channels.py", line 31, in <module>
+    import matplotlib
+ModuleNotFoundError: No module named 'matplotlib'

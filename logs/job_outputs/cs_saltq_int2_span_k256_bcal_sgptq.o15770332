@@ -1,0 +1,81 @@
+Sat Aug 29 11:21:57 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   43C    P0             58W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+INFO 08-29 11:25:51 [__init__.py:216] Automatically detected platform cuda.
++ bash scripts/test_runs_wiring.sh
+[1] source paths
+  runs/analysis/run_analyze_all.sh                         OK
+  runs/analysis/run_analyze.sh                             OK
+  runs/analysis/run_validation.sh                          OK
+  runs/eval_vllm.sh                                        OK
+  runs/full_qat/_pipeline.sh                               OK
+  runs/lota/_pipeline.sh                                   OK
+  runs/permute_sqat/_fp16_ablation.sh                      OK
+  runs/permute_sqat/_gptq_ablation.sh                      OK
+  runs/permute_sqat/_pipeline.sh                           OK
+  runs/qalora/_pipeline.sh                                 OK
+  runs/qlora/_pipeline.sh                                  OK
+  runs/saltq/_pipeline.sh                                  OK
+[2] entry -> engine
+  runs/full_qat/run_full_qat_commonsense.sh                -> _pipeline.sh
+  runs/full_qat/run_full_qat_math.sh                       -> _pipeline.sh
+  runs/lota/run_lota_commonsense.sh                        -> _pipeline.sh
+  runs/permute_sqat/run_gptq_ablation_commonsense.sh       -> _gptq_ablation.sh
+  runs/permute_sqat/run_gptq_ablation_math.sh              -> _gptq_ablation.sh
+  runs/permute_sqat/run_permute_fp16_ablation_commonsense.sh -> _fp16_ablation.sh
+  runs/permute_sqat/run_permute_fp16_ablation_math.sh      -> _fp16_ablation.sh
+  runs/permute_sqat/run_permute_sqat_commonsense.sh        -> _pipeline.sh
+  runs/permute_sqat/run_permute_sqat_math.sh               -> _pipeline.sh
+  runs/qalora/run_qalora_commonsense.sh                    -> _pipeline.sh
+  runs/qalora/run_qalora_math.sh                           -> _pipeline.sh
+  runs/qlora/run_qlora_commonsense.sh                      -> _pipeline.sh
+  runs/qlora/run_qlora_math.sh                             -> _pipeline.sh
+  runs/saltq/run_saltq_commonsense.sh                      -> _pipeline.sh
+  runs/saltq/run_saltq_math.sh                             -> _pipeline.sh
+[3] entry --config agrees with --dataset
+  runs/full_qat/run_full_qat_commonsense.sh                commonsense <- configs/sqat_permute_commonsense.yaml
+  runs/full_qat/run_full_qat_math.sh                       math <- configs/sqat_permute_math.yaml
+  runs/lota/run_lota_commonsense.sh                        commonsense <- baseline/LoTA-QAF/sqat/configs/lota_cs170k_int3_g64_ep1_span.yaml
+  runs/permute_sqat/run_gptq_ablation_commonsense.sh       commonsense <- configs/sqat_permute_commonsense.yaml
+  runs/permute_sqat/run_gptq_ablation_math.sh              math <- configs/sqat_permute_math.yaml
+  runs/permute_sqat/run_permute_fp16_ablation_commonsense.sh commonsense <- configs/sqat_permute_commonsense.yaml
+  runs/permute_sqat/run_permute_fp16_ablation_math.sh      math <- configs/sqat_permute_math.yaml
+  runs/permute_sqat/run_permute_sqat_commonsense.sh        commonsense <- configs/sqat_permute_commonsense.yaml
+  runs/permute_sqat/run_permute_sqat_math.sh               math <- configs/sqat_permute_math.yaml
+  runs/qalora/run_qalora_commonsense.sh                    commonsense <- configs/sqat_permute_commonsense.yaml
+  runs/qalora/run_qalora_math.sh                           math <- configs/sqat_permute_math.yaml
+  runs/qlora/run_qlora_commonsense.sh                      commonsense <- configs/sqat_permute_commonsense.yaml
+  runs/qlora/run_qlora_math.sh                             math <- configs/sqat_permute_math.yaml
+  runs/saltq/run_saltq_commonsense.sh                      commonsense <- configs/saltq_cs170k_int3_g64.yaml
+  runs/saltq/run_saltq_math.sh                             math <- configs/saltq.yaml
+[4] flags documented in an entry are accepted by its engine
+  runs/full_qat/run_full_qat_commonsense.sh                3 documented flag(s) all parsed
+  runs/full_qat/run_full_qat_math.sh                       3 documented flag(s) all parsed
+  runs/lota/run_lota_commonsense.sh                        4 documented flag(s) all parsed
+  runs/permute_sqat/run_gptq_ablation_commonsense.sh       3 documented flag(s) all parsed
+  runs/permute_sqat/run_gptq_ablation_math.sh              3 documented flag(s) all parsed
+  runs/permute_sqat/run_permute_fp16_ablation_commonsense.sh 3 documented flag(s) all parsed
+  runs/permute_sqat/run_permute_fp16_ablation_math.sh      3 documented flag(s) all parsed
+  runs/permute_sqat/run_permute_sqat_commonsense.sh        3 documented flag(s) all parsed
+  runs/permute_sqat/run_permute_sqat_math.sh               3 documented flag(s) all parsed
+  runs/qalora/run_qalora_commonsense.sh                    3 documented flag(s) all parsed
+  runs/qalora/run_qalora_math.sh                           3 documented flag(s) all parsed
+  runs/qlora/run_qlora_commonsense.sh                      3 documented flag(s) all parsed
+  runs/qlora/run_qlora_math.sh                             3 documented flag(s) all parsed
+  runs/saltq/run_saltq_commonsense.sh                      3 documented flag(s) all parsed
+  runs/saltq/run_saltq_math.sh                             3 documented flag(s) all parsed
+
+PASS — runs/ is wired correctly.
++ set +x
+Start time: Sat Aug 29 11:26:49 +08 2026
+rc=0
+End time: Sat Aug 29 13:43:07 +08 2026

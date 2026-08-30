@@ -1,0 +1,46 @@
+===== JOB INFO =====
+Job ID: 15136055.pbs101
+Host: x1000c3s3b0n1
+Workdir: /home/users/nus/jingzege/projects/SQAT
+CUDA_VISIBLE_DEVICES=GPU-f6d1de2a-b066-c645-83a8-ef273ab61c6e,GPU-8a09a131-775d-ac60-8c03-2d553490a709,GPU-a687af43-ef07-e9ca-189f-2d6009c6f47a,GPU-1631b972-7b1a-75d2-4cdc-73cfe0db3fd9
+Start time: Mon Aug 10 12:31:47 +08 2026
+Python: /home/users/nus/jingzege/miniforge3/envs/saltq/bin/python
+Python 3.11.15
+===== GPU INFO =====
+Mon Aug 10 12:31:48 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   42C    P0             54W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA A100-SXM4-40GB          On  |   00000000:41:00.0 Off |                    0 |
+| N/A   41C    P0             53W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   2  NVIDIA A100-SXM4-40GB          On  |   00000000:81:00.0 Off |                    0 |
+| N/A   43C    P0             56W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   3  NVIDIA A100-SXM4-40GB          On  |   00000000:C1:00.0 Off |                    0 |
+| N/A   41C    P0             49W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Traceback (most recent call last):
+  File "/home/users/nus/jingzege/projects/SQAT/analyze_boundary_salient_channels.py", line 31, in <module>
+    import matplotlib
+ModuleNotFoundError: No module named 'matplotlib'
+End time: Mon Aug 10 12:31:50 +08 2026

@@ -1,0 +1,51 @@
+================ test_gptq_nonsalient ================
+[OK] asym INT3 gs64 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT4 gs32 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT4 gs128 gk128 (1 salient group)    AWQ salient (post-/S) max|Δ|=0.0e+00
+
+All GPTQ non-salient sanity tests passed.
+---- test_gptq_nonsalient rc=0
+================ test_saltq ================
+  [PASS] zero-points ['saltq_z', 'lsq_w_zp'] classified apart from scales ['lsq_w_scale']
+
+====================================================================
+  SALT-Q: 94 passed, 0 failed
+====================================================================
+---- test_saltq rc=0
+================ test_saltq_e2e ================
+  [PASS] gptq_latent: deployed == trained (exact) holds
+
+====================================================================
+  SALT-Q e2e: 62 passed, 0 failed
+====================================================================
+---- test_saltq_e2e rc=0
+================ test_qat_permute_sqat ================
+test_legacy_topk_ratio_salient_selection
+[SegPerm] Legacy seg 0 (L0-L0): group_k=4, top_k_ratio=0.2, union_topk=4, energy_cov=76.0%, first10=[0, 1, 2, 3]
+  [PASS] manual fixed mode uses legacy top_k_ratio union-first selection
+
+ALL TESTS PASSED
+---- test_qat_permute_sqat rc=0
+================ test_lsq_consistency ================
+  [PASS] ASYM: zp.grad nonzero
+
+==================================================
+  LSQ consistency: 23 passed, 0 failed
+==================================================
+---- test_lsq_consistency rc=0
+================ test_lsq_permute_consistency ================
+  [PASS] ASYM: None path unchanged
+
+====================================================
+  sqat_permute LSQ consistency: 32 passed, 0 failed
+====================================================
+---- test_lsq_permute_consistency rc=0
+================ test_qeft ================
+  [PASS] a shape-mismatched checkpoint is refused
+  [PASS] the exported dense model reproduces the trained model — max |Δ| 2.09e-07
+
+======================================================================
+  34 passed, 0 failed
+---- test_qeft rc=0
+ALL SUITES rc=0
+End time: Sun Aug 30 19:15:00 +08 2026

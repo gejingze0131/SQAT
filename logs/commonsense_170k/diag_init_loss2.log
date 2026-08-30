@@ -1,0 +1,44 @@
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+
+[data] 64 samples | 9944 real tokens | 507 supervised (5.1%)
+
+[1/3] fp16 reference: meta-llama/Llama-2-7b-hf
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:01<08:27,  1.75s/it]Loading weights:   1%|          | 2/291 [00:01<03:58,  1.21it/s]Loading weights:   3%|▎         | 10/291 [00:02<00:33,  8.41it/s]Loading weights:   5%|▍         | 14/291 [00:02<00:44,  6.24it/s]Loading weights:   7%|▋         | 19/291 [00:03<00:28,  9.59it/s]Loading weights:   8%|▊         | 23/291 [00:04<00:39,  6.72it/s]Loading weights:  10%|▉         | 28/291 [00:04<00:29,  8.96it/s]Loading weights:  11%|█         | 31/291 [00:05<00:37,  6.88it/s]Loading weights:  11%|█▏        | 33/291 [00:05<00:33,  7.73it/s]Loading weights:  14%|█▎        | 40/291 [00:05<00:22, 11.12it/s]Loading weights:  14%|█▍        | 42/291 [00:06<00:31,  7.99it/s]Loading weights:  17%|█▋        | 49/291 [00:06<00:22, 10.70it/s]Loading weights:  18%|█▊        | 51/291 [00:06<00:28,  8.33it/s]Loading weights:  20%|█▉        | 58/291 [00:07<00:21, 11.06it/s]Loading weights:  21%|██        | 60/291 [00:08<00:28,  7.97it/s]Loading weights:  23%|██▎       | 67/291 [00:08<00:18, 12.10it/s]Loading weights:  24%|██▎       | 69/291 [00:08<00:28,  7.83it/s]Loading weights:  25%|██▌       | 73/291 [00:09<00:21, 10.09it/s]Loading weights:  26%|██▌       | 76/291 [00:09<00:20, 10.50it/s]Loading weights:  27%|██▋       | 78/291 [00:09<00:27,  7.72it/s]Loading weights:  29%|██▉       | 85/291 [00:10<00:19, 10.70it/s]Loading weights:  30%|██▉       | 87/291 [00:10<00:25,  8.07it/s]Loading weights:  32%|███▏      | 94/291 [00:11<00:18, 10.81it/s]Loading weights:  33%|███▎      | 96/291 [00:11<00:26,  7.43it/s]Loading weights:  35%|███▌      | 103/291 [00:12<00:17, 10.50it/s]Loading weights:  36%|███▌      | 105/291 [00:12<00:23,  7.96it/s]Loading weights:  38%|███▊      | 112/291 [00:13<00:16, 10.56it/s]Loading weights:  39%|███▉      | 114/291 [00:13<00:23,  7.69it/s]Loading weights:  42%|████▏     | 121/291 [00:14<00:16, 10.62it/s]Loading weights:  42%|████▏     | 123/291 [00:14<00:21,  7.86it/s]Loading weights:  45%|████▍     | 130/291 [00:15<00:13, 11.87it/s]Loading weights:  45%|████▌     | 132/291 [00:15<00:20,  7.79it/s]Loading weights:  48%|████▊     | 139/291 [00:16<00:13, 11.31it/s]Loading weights:  48%|████▊     | 141/291 [00:16<00:18,  8.07it/s]Loading weights:  51%|█████     | 148/291 [00:17<00:13, 10.80it/s]Loading weights:  52%|█████▏    | 150/291 [00:17<00:18,  7.60it/s]Loading weights:  54%|█████▍    | 157/291 [00:18<00:12, 10.84it/s]Loading weights:  55%|█████▍    | 159/291 [00:18<00:16,  7.78it/s]Loading weights:  57%|█████▋    | 166/291 [00:18<00:10, 11.70it/s]Loading weights:  58%|█████▊    | 168/291 [00:19<00:16,  7.58it/s]Loading weights:  60%|██████    | 176/291 [00:20<00:13,  8.31it/s]Loading weights:  63%|██████▎   | 184/291 [00:20<00:09, 11.45it/s]Loading weights:  64%|██████▍   | 186/291 [00:21<00:12,  8.40it/s]Loading weights:  66%|██████▋   | 193/291 [00:21<00:07, 12.52it/s]Loading weights:  67%|██████▋   | 196/291 [00:22<00:10,  9.29it/s]Loading weights:  69%|██████▉   | 202/291 [00:22<00:06, 12.73it/s]Loading weights:  70%|███████   | 205/291 [00:23<00:08,  9.89it/s]Loading weights:  73%|███████▎  | 211/291 [00:23<00:06, 12.29it/s]Loading weights:  74%|███████▎  | 214/291 [00:23<00:08,  9.59it/s]Loading weights:  76%|███████▌  | 220/291 [00:24<00:08,  8.53it/s]Loading weights:  78%|███████▊  | 226/291 [00:25<00:06, 10.59it/s]Loading weights:  79%|███████▊  | 229/291 [00:25<00:05, 10.90it/s]Loading weights:  79%|███████▉  | 231/291 [00:25<00:07,  8.07it/s]Loading weights:  81%|████████  | 235/291 [00:26<00:05, 10.05it/s]Loading weights:  82%|████████▏ | 238/291 [00:26<00:04, 11.42it/s]Loading weights:  82%|████████▏ | 240/291 [00:27<00:07,  6.72it/s]Loading weights:  85%|████████▍ | 247/291 [00:27<00:04, 10.36it/s]Loading weights:  86%|████████▌ | 249/291 [00:27<00:05,  7.52it/s]Loading weights:  88%|████████▊ | 256/291 [00:28<00:03, 10.91it/s]Loading weights:  89%|████████▊ | 258/291 [00:28<00:04,  8.03it/s]Loading weights:  91%|█████████ | 265/291 [00:29<00:02, 11.48it/s]Loading weights:  92%|█████████▏| 267/291 [00:29<00:03,  7.87it/s]Loading weights:  94%|█████████▍| 274/291 [00:30<00:01, 10.96it/s]Loading weights:  95%|█████████▍| 276/291 [00:30<00:01,  8.08it/s]Loading weights:  97%|█████████▋| 283/291 [00:31<00:00, 11.53it/s]Loading weights:  98%|█████████▊| 285/291 [00:31<00:00,  8.46it/s]Loading weights: 100%|██████████| 291/291 [00:31<00:00,  9.21it/s]
+[2/3] permuted fp16 base + boundary gathers
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   5%|▌         | 15/291 [00:00<00:02, 115.01it/s]Loading weights:  10%|█         | 30/291 [00:00<00:02, 125.25it/s]Loading weights:  15%|█▍        | 43/291 [00:00<00:01, 125.25it/s]Loading weights:  20%|█▉        | 58/291 [00:00<00:01, 130.57it/s]Loading weights:  25%|██▍       | 72/291 [00:00<00:02, 106.69it/s]Loading weights:  31%|███▏      | 91/291 [00:00<00:01, 111.24it/s]Loading weights:  37%|███▋      | 109/291 [00:00<00:01, 112.94it/s]Loading weights:  43%|████▎     | 125/291 [00:01<00:01, 111.86it/s]Loading weights:  47%|████▋     | 137/291 [00:01<00:01, 109.99it/s]Loading weights:  53%|█████▎    | 154/291 [00:01<00:01, 117.05it/s]Loading weights:  57%|█████▋    | 166/291 [00:01<00:01, 105.33it/s]Loading weights:  61%|██████    | 177/291 [00:01<00:01, 80.60it/s] Loading weights:  68%|██████▊   | 197/291 [00:01<00:00, 100.42it/s]Loading weights:  75%|███████▍  | 218/291 [00:01<00:00, 121.19it/s]Loading weights:  82%|████████▏ | 238/291 [00:02<00:00, 136.11it/s]Loading weights:  87%|████████▋ | 254/291 [00:02<00:00, 112.32it/s]Loading weights:  95%|█████████▍| 275/291 [00:02<00:00, 119.24it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 118.33it/s]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 11
+[SegPerm] num_runtime_permutes=3
+[3/4] SALT-Q base, UNTRAINED, NO boundary gathers  (a control, not a valid model)
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64/permuted_fp16_base ...
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 8086.01it/s]
+[SALT-Q] Replaced 224 linears; trainable 260.9M params (49.86% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+[4/4] SALT-Q base, UNTRAINED, gathers registered  (this is what step 0 sees)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 11
+[SegPerm] num_runtime_permutes=3
+
+model                         response-only  full-sequence
+----------------------------------------------------------
+fp16 reference                       2.8431         2.6911
+permuted fp16 base                   2.8429         2.6903
+SALT-Q base, NO gathers              9.8140        10.4614
+SALT-Q base (untrained)             10.6054         9.7349
+----------------------------------------------------------
+masking alone (fp16):            +0.1520
+permutation/AWQ  (1 -> 2):       -0.0002 response-only
+quantization     (2 -> 4):       +7.7625 response-only
+missing gathers  (4 -> 3):       -0.7915 response-only  (control)
+
+Training opened at 8.14 (mean of steps 1-10).

@@ -1,0 +1,79 @@
+
+1) _front_permutation
+  [PASS] contiguous prefix -> identity
+  [PASS] irregular set -> [ids sorted, rest in order]
+  [PASS] permutation is a bijection
+  [PASS] order of the ids does not matter
+
+2) gptq_quantize_model_sequential(salient_ids=...)
+[GPTQ] Captured 4 calibration batches (8 sequences, 128 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:00<00:00, 20.80it/s]
+  [PASS] weak columns (irregular AND contiguous) are bit-identical — max drift 0.00e+00
+  [PASS] every other column was quantized — min change 1.16e-02
+[GPTQ] Captured 4 calibration batches (8 sequences, 128 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:00<00:00, 21.15it/s]
+[GPTQ] Captured 4 calibration batches (8 sequences, 128 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:00<00:00, 27.71it/s]
+  [PASS] salient_ids=None is byte-identical to omitting it
+
+3) select_global_weak_columns
+[QEFT] global weak columns: k=3 of 16 (18.75% of the residual stream), 15 layer votes, sensitivity share=92.1%, first10=[3, 7, 9]
+  [PASS] the channel every layer agrees on is selected
+  [PASS] a single layer's outlier cannot dominate the vote — selected [3, 7, 9] (per-layer mean normalization caps 7's contribution)
+  [PASS] returns exactly k sorted indices
+  [PASS] local selection is a plain top-k
+
+4) OGR is output-preserving
+[SegPerm] Permuted residual stream: 1 segs, num_runtime_permutes=0
+  [PASS] a single segment needs no runtime gather
+  [PASS] logits unchanged by the global reordering — max |Δ| 2.09e-07
+
+5) QEFTLinear
+  [PASS] contiguous weak columns take the slice path
+  [PASS] effective weight == base weight at init
+  [PASS] forward == dense forward at init
+  [PASS] effective weight tracks the trained columns
+  [PASS] forward == dense forward after an update
+  [PASS] irregular weak columns take the gather path
+  [PASS] irregular: forward == dense forward
+  [PASS] only the weak columns are trainable
+  [PASS] the frozen half really is zeroed where the weak columns are
+
+6/7) base build → model → train step → checkpoint → export (2-layer random Llama)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 251.35it/s]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[QEFT] loading /scratch/users/nus/jingzege/tmp/tmpq_xqb9a8/src_model in torch.float32 (no bnb, no adapter)
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9914.50it/s]
+[SegPerm] Calibrating E[x²]:   0%|          | 0/6 [00:00<?, ?it/s][SegPerm] Calibrating E[x²]: 100%|██████████| 6/6 [00:00<00:00, 527.99it/s]
+[QEFT] global weak columns: k=16 of 64 (25.00% of the residual stream), 10 layer votes, sensitivity share=31.6%, first10=[1, 3, 7, 8, 9, 16, 18, 28, 34, 38]
+[SegPerm] Permuted residual stream: 1 segs, num_runtime_permutes=0
+[SegPerm] Applied P4 (down_proj) permutations: 2 layers
+[QEFT] fp16 share of the target weights = 22.50% → effective 5.93 bits (the row is '3 + fp16', not 3-bit)
+[SegPerm] register_boundary_gathers_from_meta: no boundaries (single segment) — nothing to register
+[GPTQ] Captured 6 calibration batches (12 sequences, 192 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:00<00:00, 27.21it/s]
+[QEFT] weak-column max drift = 0.000e+00 (must be 0) | quantized-bulk relative error p50 = 0.1740
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 267.89it/s]
+[QEFT] base saved → /scratch/users/nus/jingzege/tmp/tmpq_xqb9a8/base
+  [PASS] meta records one global weak set
+  [PASS] o_proj got its own per-layer irregular set
+  [PASS] fp16 share and effective bits are recorded — 22.5% fp16 → 5.93 bits
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9201.88it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.0M / 0.1M (15.75%) | k=16 INT3 g16
+  [PASS] every target linear became a QEFTLinear
+  [PASS] the weak columns are the only trainable tensors — 18432 == 18432
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 8372.66it/s]
+  [PASS] effective weight == the base checkpoint, exactly — max |Δ| 0.00e+00
+  [PASS] weak columns receive gradient
+  [PASS] the frozen bulk did not move
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9067.37it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.0M / 0.1M (15.75%) | k=16 INT3 g16
+  [PASS] checkpoint round-trips the trained columns
+  [PASS] checkpoint holds only the weak columns
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9535.61it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.0M / 0.1M (15.75%) | k=16 INT3 g16
+  [PASS] a shape-mismatched checkpoint is refused
+  [PASS] the exported dense model reproduces the trained model — max |Δ| 2.09e-07
+
+======================================================================
+  34 passed, 0 failed

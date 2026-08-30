@@ -1,0 +1,80 @@
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   5%|▌         | 16/291 [00:00<00:05, 54.48it/s]Loading weights:   8%|▊         | 22/291 [00:00<00:04, 54.47it/s]Loading weights:  10%|█         | 30/291 [00:00<00:04, 61.82it/s]Loading weights:  13%|█▎        | 39/291 [00:00<00:04, 53.93it/s]Loading weights:  18%|█▊        | 52/291 [00:00<00:03, 71.43it/s]Loading weights:  23%|██▎       | 66/291 [00:01<00:03, 71.43it/s]Loading weights:  27%|██▋       | 78/291 [00:01<00:02, 82.03it/s]Loading weights:  30%|██▉       | 87/291 [00:01<00:03, 63.64it/s]Loading weights:  34%|███▍      | 100/291 [00:01<00:02, 72.81it/s]Loading weights:  37%|███▋      | 109/291 [00:01<00:02, 71.93it/s]Loading weights:  40%|████      | 117/291 [00:01<00:02, 58.99it/s]Loading weights:  43%|████▎     | 125/291 [00:01<00:02, 58.06it/s]Loading weights:  46%|████▌     | 134/291 [00:02<00:02, 55.08it/s]Loading weights:  49%|████▉     | 142/291 [00:02<00:02, 56.78it/s]Loading weights:  52%|█████▏    | 150/291 [00:02<00:02, 52.95it/s]Loading weights:  57%|█████▋    | 165/291 [00:02<00:01, 67.38it/s]Loading weights:  60%|██████    | 175/291 [00:02<00:01, 72.30it/s]Loading weights:  64%|██████▎   | 185/291 [00:02<00:01, 68.78it/s]Loading weights:  68%|██████▊   | 199/291 [00:02<00:01, 80.44it/s]Loading weights:  71%|███████▏  | 208/291 [00:03<00:01, 66.88it/s]Loading weights:  76%|███████▌  | 221/291 [00:03<00:00, 77.62it/s]Loading weights:  79%|███████▉  | 230/291 [00:03<00:00, 68.01it/s]Loading weights:  82%|████████▏ | 238/291 [00:03<00:00, 65.80it/s]Loading weights:  86%|████████▌ | 250/291 [00:03<00:00, 73.84it/s]Loading weights:  89%|████████▉ | 259/291 [00:04<00:00, 52.81it/s]Loading weights:  95%|█████████▍| 276/291 [00:04<00:00, 74.32it/s]Loading weights:  98%|█████████▊| 286/291 [00:04<00:00, 75.55it/s]Loading weights: 100%|██████████| 291/291 [00:04<00:00, 68.04it/s]
+
+== outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     0.3552    1.4383    0.320     0.258
+arc_easy          0.3237    1.4386    0.297     0.164
+boolq             0.0944    0.6596    0.633     0.609
+hellaswag         1.3520    1.6197    0.328     0.164
+openbookqa        0.2885    1.5104    0.297     0.320
+piqa              0.1966    0.7479    0.531     0.461
+siqa              0.3358    1.1196    0.430     0.375
+winogrande        0.4323    0.8170    0.461     0.453
+MEAN              0.4223    1.1689    0.412
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   2%|▏         | 5/291 [00:00<00:19, 14.91it/s]Loading weights:   3%|▎         | 9/291 [00:01<00:41,  6.88it/s]Loading weights:   5%|▌         | 15/291 [00:01<00:27, 10.17it/s]Loading weights:  13%|█▎        | 37/291 [00:01<00:08, 30.73it/s]Loading weights:  15%|█▍        | 43/291 [00:02<00:09, 24.98it/s]Loading weights:  16%|█▌        | 47/291 [00:02<00:09, 25.58it/s]Loading weights:  21%|██        | 61/291 [00:02<00:06, 37.31it/s]Loading weights:  25%|██▌       | 73/291 [00:02<00:06, 32.09it/s]Loading weights:  28%|██▊       | 82/291 [00:03<00:05, 34.93it/s]Loading weights:  30%|██▉       | 87/291 [00:03<00:06, 32.47it/s]Loading weights:  36%|███▋      | 106/291 [00:03<00:03, 54.49it/s]Loading weights:  39%|███▉      | 114/291 [00:03<00:03, 56.03it/s]Loading weights:  43%|████▎     | 124/291 [00:03<00:02, 60.24it/s]Loading weights:  45%|████▌     | 132/291 [00:03<00:02, 60.69it/s]Loading weights:  48%|████▊     | 140/291 [00:03<00:02, 59.44it/s]Loading weights:  51%|█████     | 148/291 [00:04<00:02, 60.92it/s]Loading weights:  53%|█████▎    | 155/291 [00:04<00:02, 58.79it/s]Loading weights:  56%|█████▋    | 164/291 [00:04<00:02, 58.17it/s]Loading weights:  59%|█████▉    | 171/291 [00:04<00:02, 43.28it/s]Loading weights:  62%|██████▏   | 180/291 [00:04<00:02, 49.44it/s]Loading weights:  64%|██████▍   | 187/291 [00:04<00:02, 51.97it/s]Loading weights:  67%|██████▋   | 194/291 [00:05<00:01, 53.33it/s]Loading weights:  70%|██████▉   | 203/291 [00:05<00:01, 55.19it/s]Loading weights:  73%|███████▎  | 211/291 [00:05<00:01, 53.68it/s]Loading weights:  78%|███████▊  | 226/291 [00:05<00:01, 54.86it/s]Loading weights:  80%|███████▉  | 232/291 [00:05<00:01, 53.70it/s]Loading weights:  84%|████████▍ | 245/291 [00:05<00:00, 62.22it/s]Loading weights:  87%|████████▋ | 252/291 [00:06<00:00, 52.43it/s]Loading weights:  90%|█████████ | 263/291 [00:06<00:00, 54.14it/s]Loading weights:  94%|█████████▍| 274/291 [00:06<00:00, 59.21it/s]Loading weights:  97%|█████████▋| 281/291 [00:06<00:00, 56.27it/s]Loading weights: 100%|██████████| 291/291 [00:06<00:00, 44.36it/s]
+
+== outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calE
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     3.0549    1.4338    0.266     0.258
+arc_easy          3.1251    1.3210    0.414     0.164
+boolq             3.1845    0.9157    0.531     0.609
+hellaswag         3.0477    1.0960    0.477     0.164
+openbookqa        3.0553    1.3275    0.375     0.320
+piqa              2.4181    0.7028    0.578     0.461
+siqa              2.8117    1.1827    0.383     0.375
+winogrande        2.2393    0.8512    0.547     0.453
+MEAN              2.8671    1.1038    0.446
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   3%|▎         | 9/291 [00:00<00:05, 51.07it/s]Loading weights:   6%|▌         | 17/291 [00:00<00:04, 55.89it/s]Loading weights:   8%|▊         | 23/291 [00:00<00:06, 44.22it/s]Loading weights:  10%|█         | 30/291 [00:00<00:05, 49.94it/s]Loading weights:  15%|█▌        | 45/291 [00:00<00:03, 76.65it/s]Loading weights:  19%|█▊        | 54/291 [00:00<00:03, 70.38it/s]Loading weights:  21%|██▏       | 62/291 [00:01<00:03, 61.96it/s]Loading weights:  27%|██▋       | 80/291 [00:01<00:02, 78.55it/s]Loading weights:  32%|███▏      | 94/291 [00:01<00:02, 84.00it/s]Loading weights:  35%|███▌      | 103/291 [00:01<00:02, 78.58it/s]Loading weights:  38%|███▊      | 111/291 [00:01<00:02, 69.68it/s]Loading weights:  41%|████      | 119/291 [00:01<00:02, 63.63it/s]Loading weights:  45%|████▍     | 130/291 [00:01<00:02, 70.01it/s]Loading weights:  47%|████▋     | 138/291 [00:02<00:02, 71.17it/s]Loading weights:  51%|█████     | 149/291 [00:02<00:01, 78.66it/s]Loading weights:  55%|█████▍    | 160/291 [00:02<00:01, 80.22it/s]Loading weights:  58%|█████▊    | 169/291 [00:02<00:02, 54.14it/s]Loading weights:  63%|██████▎   | 182/291 [00:02<00:01, 64.36it/s]Loading weights:  65%|██████▌   | 190/291 [00:02<00:01, 61.20it/s]Loading weights:  69%|██████▊   | 200/291 [00:02<00:01, 68.07it/s]Loading weights:  71%|███████▏  | 208/291 [00:03<00:01, 59.80it/s]Loading weights:  75%|███████▍  | 217/291 [00:03<00:01, 54.97it/s]Loading weights:  78%|███████▊  | 227/291 [00:03<00:01, 60.08it/s]Loading weights:  80%|████████  | 234/291 [00:03<00:01, 43.53it/s]Loading weights:  86%|████████▋ | 251/291 [00:03<00:00, 54.74it/s]Loading weights:  91%|█████████ | 265/291 [00:04<00:00, 59.64it/s]Loading weights:  94%|█████████▍| 273/291 [00:04<00:00, 60.04it/s]Loading weights: 100%|██████████| 291/291 [00:04<00:00, 66.56it/s]
+
+== outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calA
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     0.7628    2.3727    0.242     0.258
+arc_easy          0.7063    2.4621    0.203     0.164
+boolq             0.0972    0.6800    0.586     0.609
+hellaswag         1.8355    1.9580    0.398     0.164
+openbookqa        0.5047    2.3057    0.211     0.320
+piqa              0.3449    1.0399    0.508     0.461
+siqa              0.8027    2.0571    0.367     0.375
+winogrande        0.6331    1.1962    0.500     0.453
+MEAN              0.7109    1.7590    0.377
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   1%|          | 2/291 [00:00<00:17, 16.07it/s]Loading weights:   1%|▏         | 4/291 [00:00<00:18, 15.70it/s]Loading weights:   7%|▋         | 20/291 [00:00<00:05, 52.86it/s]Loading weights:  10%|▉         | 28/291 [00:00<00:04, 57.18it/s]Loading weights:  15%|█▌        | 44/291 [00:00<00:03, 71.02it/s]Loading weights:  18%|█▊        | 52/291 [00:00<00:03, 72.49it/s]Loading weights:  24%|██▍       | 71/291 [00:00<00:02, 101.86it/s]Loading weights:  28%|██▊       | 82/291 [00:01<00:03, 59.63it/s] Loading weights:  31%|███▏      | 91/291 [00:01<00:03, 63.46it/s]Loading weights:  34%|███▍      | 100/291 [00:01<00:03, 56.09it/s]Loading weights:  38%|███▊      | 110/291 [00:01<00:03, 53.45it/s]Loading weights:  43%|████▎     | 125/291 [00:02<00:02, 63.44it/s]Loading weights:  46%|████▌     | 133/291 [00:02<00:02, 52.78it/s]Loading weights:  48%|████▊     | 141/291 [00:02<00:02, 55.78it/s]Loading weights:  51%|█████     | 148/291 [00:02<00:02, 58.34it/s]Loading weights:  53%|█████▎    | 155/291 [00:02<00:02, 46.45it/s]Loading weights:  57%|█████▋    | 167/291 [00:02<00:02, 48.58it/s]Loading weights:  61%|██████    | 178/291 [00:03<00:02, 55.59it/s]Loading weights:  64%|██████▍   | 187/291 [00:03<00:01, 61.73it/s]Loading weights:  67%|██████▋   | 194/291 [00:03<00:01, 59.81it/s]Loading weights:  71%|███████   | 207/291 [00:03<00:01, 68.83it/s]Loading weights:  76%|███████▌  | 221/291 [00:03<00:00, 82.81it/s]Loading weights:  79%|███████▉  | 230/291 [00:03<00:01, 59.74it/s]Loading weights:  82%|████████▏ | 238/291 [00:04<00:00, 59.38it/s]Loading weights:  85%|████████▍ | 247/291 [00:04<00:00, 64.45it/s]Loading weights:  88%|████████▊ | 257/291 [00:04<00:00, 64.19it/s]Loading weights:  91%|█████████ | 265/291 [00:04<00:00, 62.77it/s]Loading weights:  93%|█████████▎| 272/291 [00:04<00:00, 42.66it/s]Loading weights: 100%|██████████| 291/291 [00:04<00:00, 60.53it/s]
+
+== outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calC
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     0.1661    1.2844    0.422     0.258
+arc_easy          0.1340    1.0551    0.562     0.164
+boolq             0.1020    0.6778    0.562     0.609
+hellaswag         0.0944    0.7436    0.758     0.164
+openbookqa        0.1381    1.0743    0.570     0.320
+piqa              0.0877    0.6763    0.625     0.461
+siqa              0.1049    0.7818    0.648     0.375
+winogrande        0.1174    0.7481    0.578     0.453
+MEAN              0.1181    0.8802    0.591
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   1%|          | 2/291 [00:00<00:17, 16.74it/s]Loading weights:   3%|▎         | 8/291 [00:00<00:10, 27.23it/s]Loading weights:   5%|▌         | 16/291 [00:00<00:07, 37.25it/s]Loading weights:  10%|▉         | 29/291 [00:00<00:04, 52.66it/s]Loading weights:  15%|█▌        | 45/291 [00:00<00:03, 77.68it/s]Loading weights:  19%|█▉        | 55/291 [00:00<00:03, 70.99it/s]Loading weights:  22%|██▏       | 65/291 [00:01<00:03, 58.88it/s]Loading weights:  28%|██▊       | 82/291 [00:01<00:03, 55.27it/s]Loading weights:  33%|███▎      | 96/291 [00:01<00:02, 67.52it/s]Loading weights:  36%|███▋      | 106/291 [00:01<00:02, 70.40it/s]Loading weights:  39%|███▉      | 114/291 [00:01<00:02, 71.20it/s]Loading weights:  42%|████▏     | 122/291 [00:02<00:03, 54.51it/s]Loading weights:  44%|████▍     | 129/291 [00:02<00:03, 42.19it/s]Loading weights:  47%|████▋     | 138/291 [00:02<00:03, 45.59it/s]Loading weights:  52%|█████▏    | 150/291 [00:02<00:02, 53.64it/s]Loading weights:  55%|█████▍    | 159/291 [00:02<00:02, 58.28it/s]Loading weights:  57%|█████▋    | 167/291 [00:02<00:02, 60.47it/s]Loading weights:  60%|██████    | 175/291 [00:03<00:01, 63.61it/s]Loading weights:  63%|██████▎   | 182/291 [00:03<00:01, 55.50it/s]Loading weights:  65%|██████▍   | 189/291 [00:03<00:01, 57.73it/s]Loading weights:  69%|██████▉   | 201/291 [00:03<00:01, 70.74it/s]Loading weights:  73%|███████▎  | 212/291 [00:03<00:00, 79.30it/s]Loading weights:  76%|███████▌  | 221/291 [00:03<00:01, 54.47it/s]Loading weights:  78%|███████▊  | 228/291 [00:03<00:01, 54.90it/s]Loading weights:  82%|████████▏ | 240/291 [00:04<00:00, 64.78it/s]Loading weights:  88%|████████▊ | 256/291 [00:04<00:00, 81.51it/s]Loading weights:  91%|█████████ | 265/291 [00:04<00:00, 79.41it/s]Loading weights:  96%|█████████▌| 279/291 [00:04<00:00, 88.26it/s]Loading weights: 100%|██████████| 291/291 [00:04<00:00, 64.66it/s]
+
+== outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calB
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     1.2393    1.5667    0.281     0.258
+arc_easy          1.4305    1.2893    0.461     0.164
+boolq             0.0909    0.6336    0.625     0.609
+hellaswag         1.3012    1.7110    0.359     0.164
+openbookqa        1.3221    1.3752    0.336     0.320
+piqa              0.1519    0.7677    0.555     0.461
+siqa              0.7278    1.0471    0.516     0.375
+winogrande        0.7574    0.8127    0.438     0.453
+MEAN              0.8777    1.1504    0.446
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   3%|▎         | 10/291 [00:00<00:03, 92.59it/s]Loading weights:   8%|▊         | 22/291 [00:00<00:03, 69.28it/s]Loading weights:  11%|█         | 32/291 [00:00<00:03, 67.94it/s]Loading weights:  15%|█▌        | 45/291 [00:00<00:03, 72.16it/s]Loading weights:  18%|█▊        | 53/291 [00:00<00:04, 57.90it/s]Loading weights:  21%|██        | 60/291 [00:00<00:04, 52.75it/s]Loading weights:  23%|██▎       | 66/291 [00:01<00:05, 41.32it/s]Loading weights:  24%|██▍       | 71/291 [00:01<00:06, 35.89it/s]Loading weights:  26%|██▌       | 75/291 [00:01<00:08, 24.18it/s]Loading weights:  32%|███▏      | 94/291 [00:01<00:04, 47.89it/s]Loading weights:  35%|███▌      | 102/291 [00:02<00:04, 43.52it/s]Loading weights:  40%|████      | 117/291 [00:02<00:02, 61.07it/s]Loading weights:  43%|████▎     | 126/291 [00:02<00:03, 46.39it/s]Loading weights:  46%|████▌     | 133/291 [00:02<00:03, 48.39it/s]Loading weights:  49%|████▉     | 144/291 [00:02<00:02, 57.34it/s]Loading weights:  53%|█████▎    | 155/291 [00:03<00:02, 55.90it/s]Loading weights:  56%|█████▌    | 162/291 [00:03<00:03, 40.37it/s]Loading weights:  59%|█████▉    | 173/291 [00:03<00:02, 46.75it/s]Loading weights:  65%|██████▍   | 188/291 [00:03<00:01, 63.57it/s]Loading weights:  68%|██████▊   | 197/291 [00:03<00:01, 53.50it/s]Loading weights:  71%|███████   | 206/291 [00:04<00:01, 56.02it/s]Loading weights:  73%|███████▎  | 213/291 [00:04<00:01, 56.49it/s]Loading weights:  76%|███████▌  | 220/291 [00:04<00:01, 57.63it/s]Loading weights:  79%|███████▉  | 230/291 [00:04<00:00, 67.12it/s]Loading weights:  82%|████████▏ | 238/291 [00:04<00:00, 58.78it/s]Loading weights:  84%|████████▍ | 245/291 [00:04<00:00, 59.54it/s]Loading weights:  87%|████████▋ | 252/291 [00:04<00:00, 54.90it/s]Loading weights:  89%|████████▉ | 259/291 [00:05<00:00, 43.22it/s]Loading weights:  91%|█████████ | 264/291 [00:05<00:00, 40.11it/s]Loading weights:  97%|█████████▋| 283/291 [00:05<00:00, 67.17it/s]Loading weights: 100%|██████████| 291/291 [00:05<00:00, 54.31it/s]
+
+== outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calD
+task           resp_loss  ans_loss  ans_acc  majority
+arc_challenge     0.1360    1.0842    0.516     0.258
+arc_easy          0.0947    0.7487    0.727     0.164
+boolq             0.1003    0.6843    0.602     0.609
+hellaswag         0.0787    0.5320    0.805     0.164
+openbookqa        0.1076    0.8568    0.609     0.320
+piqa              0.0664    0.5270    0.758     0.461
+siqa              0.0851    0.6766    0.695     0.375
+winogrande        0.0783    0.6235    0.648     0.453
+MEAN              0.0934    0.7166    0.670
+wrote results/probe/int2_span_floors_calib.json

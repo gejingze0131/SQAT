@@ -1,0 +1,14 @@
+Sat Aug 29 21:33:05 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   43C    P0             51W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
++ lota_py baseline/LoTA-QAF/sqat/make_matched_base.py --config configs/qalora_cs170k_int2_g32_ep1_span_bcal.yaml --out outputs/lota_bases --tag Llama-2-7B_bcal --nsamples 3500 --calib_batch_size 8
++ exit 1

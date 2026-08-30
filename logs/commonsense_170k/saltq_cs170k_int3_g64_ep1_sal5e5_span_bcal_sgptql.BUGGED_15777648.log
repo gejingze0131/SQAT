@@ -1,0 +1,252 @@
+============================================================
+  SALT-Q — Saliency-Allocated Low-bit Trainability
+  Config:        configs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal_sgptql.yaml
+  Model:         meta-llama/Llama-2-7b-hf
+  Bits:          INT3 (asymmetric affine)
+  GPUs:          4 (train) / [0,1,2,3] (eval, vLLM tensor-parallel)
+  salient_lr:    <from yaml>   (REAL weights — not an adapter lr)
+  scales_lr:     <from yaml>   ((s, z) of both segments)
+  train_LN:      false
+  Permuted base: outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base
+============================================================
+
+>>> Stage 1: SALT-Q training
+======================================================================
+======================================================================  QLoRA Training — 3-bit | QAT mode: saltq | symmetric=False======================================================================
+
+
+  QLoRA Training — 3-bit | QAT mode: saltq | symmetric=False======================================================================  QLoRA Training — 3-bit | QAT mode: saltq | symmetric=False
+
+
+======================================================================  Train dataset:   datasets/commonsense======================================================================
+
+
+  Train dataset:   datasets/commonsense  Train split:     train  Train dataset:   datasets/commonsense
+
+
+  Train split:     train  Val split:       None  Train split:     train
+
+
+  Val split:       None  Sub-tasks:       all  Val split:       None
+
+
+  Sub-tasks:       all  Sub-tasks:       all
+
+======================================================================
+  QLoRA Training — 3-bit | QAT mode: saltq | symmetric=False
+======================================================================
+  Train dataset:   datasets/commonsense
+  Train split:     train
+  Val split:       None
+  Sub-tasks:       all
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+
+[SQAT-Permute] 复用已有 permuted base（配置一致，不重建）: outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base
+[SQAT-Permute]   group_k=128 boundary_sizes=[1, 1, 8, 22] group_size=64
+[SQAT-Permute] Using permuted base outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base (num_runtime_permutes=3)
+[SQAT-Permute] Using permuted base outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base (num_runtime_permutes=3)
+[SQAT-Permute] Using permuted base outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base (num_runtime_permutes=3)
+[SQAT-Permute] Using permuted base outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base (num_runtime_permutes=3)
+
+[SALT-Q] Building frozen-code base (GPTQ on the permuted fp16 base)...
+[Data] calibration: 3500 records, sampling=balanced, task mix={'arc_easy': 438, 'winogrande': 438, 'piqa': 438, 'arc_challenge': 438, 'boolq': 438, 'hellaswag': 435, 'siqa': 437, 'openbookqa': 438}
+[SALT-Q] Loading permuted base outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base in torch.bfloat16 ...
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   2%|▏         | 7/291 [00:00<00:05, 55.87it/s]Loading weights:   4%|▍         | 13/291 [00:00<00:09, 29.84it/s]Loading weights:   7%|▋         | 21/291 [00:00<00:06, 42.91it/s]Loading weights:   9%|▉         | 27/291 [00:00<00:05, 44.69it/s]Loading weights:  14%|█▍        | 41/291 [00:00<00:04, 58.44it/s]Loading weights:  19%|█▉        | 56/291 [00:00<00:03, 70.63it/s]Loading weights:  23%|██▎       | 66/291 [00:01<00:03, 72.94it/s]Loading weights:  25%|██▌       | 74/291 [00:01<00:04, 49.64it/s]Loading weights:  30%|███       | 88/291 [00:01<00:03, 64.83it/s]Loading weights:  33%|███▎      | 97/291 [00:01<00:03, 56.13it/s]Loading weights:  38%|███▊      | 111/291 [00:01<00:02, 66.49it/s]Loading weights:  42%|████▏     | 121/291 [00:02<00:02, 65.61it/s]Loading weights:  44%|████▍     | 129/291 [00:02<00:03, 51.45it/s]Loading weights:  52%|█████▏    | 151/291 [00:02<00:01, 79.76it/s]Loading weights:  57%|█████▋    | 165/291 [00:02<00:01, 89.30it/s]Loading weights:  61%|██████    | 178/291 [00:02<00:01, 85.31it/s]Loading weights:  65%|██████▌   | 190/291 [00:02<00:01, 91.74it/s]Loading weights:  70%|███████   | 204/291 [00:02<00:00, 102.88it/s]Loading weights:  74%|███████▍  | 216/291 [00:03<00:00, 92.10it/s] Loading weights:  79%|███████▉  | 230/291 [00:03<00:00, 94.31it/s]Loading weights:  84%|████████▍ | 244/291 [00:03<00:00, 104.77it/s]Loading weights:  90%|█████████ | 262/291 [00:03<00:00, 116.85it/s]Loading weights:  95%|█████████▍| 275/291 [00:03<00:00, 105.94it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 79.26it/s] 
+[SALT-Q] Captured salient init for 192 projections (157.3M trainable weights)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 9
+[SegPerm] num_runtime_permutes=3
+[GPTQ] Captured 438 calibration batches (3500 sequences, 470882 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/32 [00:00<?, ?it/s][GPTQ] Sequential quantize:   3%|▎         | 1/32 [00:24<12:44, 24.65s/it][GPTQ] Sequential quantize:   6%|▋         | 2/32 [00:47<11:47, 23.60s/it][GPTQ] Sequential quantize:   9%|▉         | 3/32 [01:10<11:15, 23.30s/it][GPTQ] Sequential quantize:  12%|█▎        | 4/32 [01:33<10:48, 23.15s/it][GPTQ] Sequential quantize:  16%|█▌        | 5/32 [01:56<10:22, 23.05s/it][GPTQ] Sequential quantize:  19%|█▉        | 6/32 [02:19<09:57, 22.97s/it][GPTQ] Sequential quantize:  22%|██▏       | 7/32 [02:41<09:32, 22.90s/it][GPTQ] Sequential quantize:  25%|██▌       | 8/32 [03:04<09:08, 22.87s/it][GPTQ] Sequential quantize:  28%|██▊       | 9/32 [03:27<08:45, 22.84s/it][GPTQ] Sequential quantize:  31%|███▏      | 10/32 [03:50<08:22, 22.86s/it][GPTQ] Sequential quantize:  34%|███▍      | 11/32 [04:13<08:01, 22.91s/it][GPTQ] Sequential quantize:  38%|███▊      | 12/32 [04:36<07:37, 22.88s/it][GPTQ] Sequential quantize:  41%|████      | 13/32 [04:58<07:14, 22.86s/it][GPTQ] Sequential quantize:  44%|████▍     | 14/32 [05:21<06:51, 22.84s/it][GPTQ] Sequential quantize:  47%|████▋     | 15/32 [05:44<06:28, 22.83s/it][GPTQ] Sequential quantize:  50%|█████     | 16/32 [06:07<06:05, 22.81s/it][GPTQ] Sequential quantize:  53%|█████▎    | 17/32 [06:30<05:41, 22.80s/it][GPTQ] Sequential quantize:  56%|█████▋    | 18/32 [06:53<05:19, 22.84s/it][GPTQ] Sequential quantize:  59%|█████▉    | 19/32 [07:15<04:56, 22.83s/it][GPTQ] Sequential quantize:  62%|██████▎   | 20/32 [07:38<04:33, 22.81s/it][GPTQ] Sequential quantize:  66%|██████▌   | 21/32 [08:01<04:11, 22.82s/it][GPTQ] Sequential quantize:  69%|██████▉   | 22/32 [08:24<03:48, 22.82s/it][GPTQ] Sequential quantize:  72%|███████▏  | 23/32 [08:47<03:25, 22.81s/it][GPTQ] Sequential quantize:  75%|███████▌  | 24/32 [09:09<03:02, 22.80s/it][GPTQ] Sequential quantize:  78%|███████▊  | 25/32 [09:32<02:39, 22.79s/it][GPTQ] Sequential quantize:  81%|████████▏ | 26/32 [09:55<02:16, 22.80s/it][GPTQ] Sequential quantize:  84%|████████▍ | 27/32 [10:18<01:53, 22.80s/it][GPTQ] Sequential quantize:  88%|████████▊ | 28/32 [10:40<01:31, 22.80s/it][GPTQ] Sequential quantize:  91%|█████████ | 29/32 [11:03<01:08, 22.81s/it][GPTQ] Sequential quantize:  94%|█████████▍| 30/32 [11:26<00:45, 22.81s/it][GPTQ] Sequential quantize:  97%|█████████▋| 31/32 [11:49<00:22, 22.86s/it][GPTQ] Sequential quantize: 100%|██████████| 32/32 [12:09<00:00, 21.89s/it][GPTQ] Sequential quantize: 100%|██████████| 32/32 [12:09<00:00, 22.79s/it]
+[SALT-Q] salient_init=gptq_latent: whole-matrix OBS; 0.00% of 157.3M salient codes differ from min-max RTN (those start at the GPTQ cell centre, the rest at their fp16 value); the LSQ start reproduces every code (asserted per layer)
+[SALT-Q] base saved -> outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal_sgptql/saltq_base_3bit_g64
+[SALT-Q]   frozen codes:                 6318.7M  (int8, zero freedom)
+[SALT-Q]   trainable salient weights:     157.3M  (full weight freedom)
+[SALT-Q]   trainable (s, z):              202.4M  (affine freedom)
+[SALT-Q] Using frozen-code base outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal_sgptql/saltq_base_3bit_g64[SALT-Q] Using frozen-code base outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal_sgptql/saltq_base_3bit_g64
+[SALT-Q] Using frozen-code base outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal_sgptql/saltq_base_3bit_g64[SALT-Q] Using frozen-code base outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal_sgptql/saltq_base_3bit_g64
+
+[1/5] Loading model and tokenizer...
+
+
+[1/5] Loading model and tokenizer...
+
+[1/5] Loading model and tokenizer...
+[1/5] Loading model and tokenizer...
+
+
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base ...
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 7864.27it/s]
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base ...
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base ...
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal/permuted_fp16_base ...
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:  86%|████████▌ | 250/291 [00:00<00:00, 2493.63it/s]Loading weights:  45%|████▌     | 132/291 [00:00<00:00, 1119.36it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 2436.94it/s]
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 1935.85it/s]
+Loading weights: 100%|██████████| 291/291 [00:00<00:00, 5361.84it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 28.7%, worst 34.5% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 260.9M params (49.86% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+
+[2/5] Loading datasets...
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 28.7%, worst 34.5% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 260.9M params (49.86% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+
+[2/5] Loading datasets...
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 28.7%, worst 34.5% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 260.9M params (49.86% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+
+[2/5] Loading datasets...
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 28.7%, worst 34.5% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 260.9M params (49.86% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6318.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.6 GB)
+
+[2/5] Loading datasets...
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+Tokenizing train (num_proc=32):   0%|          | 0/147580 [00:00<?, ? examples/s]Tokenizing train (num_proc=32):   2%|▏         | 3000/147580 [00:05<04:14, 567.71 examples/s]Tokenizing train (num_proc=32):  10%|█         | 15000/147580 [00:05<00:38, 3400.70 examples/s]Tokenizing train (num_proc=32):  11%|█▏        | 16612/147580 [00:06<00:37, 3503.19 examples/s]Tokenizing train (num_proc=32):  12%|█▏        | 18224/147580 [00:06<00:32, 4011.15 examples/s]Tokenizing train (num_proc=32):  15%|█▍        | 21448/147580 [00:06<00:22, 5500.70 examples/s]Tokenizing train (num_proc=32):  18%|█▊        | 26060/147580 [00:06<00:15, 7829.00 examples/s]Tokenizing train (num_proc=32):  20%|█▉        | 29060/147580 [00:06<00:13, 8886.24 examples/s]Tokenizing train (num_proc=32):  23%|██▎       | 33672/147580 [00:07<00:12, 8876.61 examples/s]Tokenizing train (num_proc=32):  24%|██▍       | 35284/147580 [00:07<00:13, 8077.34 examples/s]Tokenizing train (num_proc=32):  26%|██▌       | 38284/147580 [00:07<00:11, 9408.62 examples/s]Tokenizing train (num_proc=32):  27%|██▋       | 39896/147580 [00:08<00:13, 8198.79 examples/s]Tokenizing train (num_proc=32):  29%|██▉       | 42896/147580 [00:08<00:11, 9511.73 examples/s]Tokenizing train (num_proc=32):  30%|███       | 44508/147580 [00:08<00:12, 8466.44 examples/s]Tokenizing train (num_proc=32):  32%|███▏      | 47508/147580 [00:08<00:10, 9203.80 examples/s]Tokenizing train (num_proc=32):  33%|███▎      | 49120/147580 [00:09<00:11, 8513.83 examples/s]Tokenizing train (num_proc=32):  35%|███▌      | 52120/147580 [00:09<00:10, 9251.64 examples/s]Tokenizing train (num_proc=32):  36%|███▋      | 53732/147580 [00:09<00:11, 8076.27 examples/s]Tokenizing train (num_proc=32):  38%|███▊      | 56732/147580 [00:09<00:10, 8774.61 examples/s]Tokenizing train (num_proc=32):  40%|███▉      | 58344/147580 [00:10<00:10, 8510.66 examples/s]Tokenizing train (num_proc=32):  42%|████▏     | 61344/147580 [00:10<00:09, 8990.29 examples/s]Tokenizing train (num_proc=32):  43%|████▎     | 62956/147580 [00:10<00:10, 8128.67 examples/s]Tokenizing train (num_proc=32):  45%|████▍     | 65956/147580 [00:10<00:08, 9194.60 examples/s]Tokenizing train (num_proc=32):  46%|████▌     | 67568/147580 [00:11<00:09, 8322.93 examples/s]Tokenizing train (num_proc=32):  48%|████▊     | 70568/147580 [00:11<00:08, 9285.86 examples/s]Tokenizing train (num_proc=32):  49%|████▉     | 72180/147580 [00:11<00:08, 8433.59 examples/s]Tokenizing train (num_proc=32):  51%|█████     | 75180/147580 [00:12<00:07, 9064.19 examples/s]Tokenizing train (num_proc=32):  52%|█████▏    | 76792/147580 [00:12<00:08, 8413.11 examples/s]Tokenizing train (num_proc=32):  54%|█████▍    | 79792/147580 [00:12<00:07, 9036.10 examples/s]Tokenizing train (num_proc=32):  55%|█████▌    | 81404/147580 [00:12<00:07, 8355.34 examples/s]Tokenizing train (num_proc=32):  57%|█████▋    | 84404/147580 [00:13<00:07, 8944.49 examples/s]Tokenizing train (num_proc=32):  58%|█████▊    | 86016/147580 [00:13<00:07, 8312.75 examples/s]Tokenizing train (num_proc=32):  60%|██████    | 89016/147580 [00:13<00:06, 9091.61 examples/s]Tokenizing train (num_proc=32):  61%|██████▏   | 90628/147580 [00:13<00:06, 8259.11 examples/s]Tokenizing train (num_proc=32):  63%|██████▎   | 93628/147580 [00:14<00:05, 9194.56 examples/s]Tokenizing train (num_proc=32):  65%|██████▍   | 95240/147580 [00:14<00:06, 8679.30 examples/s]Tokenizing train (num_proc=32):  67%|██████▋   | 98240/147580 [00:14<00:05, 8942.71 examples/s]Tokenizing train (num_proc=32):  68%|██████▊   | 99852/147580 [00:14<00:05, 8396.65 examples/s]Tokenizing train (num_proc=32):  70%|██████▉   | 102852/147580 [00:15<00:05, 8697.99 examples/s]Tokenizing train (num_proc=32):  71%|███████   | 104464/147580 [00:15<00:05, 8279.57 examples/s]Tokenizing train (num_proc=32):  73%|███████▎  | 107464/147580 [00:15<00:04, 8934.33 examples/s]Tokenizing train (num_proc=32):  74%|███████▍  | 109076/147580 [00:16<00:04, 8131.23 examples/s]Tokenizing train (num_proc=32):  76%|███████▌  | 112076/147580 [00:16<00:03, 8930.58 examples/s]Tokenizing train (num_proc=32):  77%|███████▋  | 113688/147580 [00:16<00:03, 8587.13 examples/s]Tokenizing train (num_proc=32):  79%|███████▉  | 116688/147580 [00:16<00:03, 8832.61 examples/s]Tokenizing train (num_proc=32):  80%|████████  | 118300/147580 [00:17<00:03, 8452.40 examples/s]Tokenizing train (num_proc=32):  82%|████████▏ | 121300/147580 [00:17<00:03, 8521.30 examples/s]Tokenizing train (num_proc=32):  83%|████████▎ | 122912/147580 [00:17<00:02, 8434.17 examples/s]Tokenizing train (num_proc=32):  85%|████████▌ | 125912/147580 [00:17<00:02, 8581.56 examples/s]Tokenizing train (num_proc=32):  86%|████████▋ | 127524/147580 [00:18<00:02, 8014.75 examples/s]Tokenizing train (num_proc=32):  88%|████████▊ | 130524/147580 [00:18<00:01, 8941.46 examples/s]Tokenizing train (num_proc=32):  90%|████████▉ | 132136/147580 [00:18<00:01, 8395.15 examples/s]Tokenizing train (num_proc=32):  92%|█████████▏| 135136/147580 [00:18<00:01, 8956.41 examples/s]Tokenizing train (num_proc=32):  93%|█████████▎| 136747/147580 [00:19<00:01, 8407.79 examples/s]Tokenizing train (num_proc=32):  95%|█████████▍| 139747/147580 [00:19<00:00, 9052.94 examples/s]Tokenizing train (num_proc=32):  96%|█████████▌| 141358/147580 [00:19<00:00, 8700.79 examples/s]Tokenizing train (num_proc=32):  98%|█████████▊| 144358/147580 [00:19<00:00, 9516.97 examples/s]Tokenizing train (num_proc=32):  99%|█████████▉| 145969/147580 [00:20<00:00, 9189.62 examples/s]Tokenizing train (num_proc=32): 100%|██████████| 147580/147580 [00:20<00:00, 6590.09 examples/s]Tokenizing train (num_proc=32): 100%|██████████| 147580/147580 [00:20<00:00, 7056.89 examples/s]
+[Data] loss_span=instruction+response: 132.7 supervised tokens/record (82.1% of all tokens, first 2000 records)
+  Train: 147580 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 9
+[SegPerm] num_runtime_permutes=3
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=3, group_k values=[0, 128], group_size=64, bits=3, symmetric=False
+[SALT-Q] freedom allocation: 157.3M full-freedom salient weights + 202.4M affine (s,z) + 6318.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=157,286,400; of_qat_target_weights=2.65% (5,939,134,464 params); of_lora_target_weights=2.43% (6,476,005,376 params); of_model_params=2.33% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] loss_span=instruction+response: 132.7 supervised tokens/record (82.1% of all tokens, first 2000 records)
+  Train: 147580 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 9
+[SegPerm] num_runtime_permutes=3
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=3, group_k values=[0, 128], group_size=64, bits=3, symmetric=False
+[SALT-Q] freedom allocation: 157.3M full-freedom salient weights + 202.4M affine (s,z) + 6318.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=157,286,400; of_qat_target_weights=2.65% (5,939,134,464 params); of_lora_target_weights=2.43% (6,476,005,376 params); of_model_params=2.33% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[Data] loss_span=instruction+response: 132.7 supervised tokens/record (82.1% of all tokens, first 2000 records)
+  Train: 147580 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 9
+[SegPerm] num_runtime_permutes=3
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=3, group_k values=[0, 128], group_size=64, bits=3, symmetric=False
+[SALT-Q] freedom allocation: 157.3M full-freedom salient weights + 202.4M affine (s,z) + 6318.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=157,286,400; of_qat_target_weights=2.65% (5,939,134,464 params); of_lora_target_weights=2.43% (6,476,005,376 params); of_model_params=2.33% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[Data] loss_span=instruction+response: 132.7 supervised tokens/record (82.1% of all tokens, first 2000 records)
+  Train: 147580 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] Boundary hook: seg 1→2 after layer 1
+[SegPerm] Boundary hook: seg 2→3 after layer 9
+[SegPerm] num_runtime_permutes=3
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=3, group_k values=[0, 128], group_size=64, bits=3, symmetric=False
+[SALT-Q] freedom allocation: 157.3M full-freedom salient weights + 202.4M affine (s,z) + 6318.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=157,286,400; of_qat_target_weights=2.65% (5,939,134,464 params); of_lora_target_weights=2.43% (6,476,005,376 params); of_model_params=2.33% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+
+[5/5] Starting training...
+[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):
+  salient weights    157.3M  lr=5e-05   (weight units)
+  scales               2.5M  lr=1.73e-05   (weight units, wd=0)
+  zero-points        101.2M  lr=0.00173   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)
+  LoRA (B, A_N, A_S)     0.0M  lr=0.005   (sqrt of a LEVEL - a fourth unit, wd=0)
+  other                0.0M  lr=2e-05
+
+[5/5] Starting training...
+[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):
+  salient weights    157.3M  lr=5e-05   (weight units)
+  scales               2.5M  lr=1.73e-05   (weight units, wd=0)
+  zero-points        101.2M  lr=0.00173   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)
+  LoRA (B, A_N, A_S)     0.0M  lr=0.005   (sqrt of a LEVEL - a fourth unit, wd=0)
+  other                0.0M  lr=2e-05
+
+[5/5] Starting training...
+
+[5/5] Starting training...
+[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):
+  salient weights    157.3M  lr=5e-05   (weight units)
+  scales               2.5M  lr=1.73e-05   (weight units, wd=0)
+  zero-points        101.2M  lr=0.00173   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)
+  LoRA (B, A_N, A_S)     0.0M  lr=0.005   (sqrt of a LEVEL - a fourth unit, wd=0)
+  other                0.0M  lr=2e-05
+[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):
+  salient weights    157.3M  lr=5e-05   (weight units)
+  scales               2.5M  lr=1.73e-05   (weight units, wd=0)
+  zero-points        101.2M  lr=0.00173   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)
+  LoRA (B, A_N, A_S)     0.0M  lr=0.005   (sqrt of a LEVEL - a fourth unit, wd=0)
+  other                0.0M  lr=2e-05
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/users/nus/jingzege/.netrc.
+wandb: Currently logged in as: kosmos0131 (kosmos0131-national-university-of-singapore) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run fq722y3b
+wandb: Tracking run with wandb version 0.28.1
+wandb: Run data is saved locally in /scratch/users/nus/jingzege/cache/wandb/wandb/run-20260830_014522-fq722y3b
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run twilight-oath-226
+wandb: ⭐️ View project at https://wandb.ai/kosmos0131-national-university-of-singapore/huggingface
+wandb: 🚀 View run at https://wandb.ai/kosmos0131-national-university-of-singapore/huggingface/runs/fq722y3b
+  0%|          | 0/1845 [00:00<?, ?it/s]  0%|          | 1/1845 [00:03<1:53:34,  3.70s/it]  0%|          | 2/1845 [00:06<1:40:02,  3.26s/it]  0%|          | 3/1845 [00:09<1:39:01,  3.23s/it]  0%|          | 4/1845 [00:12<1:36:02,  3.13s/it]  0%|          | 5/1845 [00:16<1:39:25,  3.24s/it]  0%|          | 6/1845 [00:19<1:35:53,  3.13s/it]  0%|          | 7/1845 [00:22<1:35:46,  3.13s/it]  0%|          | 8/1845 [00:25<1:34:33,  3.09s/it]  0%|          | 9/1845 [00:28<1:35:07,  3.11s/it]  1%|          | 10/1845 [00:31<1:33:50,  3.07s/it]                                                   {'loss': '2.382', 'grad_norm': '9.835', 'learning_rate': '8.036e-06', 'epoch': '0.005421'}
+  1%|          | 10/1845 [00:31<1:33:50,  3.07s/it]  1%|          | 11/1845 [00:34<1:32:37,  3.03s/it]  1%|          | 12/1845 [00:37<1:33:30,  3.06s/it]  1%|          | 13/1845 [00:40<1:32:49,  3.04s/it]  1%|          | 14/1845 [00:43<1:33:55,  3.08s/it]  1%|          | 15/1845 [00:46<1:33:05,  3.05s/it]  1%|          | 16/1845 [00:49<1:32:49,  3.05s/it]  1%|          | 17/1845 [00:52<1:33:21,  3.06s/it]  1%|          | 18/1845 [00:55<1:32:56,  3.05s/it]  1%|          | 19/1845 [00:58<1:32:48,  3.05s/it]  1%|          | 20/1845 [01:01<1:31:31,  3.01s/it]                                                   {'loss': '1.664', 'grad_norm': '2.926', 'learning_rate': '1.696e-05', 'epoch': '0.01084'}
+  1%|          | 20/1845 [01:01<1:31:31,  3.01s/it]  1%|          | 21/1845 [01:04<1:32:24,  3.04s/it]  1%|          | 22/1845 [01:07<1:31:53,  3.02s/it]  1%|          | 23/1845 [01:10<1:32:10,  3.04s/it]  1%|▏         | 24/1845 [01:13<1:31:51,  3.03s/it]  1%|▏         | 25/1845 [01:17<1:32:30,  3.05s/it]  1%|▏         | 26/1845 [01:19<1:31:16,  3.01s/it]  1%|▏         | 27/1845 [01:22<1:30:18,  2.98s/it]  2%|▏         | 28/1845 [01:25<1:31:31,  3.02s/it]  2%|▏         | 29/1845 [01:28<1:30:53,  3.00s/it]  2%|▏         | 30/1845 [01:32<1:32:43,  3.07s/it]                                                   {'loss': '1.459', 'grad_norm': '1.365', 'learning_rate': '2.589e-05', 'epoch': '0.01626'}
+  2%|▏         | 30/1845 [01:32<1:32:43,  3.07s/it]  2%|▏         | 31/1845 [01:35<1:32:11,  3.05s/it]  2%|▏         | 32/1845 [01:38<1:32:40,  3.07s/it]  2%|▏         | 33/1845 [01:41<1:31:39,  3.04s/it]  2%|▏         | 34/1845 [01:44<1:32:17,  3.06s/it]  2%|▏         | 35/1845 [01:47<1:32:15,  3.06s/it]  2%|▏         | 36/1845 [01:50<1:33:14,  3.09s/it]  2%|▏         | 37/1845 [01:53<1:33:27,  3.10s/it]  2%|▏         | 38/1845 [01:56<1:31:44,  3.05s/it]  2%|▏         | 39/1845 [01:59<1:31:58,  3.06s/it]  2%|▏         | 40/1845 [02:02<1:31:13,  3.03s/it]                                                   {'loss': '1.355', 'grad_norm': '1.044', 'learning_rate': '3.482e-05', 'epoch': '0.02168'}
+  2%|▏         | 40/1845 [02:02<1:31:13,  3.03s/it]  2%|▏         | 41/1845 [02:05<1:31:27,  3.04s/it]  2%|▏         | 42/1845 [02:08<1:31:11,  3.03s/it]  2%|▏         | 43/1845 [02:11<1:31:26,  3.04s/it]  2%|▏         | 44/1845 [02:14<1:30:57,  3.03s/it]  2%|▏         | 45/1845 [02:17<1:31:06,  3.04s/it]  2%|▏         | 46/1845 [02:20<1:31:33,  3.05s/it]  3%|▎         | 47/1845 [02:23<1:30:44,  3.03s/it]  3%|▎         | 48/1845 [02:27<1:31:34,  3.06s/it]  3%|▎         | 49/1845 [02:30<1:30:38,  3.03s/it]  3%|▎         | 50/1845 [02:33<1:30:51,  3.04s/it]                                                   {'loss': '1.311', 'grad_norm': '1.096', 'learning_rate': '4.375e-05', 'epoch': '0.0271'}
+  3%|▎         | 50/1845 [02:33<1:30:51,  3.04s/it]  3%|▎         | 51/1845 [02:36<1:32:03,  3.08s/it]  3%|▎         | 52/1845 [02:39<1:33:07,  3.12s/it]  3%|▎         | 53/1845 [02:42<1:33:47,  3.14s/it]  3%|▎         | 54/1845 [02:45<1:32:16,  3.09s/it]  3%|▎         | 55/1845 [02:48<1:32:25,  3.10s/it]  3%|▎         | 56/1845 [02:51<1:30:52,  3.05s/it]  3%|▎         | 57/1845 [02:54<1:30:53,  3.05s/it]  3%|▎         | 58/1845 [02:57<1:30:23,  3.04s/it]  3%|▎         | 59/1845 [03:00<1:30:22,  3.04s/it]  3%|▎         | 60/1845 [03:03<1:29:59,  3.03s/it]                                                   {'loss': '1.303', 'grad_norm': '1.018', 'learning_rate': '5e-05', 'epoch': '0.03252'}
+  3%|▎         | 60/1845 [03:03<1:29:59,  3.03s/it]  3%|▎         | 61/1845 [03:06<1:29:06,  3.00s/it]  3%|▎         | 62/1845 [03:09<1:29:59,  3.03s/it]  3%|▎         | 63/1845 [03:12<1:28:48,  2.99s/it]  3%|▎         | 64/1845 [03:15<1:29:31,  3.02s/it]  4%|▎         | 65/1845 [03:18<1:28:51,  3.00s/it]  4%|▎         | 66/1845 [03:21<1:29:31,  3.02s/it]  4%|▎         | 67/1845 [03:24<1:30:17,  3.05s/it]  4%|▎         | 68/1845 [03:28<1:30:49,  3.07s/it]

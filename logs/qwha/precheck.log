@@ -1,0 +1,21 @@
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+Using the latest cached version of the dataset since wikitext couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'wikitext-2-raw-v1' at /scratch/users/nus/jingzege/cache/huggingface/datasets/wikitext/wikitext-2-raw-v1/0.0.0/b08601e04326c79dfdd32d625aee71d232d685c3 (last modified on Fri Aug 28 18:06:24 2026).
+wikitext2 test rows: 4358
+Using the latest cached version of the dataset since wikitext couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'wikitext-2-raw-v1' at /scratch/users/nus/jingzege/cache/huggingface/datasets/wikitext/wikitext-2-raw-v1/0.0.0/b08601e04326c79dfdd32d625aee71d232d685c3 (last modified on Fri Aug 28 18:06:24 2026).
+wikitext2 train rows: 36718
+gptq dir: /scratch/users/nus/jingzege/SQAT_outputs/qwha_cache/gptq_models/meta-llama/Llama-2-7b-hf-3bits-g64
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+Tokenizing train (num_proc=8):   0%|          | 0/2000 [00:00<?, ? examples/s]Tokenizing train (num_proc=8):  12%|█▎        | 250/2000 [01:33<10:53,  2.68 examples/s]Tokenizing train (num_proc=8):  25%|██▌       | 500/2000 [01:33<03:52,  6.45 examples/s]Tokenizing train (num_proc=8):  88%|████████▊ | 1750/2000 [01:49<00:38,  6.45 examples/s]Tokenizing train (num_proc=8): 100%|██████████| 2000/2000 [02:22<00:00, 18.97 examples/s]Tokenizing train (num_proc=8): 100%|██████████| 2000/2000 [02:27<00:00, 13.54 examples/s]
+[Data] loss_span=instruction+response: 132.7 supervised tokens/record (82.1% of all tokens, first 2000 records)
+train records: 2000
+batch: {'input_ids': (2, 111), 'labels': (2, 111), 'attention_mask': (2, 111)}
+PRECHECK OK

@@ -1,0 +1,180 @@
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+[smoke] wrote /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/tiny-llama
+[smoke] wrote /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/smoke.yaml
+===== stage 0: balanced-calibration GPTQ base (packed, round-trip asserted) =====
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+
+======================================================================
+  QWHA base — INT3 g64 asym, this repo's GPTQ + balanced calibration
+  calibration: datasets/commonsense, 200 records, sampling=balanced, seq_len=512
+  gptq:        nsamples 200, batch 8, percdamp 0.01, blocksize 128, act-order off
+  out:         /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal
+======================================================================
+[Data] calibration: 200 records, sampling=balanced, task mix={'siqa': 25, 'arc_easy': 25, 'openbookqa': 25, 'arc_challenge': 25, 'hellaswag': 25, 'piqa': 25, 'boolq': 25, 'winogrande': 25}
+[GPTQ] Captured 25 calibration batches (200 sequences, 26799 real tokens; padded positions are excluded from every Hessian).
+[GPTQ] Sequential quantize:   0%|          | 0/2 [00:00<?, ?it/s][GPTQ] Sequential quantize:  50%|█████     | 1/2 [00:08<00:08,  8.24s/it][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:08<00:00,  3.76s/it][GPTQ] Sequential quantize: 100%|██████████| 2/2 [00:08<00:00,  4.43s/it]
+[bcal-base] GPTQ done for 14 projections
+[32mINFO[0m  Packing model...                                                         
+[32mINFO[0m  Packing Kernel: selected: `TorchQuantLinear`                             
+[32mINFO[0m  Kernel: candidates -> `[TorchQuantLinear]`                               
+[32mINFO[0m  Kernel: selected -> `TorchQuantLinear`.                                  
+Packing model.layers.0.self_attn.q_proj [1 of 14] | 0:00:00 / 0:00:00 [1/14] 7.1%Packing model.layers.0.self_attn.k_proj [2 of 14] | 0:00:00 / 0:00:00 [2/14] 14.3%Packing model.layers.0.self_attn.v_proj [3 of 14] | 0:00:00 / 0:00:00 [3/14] 21.4%Packing model.layers.0.self_attn.o_proj [4 of 14] | 0:00:00 / 0:00:00 [4/14] 28.6%Packing model.layers.0.mlp.gate_proj    [5 of 14] | 0:00:00 / 0:00:00 [5/14] 35.7%Packing model.layers.0.mlp.up_proj      [6 of 14] | 0:00:00 / 0:00:00 [6/14] 42.9%Packing model.layers.0.mlp.down_proj    [7 of 14] | 0:00:00 / 0:00:00 [7/14] 50.0%Packing model.layers.1.self_attn.q_proj [8 of 14] | 0:00:00 / 0:00:00 [8/14] 57.1%Packing model.layers.1.self_attn.k_proj [9 of 14] | 0:00:00 / 0:00:00 [9/14] 64.3%Packing model.layers.1.self_attn.v_proj [10 of 14] | 0:00:00 / 0:00:00 [10/14] 71.4%Packing model.layers.1.self_attn.o_proj [11 of 14] | 0:00:00 / 0:00:00 [11/14] 78.6%Packing model.layers.1.mlp.gate_proj    [12 of 14] | 0:00:00 / 0:00:00 [12/14] 85.7%Packing model.layers.1.mlp.up_proj      [13 of 14] | 0:00:00 / 0:00:00 [13/14] 92.9%Packing model.layers.1.mlp.down_proj    [14 of 14] | 0:00:00 / 0:00:00 [14/14] 100.0%[32mINFO[0m  Model packed.                                                            
+[32mINFO[0m  Saved Quantize Config: 
+{
+  "bits": 3,
+  "group_size": 64,
+  "desc_act": false,
+  "sym": false,
+  "lm_head": false,
+  "quant_method": "gptq",
+  "checkpoint_format": "gptq_v2",
+  "pack_dtype": "int32",
+  "meta": {
+    "quantizer": [
+      "gptqmodel:2.2.0"
+    ]
+  }
+}
+[bcal-base] wrote /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal
+from_quantized: adapter: None
+[32mINFO[0m  Estimated Quantization BPW (bits per weight): 3.459375 bpw, based on [bits: 3, group_size: 64]
+[32mINFO[0m   Kernel: selected: `TorchQuantLinear`                                    
+[32mINFO[0m  Kernel: candidates -> `[TorchQuantLinear]`                               
+[32mINFO[0m  Kernel: selected -> `TorchQuantLinear`.                                  
+[32mINFO[0m   Kernel: selected: `TorchQuantLinear`                                    
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+INFO:tokenicer.tokenicer:Tokenicer: Auto fixed pad_token_id=0 (token='<unk>').
+[32mINFO[0m  Model: Loaded `generation_config`: GenerationConfig {
+  "bos_token_id": 1,
+  "eos_token_id": 2
+}
+
+[32mINFO[0m  Kernel: loaded -> `[TorchQuantLinear]`                                   
+[bcal-base] round-trip checked 14 projections, max error = 4.88e-03 grid steps (model.layers.0.self_attn.k_proj)
+[bcal-base] OK — the packed base carries this repo's balanced-calibration GPTQ grid
+===== stage 1: AdaAlloc init on the same balanced records =====
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+[init] INT3 g64 rank8 alpha=1.0 calib=balanced
+[init] base /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal
+[init] out  /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal-init-rank8
+
+[32mINFO[0m  ENV: Auto setting PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True' for memory saving.
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+`loss_type=None` was set in the config but it is unrecognised.Using the default loss: `ForCausalLMLoss`.
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+Computing quantization error: 0it [00:00, ?it/s]Computing quantization error: 63it [00:00, 1456.48it/s]
+Computed quantization error for 14 layers
+[Data] calibration: 200 records, sampling=balanced, task mix={'siqa': 25, 'arc_easy': 25, 'openbookqa': 25, 'arc_challenge': 25, 'hellaswag': 25, 'piqa': 25, 'boolq': 25, 'winogrande': 25}
+Calibration forward (balanced, in-domain):   0%|          | 0/25 [00:00<?, ?it/s]Calibration forward (balanced, in-domain):   4%|▍         | 1/25 [00:00<00:10,  2.38it/s]Calibration forward (balanced, in-domain):  28%|██▊       | 7/25 [00:00<00:01, 16.78it/s]Calibration forward (balanced, in-domain):  52%|█████▏    | 13/25 [00:00<00:00, 26.90it/s]Calibration forward (balanced, in-domain):  76%|███████▌  | 19/25 [00:00<00:00, 35.51it/s]Calibration forward (balanced, in-domain): 100%|██████████| 25/25 [00:00<00:00, 29.88it/s]
+Calculating matrix root:   0%|          | 0/14 [00:00<?, ?it/s]Calculating matrix root:   7%|▋         | 1/14 [00:01<00:24,  1.88s/it]Calculating matrix root:  14%|█▍        | 2/14 [00:01<00:10,  1.19it/s]Calculating matrix root:  21%|██▏       | 3/14 [00:02<00:05,  1.99it/s]Calculating matrix root:  29%|██▊       | 4/14 [00:02<00:03,  2.91it/s]Calculating matrix root:  36%|███▌      | 5/14 [00:02<00:02,  3.91it/s]Calculating matrix root:  43%|████▎     | 6/14 [00:02<00:01,  4.92it/s]Calculating matrix root:  50%|█████     | 7/14 [00:02<00:01,  5.48it/s]Calculating matrix root:  57%|█████▋    | 8/14 [00:02<00:00,  6.39it/s]Calculating matrix root:  71%|███████▏  | 10/14 [00:02<00:00,  7.73it/s]Calculating matrix root:  79%|███████▊  | 11/14 [00:02<00:00,  8.19it/s]Calculating matrix root:  86%|████████▌ | 12/14 [00:03<00:00,  8.59it/s]Calculating matrix root:  93%|█████████▎| 13/14 [00:03<00:00,  8.93it/s]Calculating matrix root: 100%|██████████| 14/14 [00:03<00:00,  8.77it/s]Calculating matrix root: 100%|██████████| 14/14 [00:03<00:00,  4.30it/s]
+[init] cached 14 xtx_root to /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/xtxroot_tiny-llama_balanced.pt
+[init] matched xtx_root on 14 adapted layers
+0it [00:00, ?it/s]2it [00:00, 11.56it/s]4it [00:00, 11.74it/s]6it [00:00, 11.82it/s]8it [00:00, 11.84it/s]10it [00:02,  2.33it/s]12it [00:03,  2.88it/s]14it [00:03,  3.83it/s]15it [00:03,  3.77it/s]17it [00:03,  4.95it/s]18it [00:04,  3.90it/s]20it [00:04,  5.12it/s]22it [00:04,  6.35it/s]23it [00:04,  5.48it/s]25it [00:05,  6.76it/s]26it [00:05,  4.89it/s]28it [00:05,  6.22it/s]29it [00:06,  4.62it/s]31it [00:06,  5.96it/s]33it [00:06,  7.20it/s]35it [00:06,  8.28it/s]36it [00:06,  6.72it/s]38it [00:07,  7.90it/s]39it [00:07,  6.47it/s]41it [00:07,  7.74it/s]42it [00:07,  6.36it/s]44it [00:07,  7.66it/s]45it [00:08,  4.96it/s]47it [00:08,  6.31it/s]49it [00:08,  7.54it/s]50it [00:08,  6.16it/s]52it [00:09,  7.44it/s]53it [00:09,  5.14it/s]55it [00:09,  6.48it/s]56it [00:10,  3.66it/s]58it [00:10,  4.89it/s]60it [00:10,  6.14it/s]62it [00:10,  7.31it/s]63it [00:11,  5.69it/s]
+[init] saved /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal-init-rank8
+[init] peak GPU 0.6 GB
+===== stage 1b: the same init off the cached X^T X roots =====
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+[init] INT3 g64 rank8 alpha=1.0 calib=balanced
+[init] base /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal
+[init] out  /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal-init-rank8
+
+[32mINFO[0m  ENV: Auto setting PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True' for memory saving.
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+`loss_type=None` was set in the config but it is unrecognised.Using the default loss: `ForCausalLMLoss`.
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+Computing quantization error: 0it [00:00, ?it/s]Computing quantization error: 63it [00:00, 1391.91it/s]
+Computed quantization error for 14 layers
+[init] loaded 14 cached xtx_root from /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/xtxroot_tiny-llama_balanced.pt
+[init] matched xtx_root on 14 adapted layers
+0it [00:00, ?it/s]2it [00:00, 11.93it/s]4it [00:00, 12.00it/s]6it [00:00, 12.03it/s]8it [00:00, 12.08it/s]10it [00:01,  6.99it/s]12it [00:01,  6.48it/s]14it [00:01,  7.63it/s]15it [00:01,  6.41it/s]17it [00:02,  7.68it/s]18it [00:02,  6.37it/s]20it [00:02,  7.70it/s]22it [00:02,  8.80it/s]23it [00:02,  6.73it/s]25it [00:03,  8.00it/s]26it [00:03,  5.33it/s]28it [00:03,  6.71it/s]29it [00:04,  4.89it/s]31it [00:04,  6.28it/s]33it [00:04,  7.55it/s]35it [00:04,  8.63it/s]37it [00:05,  7.50it/s]39it [00:05,  6.90it/s]41it [00:05,  7.96it/s]42it [00:05,  6.70it/s]44it [00:05,  7.91it/s]45it [00:06,  6.45it/s]47it [00:06,  7.75it/s]49it [00:06,  8.84it/s]50it [00:06,  6.71it/s]52it [00:07,  7.96it/s]53it [00:07,  5.34it/s]55it [00:07,  6.72it/s]56it [00:08,  4.90it/s]58it [00:08,  6.29it/s]60it [00:08,  7.56it/s]62it [00:08,  8.64it/s]63it [00:08,  7.33it/s]
+[init] saved /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal-init-rank8
+[init] peak GPU 0.1 GB
+[smoke] cached-root init is bit-identical to the computed one
+===== stage 2: DDP training on this repo's commonsense cell =====
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+======================================================================
+  QWHA baseline — INT3 g64, rank 8, scale 4000.0
+  base   /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal
+  init   /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal-init-rank8
+  lr     3e-05   eff batch 8
+  out    /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/adapter
+======================================================================
+
+[32mINFO[0m  ENV: Auto setting PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True' for memory saving.
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+`loss_type=None` was set in the config but it is unrecognised.Using the default loss: `ForCausalLMLoss`.
+
+[32mINFO[0m  ENV: Auto setting PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True' for memory saving.
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+`loss_type=None` was set in the config but it is unrecognised.Using the default loss: `ForCausalLMLoss`.
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+[QWHA] loaded 14 adapter layers from /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal-init-rank8 (checkpoint scaling 0.25 -> 4000.0)
+[QWHA] trainable 0.1M / 32.9M params
+[QWHA] loaded 14 adapter layers from /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal-init-rank8 (checkpoint scaling 0.25 -> 4000.0)
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[rank1]:[W830 11:09:48.800223709 ProcessGroupNCCL.cpp:4115] [PG ID 0 PG GUID 0 Rank 1]  using GPU 1 to perform barrier as devices used by this process are currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect.Specify device_ids in barrier() to force use of a particular device,or call init_process_group() with a device_id.
+[Data] loss_span=instruction+response: 121.6 supervised tokens/record (80.7% of all tokens, first 2000 records)
+[rank0]:[W830 11:09:48.241416817 ProcessGroupNCCL.cpp:4115] [PG ID 0 PG GUID 0 Rank 0]  using GPU 0 to perform barrier as devices used by this process are currently unknown. This can potentially cause a hang if this rank to GPU mapping is incorrect.Specify device_ids in barrier() to force use of a particular device,or call init_process_group() with a device_id.
+WARNING:accelerate.utils.other:Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+No label_names provided for model class `PeftModelForCausalLM`. Since `PeftModel` hides base models input arguments, if label_names is not given, label_names can't be set automatically within `Trainer`. Note that empty label_names list will be used instead.
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] loss_span=instruction+response: 121.6 supervised tokens/record (80.7% of all tokens, first 2000 records)
+No label_names provided for model class `PeftModelForCausalLM`. Since `PeftModel` hides base models input arguments, if label_names is not given, label_names can't be set automatically within `Trainer`. Note that empty label_names list will be used instead.
+  0%|          | 0/25 [00:00<?, ?it/s]  4%|▍         | 1/25 [00:07<02:51,  7.13s/it] 12%|█▏        | 3/25 [00:07<00:42,  1.92s/it] 20%|██        | 5/25 [00:07<00:19,  1.02it/s]                                              {'loss': 10.463, 'grad_norm': 11.920764923095703, 'learning_rate': 2.8858192987669303e-05, 'epoch': 0.2}
+ 20%|██        | 5/25 [00:07<00:19,  1.02it/s] 28%|██▊       | 7/25 [00:07<00:10,  1.66it/s] 36%|███▌      | 9/25 [00:07<00:06,  2.43it/s]                                              {'loss': 10.2178, 'grad_norm': 11.761308670043945, 'learning_rate': 2.25e-05, 'epoch': 0.4}
+ 40%|████      | 10/25 [00:07<00:06,  2.43it/s] 44%|████▍     | 11/25 [00:08<00:04,  3.30it/s] 52%|█████▏    | 13/25 [00:08<00:02,  4.31it/s] 60%|██████    | 15/25 [00:08<00:01,  5.38it/s]                                               {'loss': 10.0913, 'grad_norm': 7.971973419189453, 'learning_rate': 1.304210711669923e-05, 'epoch': 0.6}
+ 60%|██████    | 15/25 [00:08<00:01,  5.38it/s] 68%|██████▊   | 17/25 [00:08<00:01,  6.41it/s] 76%|███████▌  | 19/25 [00:08<00:00,  7.37it/s]                                               {'loss': 10.0116, 'grad_norm': 7.609017848968506, 'learning_rate': 4.393398282201788e-06, 'epoch': 0.8}
+ 80%|████████  | 20/25 [00:08<00:00,  7.37it/s] 84%|████████▍ | 21/25 [00:08<00:00,  8.22it/s] 92%|█████████▏| 23/25 [00:09<00:00,  8.94it/s]100%|██████████| 25/25 [00:09<00:00,  9.35it/s]                                               {'loss': 9.9924, 'grad_norm': 6.860140800476074, 'learning_rate': 1.2832707939284428e-07, 'epoch': 1.0}
+100%|██████████| 25/25 [00:09<00:00,  9.35it/s]                                               {'train_runtime': 9.4345, 'train_samples_per_second': 21.199, 'train_steps_per_second': 2.65, 'train_loss': 10.155218658447266, 'epoch': 1.0}
+100%|██████████| 25/25 [00:09<00:00,  9.35it/s]100%|██████████| 25/25 [00:09<00:00,  2.65it/s]
+[QWHA] peak GPU 0.4 GB
+[QWHA] saved adapter to /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/adapter
+[rank0]:[W830 11:10:00.780946590 ProcessGroupNCCL.cpp:1250] Warning: WARNING: process group has NOT been destroyed before we destruct ProcessGroupNCCL. On normal program exit, the application should call destroy_process_group to ensure that any pending NCCL operations have finished in this process. In rare cases this process can exit before this point and block the progress of another member of the process group. This constraint has always been present,  but this warning has only been added since PyTorch 2.4 (function operator())
+===== stage 3: dense export + per-layer equivalence check =====
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+[export] /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/adapter: INT3 g64 rank8 scale4000.0
+[export] base /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal
+
+[32mINFO[0m  ENV: Auto setting PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True' for memory saving.
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+`loss_type=None` was set in the config but it is unrecognised.Using the default loss: `ForCausalLMLoss`.
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+[QWHA] loaded 14 adapter layers from /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/adapter (checkpoint scaling 4000.0 -> 4000.0)
+Materializing:   0%|          | 0/14 [00:00<?, ?it/s]Materializing:   7%|▋         | 1/14 [00:00<00:04,  2.61it/s]Materializing: 100%|██████████| 14/14 [00:00<00:00, 33.04it/s]
+[export] 14 layers; worst relative error 3.00e-07 (tol 1e-04)
+[export] wrote /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/dense
+/scratch/users/nus/jingzege/conda_envs/qwha/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.7.0) or chardet (6.0.0.post1)/charset_normalizer (3.5.1) doesn't match a supported version!
+  warnings.warn(
+[export] none: INT3 g64 rank8 scale4000.0
+[export] base /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/bases/tiny_int3_64_asym_bcal
+
+[32mINFO[0m  ENV: Auto setting PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True' for memory saving.
+[32mINFO[0m   Kernel: Auto-selection: adding candidate `TorchQuantLinear`             
+`loss_type=None` was set in the config but it is unrecognised.Using the default loss: `ForCausalLMLoss`.
+[32mINFO[0m  Optimize: `TorchQuantLinear` compilation triggered.                      
+[export] bare base: spectrum left at zero
+Materializing:   0%|          | 0/14 [00:00<?, ?it/s]Materializing:   7%|▋         | 1/14 [00:00<00:01,  6.61it/s]Materializing: 100%|██████████| 14/14 [00:00<00:00, 71.64it/s]
+[export] 14 layers; worst relative error 2.90e-07 (tol 1e-04)
+[export] wrote /scratch/users/nus/jingzege/SQAT_outputs/qwha_smoke_rt/dense_base
+SMOKE TEST OK

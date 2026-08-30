@@ -1,0 +1,54 @@
+Sun Aug 30 19:01:49 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:81:00.0 Off |                    0 |
+| N/A   42C    P0             57W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+rc=0
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'pad_token_id': 2}.
+  0%|          | 0/25 [00:00<?, ?it/s]  4%|▍         | 1/25 [00:01<00:28,  1.20s/it] 16%|█▌        | 4/25 [00:01<00:05,  3.87it/s]                                              {'loss': '10.53', 'grad_norm': '3.298', 'learning_rate': '4.81e-06', 'epoch': '0.2'}
+ 20%|██        | 5/25 [00:01<00:05,  3.87it/s] 28%|██▊       | 7/25 [00:01<00:02,  7.13it/s] 40%|████      | 10/25 [00:01<00:01, 10.42it/s]                                               {'loss': '10.48', 'grad_norm': '4.165', 'learning_rate': '3.75e-06', 'epoch': '0.4'}
+ 40%|████      | 10/25 [00:01<00:01, 10.42it/s] 52%|█████▏    | 13/25 [00:01<00:00, 13.57it/s]                                               {'loss': '10.48', 'grad_norm': '3.176', 'learning_rate': '2.174e-06', 'epoch': '0.6'}
+ 60%|██████    | 15/25 [00:01<00:00, 13.57it/s] 64%|██████▍   | 16/25 [00:01<00:00, 16.32it/s] 76%|███████▌  | 19/25 [00:01<00:00, 18.71it/s]                                               {'loss': '10.48', 'grad_norm': '2.839', 'learning_rate': '7.322e-07', 'epoch': '0.8'}
+ 80%|████████  | 20/25 [00:01<00:00, 18.71it/s] 88%|████████▊ | 22/25 [00:02<00:00, 20.60it/s]100%|██████████| 25/25 [00:02<00:00, 21.01it/s]                                               {'loss': '10.47', 'grad_norm': '2.833', 'learning_rate': '2.139e-08', 'epoch': '1'}
+100%|██████████| 25/25 [00:02<00:00, 21.01it/s]                                               {'train_runtime': '2.195', 'train_samples_per_second': '91.12', 'train_steps_per_second': '11.39', 'train_loss': '10.49', 'epoch': '1'}
+100%|██████████| 25/25 [00:02<00:00, 21.01it/s]100%|██████████| 25/25 [00:02<00:00, 11.39it/s]
+[QEFT] peak GPU 0.4 GB
+[QEFT] saved trained weak columns to /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/run/final
+[rank0]:[W830 19:04:09.002378031 ProcessGroupNCCL.cpp:1575] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+===== stage 2: dense export + per-layer equivalence check =====
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[export] base /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/base_int3_g32_k64: INT3 g32 k=64 (11.25% fp16 → 4.46 effective bits)
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 10773.04it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.6M / 38.6M (1.53%) | k=64 INT3 g32
+[export] loaded 14 trained weak-column tensors from /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/run/final
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 11923.70it/s]
+Materializing:   0%|          | 0/14 [00:00<?, ?it/s]Materializing:   7%|▋         | 1/14 [00:00<00:03,  4.14it/s]Materializing: 100%|██████████| 14/14 [00:00<00:00, 48.08it/s]
+[export] 14 layers; worst relative forward error 2.87e-07 (tol 1e-04)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  9.15it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  9.13it/s]
+[export] wrote /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/export
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[export] base /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/base_int3_g32_k64: INT3 g32 k=64 (11.25% fp16 → 4.46 effective bits)
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 12142.32it/s]
+[QEFT] 14 QEFTLinear layers | trainable 0.6M / 38.6M (1.53%) | k=64 INT3 g32
+[export] bare base: weak columns left at their quantization-time values
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 9442.58it/s]
+Materializing:   0%|          | 0/14 [00:00<?, ?it/s]Materializing:  14%|█▍        | 2/14 [00:00<00:00, 19.61it/s]Materializing: 100%|██████████| 14/14 [00:00<00:00, 96.20it/s]
+[export] 14 layers; worst relative forward error 2.15e-07 (tol 1e-04)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  1.98it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  1.98it/s]
+[export] wrote /scratch/users/nus/jingzege/SQAT_outputs/qeft_smoke/export_base
+===== stage 3: the exported model is a plain Llama, and it differs from the base =====
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 532.56it/s]
+Loading weights:   0%|          | 0/21 [00:00<?, ?it/s]Loading weights: 100%|██████████| 21/21 [00:00<00:00, 1021.12it/s]
+[smoke] trained vs untrained base: max |Δlogits| = 1.011e-02
+[smoke] export is a plain dense Llama
+
+SMOKE TEST OK
+End time: Sun Aug 30 19:05:10 +08 2026

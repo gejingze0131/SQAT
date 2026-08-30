@@ -1,0 +1,37 @@
+test_fakequant
+  [PASS] shape invariance (sym+asym)
+  [PASS] group_k % group_size assert
+  [PASS] per-row per-group independence
+  [PASS] symmetric error within one scale
+  [PASS] STE backward (asymmetric)
+test_fused_residual
+  [PASS] QKV-MHA-asym: fused == separate + split shapes
+  [PASS] QKV-MHA-sym: fused == separate + split shapes
+  [PASS] QKV-GQA-asym: fused == separate + split shapes
+  [PASS] GateUp-asym: fused == separate + split shapes
+test_attn_injector
+  [PASS] no full-weight materialization (salient slice only)
+  [PASS] BnB/LoRA projection objects not replaced
+  [PASS] q/k/v outputs = original forward + fused QAT delta
+  [PASS] remove() uninstalls hooks cleanly
+test_mlp_and_down_injectors
+  [PASS] gate/up fused injector matches reference
+  [PASS] down_proj single injector matches reference
+test_grad_flow_to_lora
+  [PASS] gradients reach LoRA A/B through the fused STE residual
+test_awq_scale
+  [PASS] awq injection matches amplified-space reference
+  [PASS] training injection == export /S bake-back (bit-equivalent deploy)
+  [PASS] awq_s=1 == plain path; non-trivial S differs
+  [PASS] FusedAttnQATInjector(awq_s=S) end-to-end
+test_per_module_group_k_meta
+  [PASS] down_proj uses down_layer_group_ks; legacy meta still falls back to residual k
+test_fixed_group_k_auto_segments
+  [PASS] fixed group_k applies to every auto-selected residual segment
+test_fakequant_param_stats
+  [PASS] fakequant parameter coverage counts salient columns only
+test_legacy_topk_ratio_salient_selection
+[SegPerm] Legacy seg 0 (L0-L0): group_k=4, top_k_ratio=0.2, union_topk=4, energy_cov=76.0%, first10=[0, 1, 2, 3]
+  [PASS] manual fixed mode uses legacy top_k_ratio union-first selection
+
+ALL TESTS PASSED

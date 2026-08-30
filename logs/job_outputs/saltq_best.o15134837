@@ -1,0 +1,53 @@
+===== JOB INFO =====
+Job ID: 15134837.pbs101
+Host: x1000c1s3b0n0
+Workdir: /home/users/nus/jingzege/projects/SQAT
+CUDA_VISIBLE_DEVICES=GPU-fd1ad436-4eb1-37b5-bb58-2e0a19fc2a17,GPU-3926b934-5bdf-596c-9e93-c7f7f7982ccb,GPU-d08233e7-1805-48ac-b1f1-42e545a046bb,GPU-b3a2f919-47e6-d43d-b1e5-a2f662a7a094
+Start time: Mon Aug 10 04:01:12 +08 2026
+Python: /home/users/nus/jingzege/miniforge3/envs/saltq/bin/python
+Python 3.11.15
+===== GPU INFO =====
+Mon Aug 10 04:01:13 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   43C    P0             58W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA A100-SXM4-40GB          On  |   00000000:41:00.0 Off |                    0 |
+| N/A   42C    P0             51W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   2  NVIDIA A100-SXM4-40GB          On  |   00000000:81:00.0 Off |                    0 |
+| N/A   43C    P0             54W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   3  NVIDIA A100-SXM4-40GB          On  |   00000000:C1:00.0 Off |                    0 |
+| N/A   42C    P0             51W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+[MSE-init] src=outputs/saltq/saltq_base_2bit_g32  INT2 g32
+  [32] model.layers.13.mlp.gate_proj
+  [64] model.layers.18.self_attn.k_proj
+  [96] model.layers.22.self_attn.v_proj
+  [128] model.layers.28.mlp.gate_proj
+  [160] model.layers.4.self_attn.k_proj
+  [192] model.layers.9.self_attn.v_proj
+
+[MSE-init] rewrote the salient grid of 192 slices -> outputs/saltq/saltq_base_2bit_g32_mse
+[MSE-init]   salient relF error   min-max 41.80%   ->   MSE-optimal 34.63%   (reduced 17.2%)
+[MSE-init]   codes and non-salient (s_n, z_n) copied BITWISE from the source base.
+End time: Mon Aug 10 08:37:56 +08 2026

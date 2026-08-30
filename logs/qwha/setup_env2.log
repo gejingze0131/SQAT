@@ -1,0 +1,505 @@
+Channels:
+ - nvidia/label/cuda-12.4.0
+ - conda-forge
+Platform: linux-64
+Collecting package metadata (repodata.json): - \ | / - \ | / - \ | / - \ | / - \ | / - \ | done
+Solving environment: - \ done
+
+# All requested packages already installed.
+
+Channels:
+ - conda-forge
+Platform: linux-64
+Collecting package metadata (repodata.json): - \ | / - \ done
+Solving environment: / - done
+
+## Package Plan ##
+
+  environment location: /scratch/users/nus/jingzege/conda_envs/qwha
+
+  added / updated specs:
+    - gcc_linux-64=12
+    - gxx_linux-64=12
+
+
+The following packages will be downloaded:
+
+    package                    |            build
+    ---------------------------|-----------------
+    binutils_impl_linux-64-2.46.1|default_hfdba357_102         3.5 MB  conda-forge
+    binutils_linux-64-2.46.1   |default_h4852527_102          35 KB  conda-forge
+    gcc_impl_linux-64-12.4.0   |       h26ba24d_2        57.6 MB  conda-forge
+    gcc_linux-64-12.4.0        |      h6b7512a_10          32 KB  conda-forge
+    gxx_impl_linux-64-12.4.0   |       h3ff227c_2        12.1 MB  conda-forge
+    gxx_linux-64-12.4.0        |      h8489865_10          30 KB  conda-forge
+    kernel-headers_linux-64-4.18.0|       he073ed8_9         1.2 MB  conda-forge
+    libgcc-devel_linux-64-12.4.0|     h1762d19_102         2.4 MB  conda-forge
+    libsanitizer-12.4.0        |       ha732cd4_2         3.8 MB  conda-forge
+    libstdcxx-devel_linux-64-12.4.0|     h1762d19_102        11.3 MB  conda-forge
+    sysroot_linux-64-2.28      |       h4ee821c_9        22.9 MB  conda-forge
+    ------------------------------------------------------------
+                                           Total:       115.0 MB
+
+The following NEW packages will be INSTALLED:
+
+  binutils_impl_lin~ conda-forge/linux-64::binutils_impl_linux-64-2.46.1-default_hfdba357_102 
+  binutils_linux-64  conda-forge/linux-64::binutils_linux-64-2.46.1-default_h4852527_102 
+  gcc_impl_linux-64  conda-forge/linux-64::gcc_impl_linux-64-12.4.0-h26ba24d_2 
+  gcc_linux-64       conda-forge/linux-64::gcc_linux-64-12.4.0-h6b7512a_10 
+  gxx_impl_linux-64  conda-forge/linux-64::gxx_impl_linux-64-12.4.0-h3ff227c_2 
+  gxx_linux-64       conda-forge/linux-64::gxx_linux-64-12.4.0-h8489865_10 
+  kernel-headers_li~ conda-forge/noarch::kernel-headers_linux-64-4.18.0-he073ed8_9 
+  libgcc-devel_linu~ conda-forge/noarch::libgcc-devel_linux-64-12.4.0-h1762d19_102 
+  libsanitizer       conda-forge/linux-64::libsanitizer-12.4.0-ha732cd4_2 
+  libstdcxx-devel_l~ conda-forge/noarch::libstdcxx-devel_linux-64-12.4.0-h1762d19_102 
+  sysroot_linux-64   conda-forge/noarch::sysroot_linux-64-2.28-h4ee821c_9 
+
+
+
+Downloading and Extracting Packages: ...working...gcc_impl_linux-64-12 | 57.6 MB   |            |   0% 
+sysroot_linux-64-2.2 | 22.9 MB   |            |   0% [A
+
+gxx_impl_linux-64-12 | 12.1 MB   |            |   0% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   |            |   0% [A[A[A
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    |            |   0% [A[A[A[A
+
+
+
+
+binutils_impl_linux- | 3.5 MB    |            |   0% [A[A[A[A[A
+
+
+
+
+
+libgcc-devel_linux-6 | 2.4 MB    |            |   0% [A[A[A[A[A[A
+
+
+
+
+
+
+kernel-headers_linux | 1.2 MB    |            |   0% [A[A[A[A[A[A[A
+
+
+
+
+
+
+
+binutils_linux-64-2. | 35 KB     |            |   0% [A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+gcc_linux-64-12.4.0  | 32 KB     |            |   0% [A[A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+
+gxx_linux-64-12.4.0  | 30 KB     |            |   0% [A[A[A[A[A[A[A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   |            |   0% [A
+
+gxx_impl_linux-64-12 | 12.1 MB   |            |   0% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   |            |   0% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   |            |   0% 
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    |            |   0% [A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   |            |   0% [A
+
+gxx_impl_linux-64-12 | 12.1 MB   |            |   0% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   |            |   0% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   |            |   0% 
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | 1          |   1% [A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   |            |   1% [A
+
+gxx_impl_linux-64-12 | 12.1 MB   | 1          |   1% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | 1          |   1% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   |            |   0% 
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | 4          |   4% [A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | 1          |   1% [A
+
+gxx_impl_linux-64-12 | 12.1 MB   | 2          |   2% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | 2          |   2% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   |            |   0% 
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | 7          |   7% [A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | 1          |   2% [A
+
+gxx_impl_linux-64-12 | 12.1 MB   | 3          |   4% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | 3          |   4% [A[A[A
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | #1         |  12% [A[A[A[Agcc_impl_linux-64-12 | 57.6 MB   |            |   1% 
+sysroot_linux-64-2.2 | 22.9 MB   | 2          |   3% [A
+
+
+libstdcxx-devel_linu | 11.3 MB   | 5          |   6% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   | 1          |   1% 
+sysroot_linux-64-2.2 | 22.9 MB   | 4          |   5% [A
+
+gxx_impl_linux-64-12 | 12.1 MB   | 4          |   5% [A[A
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | #4         |  14% [A[A[A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | 9          |   9% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   | 1          |   2% 
+sysroot_linux-64-2.2 | 22.9 MB   | 6          |   7% [A
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | ###1       |  31% [A[A[A[A
+
+gxx_impl_linux-64-12 | 12.1 MB   | #          |  10% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | #4         |  14% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   | 2          |   3% 
+sysroot_linux-64-2.2 | 22.9 MB   | #          |  11% [A
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | ####3      |  43% [A[A[A[A
+
+gxx_impl_linux-64-12 | 12.1 MB   | #4         |  14% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | ##2        |  22% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   | 4          |   4% 
+sysroot_linux-64-2.2 | 22.9 MB   | #6         |  16% [A
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | #####9     |  60% [A[A[A[A
+
+gxx_impl_linux-64-12 | 12.1 MB   | #8         |  19% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | ###3       |  34% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   | 6          |   6% 
+sysroot_linux-64-2.2 | 22.9 MB   | ##4        |  25% [A
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | ########5  |  86% [A[A[A[A
+
+gxx_impl_linux-64-12 | 12.1 MB   | ##7        |  27% [A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | #####1     |  52% [A[A[Agcc_impl_linux-64-12 | 57.6 MB   | 9          |  10% 
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | ########## | 100% [A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | ###1       |  32% [A
+
+gxx_impl_linux-64-12 | 12.1 MB   | ###9       |  39% [A[Agcc_impl_linux-64-12 | 57.6 MB   | #2         |  13% 
+
+
+libstdcxx-devel_linu | 11.3 MB   | ######5    |  66% [A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | ####       |  40% [A
+
+gxx_impl_linux-64-12 | 12.1 MB   | #####5     |  56% [A[Agcc_impl_linux-64-12 | 57.6 MB   | #6         |  16% 
+
+
+libstdcxx-devel_linu | 11.3 MB   | ########2  |  83% [A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | ####8      |  48% [A
+
+
+
+
+binutils_impl_linux- | 3.5 MB    |            |   0% [A[A[A[A[A
+
+gxx_impl_linux-64-12 | 12.1 MB   | ######9    |  70% [A[Agcc_impl_linux-64-12 | 57.6 MB   | #9         |  19% 
+
+
+libstdcxx-devel_linu | 11.3 MB   | #########8 |  99% [A[A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | ########## | 100% [A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | #####5     |  56% [A
+
+
+
+
+binutils_impl_linux- | 3.5 MB    | ########2  |  83% [A[A[A[A[A
+
+gxx_impl_linux-64-12 | 12.1 MB   | ########5  |  85% [A[Agcc_impl_linux-64-12 | 57.6 MB   | ##2        |  22% 
+sysroot_linux-64-2.2 | 22.9 MB   | ######4    |  65% [A
+
+
+
+
+binutils_impl_linux- | 3.5 MB    | ########## | 100% [A[A[A[A[Agcc_impl_linux-64-12 | 57.6 MB   | ##5        |  26% 
+
+gxx_impl_linux-64-12 | 12.1 MB   | ########## | 100% [A[A
+
+gxx_impl_linux-64-12 | 12.1 MB   | ########## | 100% [A[A
+sysroot_linux-64-2.2 | 22.9 MB   | #######2   |  73% [A
+
+
+
+
+
+libgcc-devel_linux-6 | 2.4 MB    |            |   1% [A[A[A[A[A[Agcc_impl_linux-64-12 | 57.6 MB   | ##8        |  29% 
+
+
+
+
+
+libgcc-devel_linux-6 | 2.4 MB    | ########## | 100% [A[A[A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | ########1  |  81% [A
+
+
+
+
+
+
+kernel-headers_linux | 1.2 MB    | 1          |   1% [A[A[A[A[A[A[Agcc_impl_linux-64-12 | 57.6 MB   | ###2       |  32% 
+
+
+
+
+
+
+kernel-headers_linux | 1.2 MB    | ########## | 100% [A[A[A[A[A[A[A
+
+
+
+
+
+
+
+binutils_linux-64-2. | 35 KB     | ####5      |  45% [A[A[A[A[A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | ########9  |  89% [A
+
+
+
+
+
+
+
+binutils_linux-64-2. | 35 KB     | ########## | 100% [A[A[A[A[A[A[A[Agcc_impl_linux-64-12 | 57.6 MB   | ###5       |  35% 
+
+
+
+
+
+
+
+
+gcc_linux-64-12.4.0  | 32 KB     | #####      |  50% [A[A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+gcc_linux-64-12.4.0  | 32 KB     | ########## | 100% [A[A[A[A[A[A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | #########6 |  97% [Agcc_impl_linux-64-12 | 57.6 MB   | ###8       |  38% 
+
+
+
+
+
+
+
+
+
+gxx_linux-64-12.4.0  | 30 KB     | #####2     |  53% [A[A[A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+
+gxx_linux-64-12.4.0  | 30 KB     | ########## | 100% [A[A[A[A[A[A[A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | ########## | 100% [Agcc_impl_linux-64-12 | 57.6 MB   | ####1      |  42% 
+
+
+
+libsanitizer-12.4.0  | 3.8 MB    | ########## | 100% [A[A[A[Agcc_impl_linux-64-12 | 57.6 MB   | ####4      |  45% gcc_impl_linux-64-12 | 57.6 MB   | ####7      |  48% gcc_impl_linux-64-12 | 57.6 MB   | #####1     |  51% gcc_impl_linux-64-12 | 57.6 MB   | #####4     |  54% gcc_impl_linux-64-12 | 57.6 MB   | #####7     |  57% gcc_impl_linux-64-12 | 57.6 MB   | ######     |  61% gcc_impl_linux-64-12 | 57.6 MB   | ######3    |  64% gcc_impl_linux-64-12 | 57.6 MB   | ######6    |  67% gcc_impl_linux-64-12 | 57.6 MB   | #######    |  70% gcc_impl_linux-64-12 | 57.6 MB   | #######3   |  73% gcc_impl_linux-64-12 | 57.6 MB   | #######6   |  77% 
+
+gxx_impl_linux-64-12 | 12.1 MB   | ########## | 100% [A[Agcc_impl_linux-64-12 | 57.6 MB   | #######9   |  80% gcc_impl_linux-64-12 | 57.6 MB   | ########2  |  83% gcc_impl_linux-64-12 | 57.6 MB   | ########6  |  86% gcc_impl_linux-64-12 | 57.6 MB   | ########9  |  89% gcc_impl_linux-64-12 | 57.6 MB   | #########2 |  92% gcc_impl_linux-64-12 | 57.6 MB   | #########5 |  96% gcc_impl_linux-64-12 | 57.6 MB   | #########8 |  99% gcc_impl_linux-64-12 | 57.6 MB   | ########## | 100% 
+
+
+
+
+binutils_impl_linux- | 3.5 MB    | ########## | 100% [A[A[A[A[A
+
+
+
+
+
+libgcc-devel_linux-6 | 2.4 MB    | ########## | 100% [A[A[A[A[A[A
+
+
+
+
+
+libgcc-devel_linux-6 | 2.4 MB    | ########## | 100% [A[A[A[A[A[A
+
+
+
+
+
+
+
+binutils_linux-64-2. | 35 KB     | ########## | 100% [A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+binutils_linux-64-2. | 35 KB     | ########## | 100% [A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+gcc_linux-64-12.4.0  | 32 KB     | ########## | 100% [A[A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+gcc_linux-64-12.4.0  | 32 KB     | ########## | 100% [A[A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+
+gxx_linux-64-12.4.0  | 30 KB     | ########## | 100% [A[A[A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+
+gxx_linux-64-12.4.0  | 30 KB     | ########## | 100% [A[A[A[A[A[A[A[A[A[A
+
+
+libstdcxx-devel_linu | 11.3 MB   | ########## | 100% [A[A[A
+
+
+
+
+
+
+kernel-headers_linux | 1.2 MB    | ########## | 100% [A[A[A[A[A[A[A
+
+
+
+
+
+
+kernel-headers_linux | 1.2 MB    | ########## | 100% [A[A[A[A[A[A[A
+sysroot_linux-64-2.2 | 22.9 MB   | ########## | 100% [Agcc_impl_linux-64-12 | 57.6 MB   | ########## | 100%                                                      
+                                                     [A
+
+                                                     [A[A
+
+
+                                                     [A[A[A
+
+
+
+                                                     [A[A[A[A
+
+
+
+
+                                                     [A[A[A[A[A
+
+
+
+
+
+                                                     [A[A[A[A[A[A
+
+
+
+
+
+
+                                                     [A[A[A[A[A[A[A
+
+
+
+
+
+
+
+                                                     [A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+                                                     [A[A[A[A[A[A[A[A[A
+
+
+
+
+
+
+
+
+
+                                                     [A[A[A[A[A[A[A[A[A[A done
+Preparing transaction: | / - \ | done
+Verifying transaction: - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / done
+Executing transaction: \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ | / - \ done
+/scratch/users/nus/jingzege/conda_envs/qwha/etc/conda/deactivate.d/deactivate-gxx_linux-64.sh: line 68: CONDA_BACKUP_CXX: unbound variable

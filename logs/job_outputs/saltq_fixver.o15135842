@@ -1,0 +1,494 @@
+===== JOB INFO =====
+Job ID: 15135842.pbs101
+Host: x1000c2s3b0n0
+Workdir: /home/users/nus/jingzege/projects/SQAT
+CUDA_VISIBLE_DEVICES=GPU-680c476c-96cd-4693-717c-83649b178d35,GPU-a1a62934-772e-ee6d-f8f2-3f85324b65e1,GPU-98ade984-81ef-8016-ec42-fb8948326253,GPU-653d4012-0545-e8c9-3400-281ea914910e
+Start time: Mon Aug 10 11:35:56 +08 2026
+Python: /home/users/nus/jingzege/miniforge3/envs/saltq/bin/python
+Python 3.11.15
+===== GPU INFO =====
+Mon Aug 10 11:35:58 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   42C    P0             54W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA A100-SXM4-40GB          On  |   00000000:41:00.0 Off |                    0 |
+| N/A   42C    P0             54W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   2  NVIDIA A100-SXM4-40GB          On  |   00000000:81:00.0 Off |                    0 |
+| N/A   43C    P0             58W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+|   3  NVIDIA A100-SXM4-40GB          On  |   00000000:C1:00.0 Off |                    0 |
+| N/A   43C    P0             53W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
++ python scripts/test_saltq.py
+====================================================================
+  SALT-Q — Saliency-Allocated Low-bit Trainability
+====================================================================
+
+test_deploy_equals_train  (gate: max|Δ| == 0, merge-free)
+  [PASS] asym INT2 gs32 gk64                deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               deployed == effective, max|Δ|=0.000e+00
+  [PASS] sym  INT3 gs64 gk64                deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      deployed == effective, max|Δ|=0.000e+00
+
+test_deployed_tensors_roundtrip  (canonical group_dequantize reproduces the weight)
+  [PASS] asym INT2 gs32 gk64                group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] sym  INT3 gs64 gk64                group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   group_dequantize round-trip, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      group_dequantize round-trip, max|Δ|=0.000e+00
+
+test_step0_matches_gptq_reconstruction  (asym LSQ+ init IS the canonical grid)
+  [PASS] asym INT2 gs32 gk64                step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      step-0 == GPTQ reconstruction, max|Δ|=0.000e+00
+
+test_freedom_allocation  (who gets gradients)
+  [PASS] asym INT2 gs32 gk64                salient weights + z receive gradients
+  [PASS] asym INT2 gs32 gk64                frozen codes unchanged after an optimizer step
+  [PASS] asym INT2 gs32 gk64                codes are a non-grad int tensor
+  [PASS] asym INT3 gs32 gk64                salient weights + z receive gradients
+  [PASS] asym INT3 gs32 gk64                frozen codes unchanged after an optimizer step
+  [PASS] asym INT3 gs32 gk64                codes are a non-grad int tensor
+  [PASS] asym INT4 gs64 gk128               salient weights + z receive gradients
+  [PASS] asym INT4 gs64 gk128               frozen codes unchanged after an optimizer step
+  [PASS] asym INT4 gs64 gk128               codes are a non-grad int tensor
+  [PASS] sym  INT3 gs64 gk64                salient weights + z receive gradients
+  [PASS] sym  INT3 gs64 gk64                frozen codes unchanged after an optimizer step
+  [PASS] sym  INT3 gs64 gk64                codes are a non-grad int tensor
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   salient weights + z receive gradients
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   frozen codes unchanged after an optimizer step
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   codes are a non-grad int tensor
+  [PASS] asym INT3 gs32 mostly-salient      salient weights + z receive gradients
+  [PASS] asym INT3 gs32 mostly-salient      frozen codes unchanged after an optimizer step
+  [PASS] asym INT3 gs32 mostly-salient      codes are a non-grad int tensor
+
+test_codes_not_in_state_dict  (checkpoints must not carry the frozen codes)
+  [PASS] codes and the precomputed q*s stay out of state_dict (keys=['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] trainable set == ['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient']
+
+test_forward_matches_linear  (fast path == x @ W_eff^T)
+  [PASS] asym INT2 gs32 gk64                rel err 6.40e-07
+  [PASS] asym INT3 gs32 gk64                rel err 7.33e-07
+  [PASS] asym INT4 gs64 gk128               rel err 7.15e-07
+  [PASS] sym  INT3 gs64 gk64                rel err 3.45e-07
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   rel err 8.20e-07
+  [PASS] asym INT3 gs32 mostly-salient      rel err 2.68e-07
+
+test_z_only_freedom  (s must be frozen by default)
+  [PASS] asym INT2 gs32 gk64                trainable: z yes, s no (['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] asym INT2 gs32 gk64                q*s precomputed as a frozen buffer
+  [PASS] asym INT2 gs32 gk64                codes kept on the host
+  [PASS] asym INT2 gs32 gk64                z receives a gradient
+  [PASS] asym INT3 gs32 gk64                trainable: z yes, s no (['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] asym INT3 gs32 gk64                q*s precomputed as a frozen buffer
+  [PASS] asym INT3 gs32 gk64                codes kept on the host
+  [PASS] asym INT3 gs32 gk64                z receives a gradient
+  [PASS] asym INT4 gs64 gk128               trainable: z yes, s no (['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] asym INT4 gs64 gk128               q*s precomputed as a frozen buffer
+  [PASS] asym INT4 gs64 gk128               codes kept on the host
+  [PASS] asym INT4 gs64 gk128               z receives a gradient
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   trainable: z yes, s no (['saltq_z'])
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   q*s precomputed as a frozen buffer
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   codes kept on the host
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   z receives a gradient
+  [PASS] asym INT3 gs32 mostly-salient      trainable: z yes, s no (['lsq_w_scale', 'lsq_w_zp', 'saltq_z', 'weight_salient'])
+  [PASS] asym INT3 gs32 mostly-salient      q*s precomputed as a frozen buffer
+  [PASS] asym INT3 gs32 mostly-salient      codes kept on the host
+  [PASS] asym INT3 gs32 mostly-salient      z receives a gradient
+
+test_train_scale_ablation
+  [PASS] asym INT2 gs32 gk64                s is trainable in the ablation path
+  [PASS] asym INT2 gs32 gk64                s receives a gradient
+  [PASS] asym INT2 gs32 gk64                deployed == effective still exact, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                s is trainable in the ablation path
+  [PASS] asym INT3 gs32 gk64                s receives a gradient
+  [PASS] asym INT3 gs32 gk64                deployed == effective still exact, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               s is trainable in the ablation path
+  [PASS] asym INT4 gs64 gk128               s receives a gradient
+  [PASS] asym INT4 gs64 gk128               deployed == effective still exact, max|Δ|=0.000e+00
+
+test_zero_point_can_actually_move  (the dead-zone regression)
+  [PASS] asym INT2 gs32 gk64                continuous z: a 0.01-level nudge moves W (|Δ|=4.21e-04)
+  [PASS] asym INT2 gs32 gk64                integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT2 gs32 gk64                continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk64                integer    z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                continuous z: a 0.01-level nudge moves W (|Δ|=1.81e-04)
+  [PASS] asym INT3 gs32 gk64                integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT3 gs32 gk64                continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 gk64                integer    z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               continuous z: a 0.01-level nudge moves W (|Δ|=8.43e-05)
+  [PASS] asym INT4 gs64 gk128               integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT4 gs64 gk128               continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT4 gs64 gk128               integer    z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   continuous z: a 0.01-level nudge moves W (|Δ|=4.24e-04)
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT2 gs32 gk0 (o_proj-like)   integer    z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      continuous z: a 0.01-level nudge moves W (|Δ|=1.68e-04)
+  [PASS] asym INT3 gs32 mostly-salient      integer z: same nudge is swallowed by the dead zone (as expected)
+  [PASS] asym INT3 gs32 mostly-salient      continuous z: deployed == effective, max|Δ|=0.000e+00
+  [PASS] asym INT3 gs32 mostly-salient      integer    z: deployed == effective, max|Δ|=0.000e+00
+
+test_optimizer_group_units
+  [PASS] scale and zero-point name fragments are disjoint
+  [PASS] zero-points ['saltq_z', 'lsq_w_zp'] classified apart from scales ['lsq_w_scale']
+
+====================================================================
+  SALT-Q: 94 passed, 0 failed
+====================================================================
++ python scripts/test_saltq_e2e.py
+====================================================================
+  SALT-Q end-to-end pipeline (tiny Llama, CPU)
+====================================================================
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 157.70it/s]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+
+[stage 1] build_permuted_fp16_checkpoint
+[SegPerm] Stage-2 pre-quant: loading /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/base in torch.float32 (no BNB) ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8118.81it/s]
+[SegPerm] Calibrating E[x²]:   0%|          | 0/4 [00:00<?, ?it/s][SegPerm] Calibrating E[x²]: 100%|██████████| 4/4 [00:00<00:00, 141.74it/s]
+[SegPerm] Manual segments + fixed global group_k + legacy top_k_ratio selection: boundary_sizes=[1, 3], group_k=32, top_k_ratio=0.1
+[SegPerm] Down-proj fixed global group_k: group_k=32, values=[32, 32, 32, 32]
+[SegPerm] Selective-QAT fakequant parameter coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+[SegPerm] Legacy seg 0 (L0-L0): group_k=32, top_k_ratio=0.1, union_topk=23, energy_cov=29.7%, first10=[0, 3, 4, 6, 20, 37, 40, 43, 50, 59]
+[SegPerm] Legacy seg 1 (L1-L3): group_k=32, top_k_ratio=0.1, union_topk=38, energy_cov=32.9%, first10=[2, 17, 19, 23, 28, 29, 31, 38, 46, 55]
+[SegPerm] WARNING: legacy seg 1 has top-ratio union size 38 > group_k=32; only the highest aggregate-score union channels fit.
+[SegPerm] Permuted residual stream: 2 segs, num_runtime_permutes=1
+[SegPerm] Applied P4 (down_proj) permutations: 4 layers
+[SegPerm] Hadamard rotation applied to 4/4 layers (head_dim=32, num_kv_heads=4)
+[SegPerm] Saving permuted fp16 base → /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/permuted_fp16_base
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 167.66it/s]
+[SegPerm] perm_meta saved → /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/permuted_fp16_base/sqat_permute_meta.pt (num_runtime_permutes=1, num_P4=4)
+  [PASS] one runtime boundary gather (2 segments)
+
+[stage 2] build_saltq_base (GPTQ -> frozen codes)
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/permuted_fp16_base in torch.float32 ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 9255.81it/s]
+[SALT-Q] Captured salient init for 24 projections (0.1M trainable weights)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[GPTQ] Captured 4 calibration batches (8 sequences).
+[GPTQ] Sequential quantize:   0%|          | 0/4 [00:00<?, ?it/s][GPTQ] Sequential quantize:  50%|█████     | 2/4 [00:00<00:00, 11.80it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 12.15it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 12.09it/s]
+[SALT-Q] base saved -> /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/saltq_base
+[SALT-Q]   frozen codes:                    0.5M  (int8, zero freedom)
+[SALT-Q]   trainable salient weights:       0.1M  (full weight freedom)
+[SALT-Q]   trainable (s, z):                0.1M  (affine freedom)
+  [PASS] all three freedom tiers populated
+  [PASS] 28 SALT-Q layers recorded in meta
+  [PASS] o_proj has group_k=0 (pure affine-freedom layer)
+
+[stage 3] build_saltq_model + prepare_model
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/permuted_fp16_base ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8545.49it/s]
+[SALT-Q] Replaced 28 linears; trainable 0.2M params (72.99% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 0.5M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.float32 (0.0 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 28 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 32], group_size=16, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 0.1M full-freedom salient weights + 0.1M affine (s,z) + 0.5M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+  [PASS] 28 SALTQLinear installed
+  [PASS] boundary gather registered on the live model
+  [PASS] trainable params = 180224
+  [PASS] codes stay on the host with no grad (66688 frozen float params remain: embed/norm/head)
+  [PASS] q*s precomputed as a frozen device buffer (z-only forward, no reconstruction)
+
+[stage 4] forward / backward / optimizer step
+  [PASS] loss finite: 5.5372
+  [PASS] 100/100 trainable tensors received a non-zero gradient
+  [PASS] frozen codes untouched by the optimizer step
+
+[stage 5] deployed == trained (exact)
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 28 layers (max|Δ| = 0, exact).
+  [PASS] every layer: max|Δ| == 0 between deployed and training weight
+
+[stage 6] trainable-only checkpoint round-trip
+[SALT-Q] Saved 100 trainable tensors (0.2M params) to /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/ckpt
+  [PASS] checkpoint files: ['saltq_ckpt_meta.pt', 'saltq_trainable.safetensors']
+  [PASS] checkpoint (732 kB) < frozen base (1392 kB) — codes are not duplicated per checkpoint
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/permuted_fp16_base ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8036.64it/s]
+[SALT-Q] Replaced 28 linears; trainable 0.2M params (72.99% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 0.5M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.float32 (0.0 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 28 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 32], group_size=16, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 0.1M full-freedom salient weights + 0.1M affine (s,z) + 0.5M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+[SALT-Q] Loaded 100 trainable tensors from /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/ckpt/saltq_trainable.safetensors
+  [PASS] reloaded checkpoint reproduces logits exactly, max|Δ|=0.000e+00
+
+[stage 7] export_saltq (merge-free)
+[SALT-Q] Verifying deploy == train equivalence ...
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 8 layers (max|Δ| = 0, exact).
+[SALT-Q] Materializing dense deployed weights (torch.float32) ...
+[SALT-Q] dense-storage cast error: max|Δ|=0.000e+00 (the only lossy step; a packed INT-b export would not have it)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00, 157.77it/s]
+[Export] Saved sqat_permute metadata to /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/exported/sqat_permute_meta.pt
+[SALT-Q] Exported deployed model to /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/exported
+  [PASS] boundary-gather metadata shipped with the export (eval needs it)
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 9645.49it/s]
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+  [PASS] exported model reproduces the training model's logits, max|Δ|=7.823e-07
+
+[stage 8] build_saltq_base(train_salient=False) — z-only-everywhere ablation
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/permuted_fp16_base in torch.float32 ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8101.92it/s]
+[SALT-Q] train_salient=False: salient slice will NOT be captured as a trainable weight — it is folded into the frozen-codes + trainable-(s,z) pool (z-only ablation).
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[GPTQ] Captured 4 calibration batches (8 sequences).
+[GPTQ] Sequential quantize:   0%|          | 0/4 [00:00<?, ?it/s][GPTQ] Sequential quantize:  50%|█████     | 2/4 [00:00<00:00, 12.20it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 12.32it/s][GPTQ] Sequential quantize: 100%|██████████| 4/4 [00:00<00:00, 12.30it/s]
+[SALT-Q] base saved -> /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/saltq_base_zonly
+[SALT-Q]   frozen codes:                    0.7M  (int8, zero freedom)
+[SALT-Q]   trainable salient weights:       0.0M  (full weight freedom)
+[SALT-Q]   trainable (s, z):                0.1M  (affine freedom)
+  [PASS] train_salient=False: zero trainable salient weights
+  [PASS] train_salient=False: frozen codes cover the whole width (more than the default run)
+  [PASS] train_salient=False: EVERY layer recorded with group_k=0, not just o_proj
+[SALT-Q] Loading permuted base /scratch/users/nus/jingzege/tmp/saltq_e2e_7opb4bs_/permuted_fp16_base ...
+Loading weights:   0%|          | 0/39 [00:00<?, ?it/s]Loading weights: 100%|██████████| 39/39 [00:00<00:00, 8239.87it/s]
+[SALT-Q] Replaced 28 linears; trainable 0.0M params (38.05% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 0.7M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.float32 (0.0 GB)
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 28 SALT-Q linears, num_runtime_permutes=1, group_k values=[0], group_size=16, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 0.0M full-freedom salient weights + 0.1M affine (s,z) + 0.7M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=131,072; of_qat_target_weights=22.22% (589,824 params); of_lora_target_weights=20.00% (655,360 params); of_model_params=18.15% (722,048 params)
+  [PASS] train_salient=False: no SALTQLinear has a weight_salient parameter
+  [PASS] train_salient=False: loss finite: 5.5372
+  [PASS] train_salient=False: all 28 trainable tensors (pure z/norms) got a non-zero gradient
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.2.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.3.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 28 layers (max|Δ| = 0, exact).
+  [PASS] train_salient=False: deployed == trained (exact) still holds
+
+====================================================================
+  SALT-Q e2e: 25 passed, 0 failed
+====================================================================
++ python scripts/test_qat_permute_sqat.py
+test_fakequant
+  [PASS] shape invariance (sym+asym)
+  [PASS] group_k % group_size assert
+  [PASS] per-row per-group independence
+  [PASS] symmetric error within one scale
+  [PASS] STE backward (asymmetric)
+test_fused_residual
+  [PASS] QKV-MHA-asym: fused == separate + split shapes
+  [PASS] QKV-MHA-sym: fused == separate + split shapes
+  [PASS] QKV-GQA-asym: fused == separate + split shapes
+  [PASS] GateUp-asym: fused == separate + split shapes
+test_attn_injector
+  [PASS] no full-weight materialization (salient slice only)
+  [PASS] BnB/LoRA projection objects not replaced
+  [PASS] q/k/v outputs = original forward + fused QAT delta
+  [PASS] remove() uninstalls hooks cleanly
+test_mlp_and_down_injectors
+  [PASS] gate/up fused injector matches reference
+  [PASS] down_proj single injector matches reference
+test_grad_flow_to_lora
+  [PASS] gradients reach LoRA A/B through the fused STE residual
+test_awq_scale
+  [PASS] awq injection matches amplified-space reference
+  [PASS] training injection == export /S bake-back (bit-equivalent deploy)
+  [PASS] awq_s=1 == plain path; non-trivial S differs
+  [PASS] FusedAttnQATInjector(awq_s=S) end-to-end
+test_per_module_group_k_meta
+  [PASS] down_proj uses down_layer_group_ks; legacy meta still falls back to residual k
+test_fixed_group_k_auto_segments
+  [PASS] fixed group_k applies to every auto-selected residual segment
+test_fakequant_param_stats
+  [PASS] fakequant parameter coverage counts salient columns only
+test_legacy_topk_ratio_salient_selection
+[SegPerm] Legacy seg 0 (L0-L0): group_k=4, top_k_ratio=0.2, union_topk=4, energy_cov=76.0%, first10=[0, 1, 2, 3]
+  [PASS] manual fixed mode uses legacy top_k_ratio union-first selection
+
+ALL TESTS PASSED
++ python scripts/test_lsq_consistency.py
+== grad_scale ==
+  [PASS] grad_scale forward == identity
+  [PASS] grad_scale backward scales grad by g
+
+== train fakequant == export quant->dequant ==
+  [PASS] SYM  INT3 g64: train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g64: train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT3 g128: train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g128: train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g64: train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g64: train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g128: train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g128: train==export (max|Δ|=0.00e+00)
+
+== current_minmax init matches original min-max fakequant ==
+  [PASS] SYM  INT3 g64: LSQ init == min-max (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g64: LSQ+ init round-trip <= ~1 LSB (max|Δ|=4.534e-01, lsb=9.333e-01)
+  [PASS] SYM  INT3 g128: LSQ init == min-max (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g128: LSQ+ init round-trip <= ~1 LSB (max|Δ|=4.418e-01, lsb=8.873e-01)
+  [PASS] SYM  INT4 g64: LSQ init == min-max (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g64: LSQ+ init round-trip <= ~1 LSB (max|Δ|=1.862e-01, lsb=3.743e-01)
+  [PASS] SYM  INT4 g128: LSQ init == min-max (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g128: LSQ+ init round-trip <= ~1 LSB (max|Δ|=2.137e-01, lsb=4.322e-01)
+
+== STE backward flows to W and scale[, zp] ==
+  [PASS] SYM: W.grad nonzero
+  [PASS] SYM: scale.grad nonzero
+  [PASS] ASYM: W.grad nonzero
+  [PASS] ASYM: scale.grad nonzero
+  [PASS] ASYM: zp.grad nonzero
+
+==================================================
+  LSQ consistency: 23 passed, 0 failed
+==================================================
++ python scripts/test_lsq_permute_consistency.py
+== salient train==export (LSQ grid), no AWQ ==
+  [PASS] SYM  INT2 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT2 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT2 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT2 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT3 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT3 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g64: salient train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g128: salient train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g128: salient train==export (max|Δ|=0.00e+00)
+
+== salient train==export (LSQ grid), AWQ amplification ON ==
+  [PASS] SYM  INT2 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT2 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT2 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT2 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT3 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT3 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT3 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g64: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] SYM  INT4 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+  [PASS] ASYM INT4 g128: AWQ+LSQ train==export (max|Δ|=0.00e+00)
+
+== fused_qat_residual_outputs LSQ == reference delta ==
+  [PASS] SYM      : fused residual == reference (max|Δ|=0.00e+00)
+  [PASS] SYM  +AWQ: fused residual == reference (max|Δ|=0.00e+00)
+  [PASS] ASYM     : fused residual == reference (max|Δ|=0.00e+00)
+  [PASS] ASYM +AWQ: fused residual == reference (max|Δ|=0.00e+00)
+
+== group_quantize/dequantize(fixed) == group_fakequant(fixed) ==
+  [PASS] SYM : quantize→dequant == fakequant (max|Δ|=0.00e+00)
+  [PASS] ASYM: quantize→dequant == fakequant (max|Δ|=0.00e+00)
+
+== regression: fixed_scale=None == original min-max group_fakequant ==
+  [PASS] SYM : None path unchanged
+  [PASS] ASYM: None path unchanged
+
+====================================================
+  sqat_permute LSQ consistency: 32 passed, 0 failed
+====================================================
++ python scripts/test_gptq_nonsalient.py
+[OK] asym INT4 gs64 gk128 (q/k/v/gate/up/down)  salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.424e+06 GPTQ=1.380e+06  (GPTQ/RTN=0.969)
+[OK] asym INT4 gs64 gk0   (o_proj: fully GPTQ)  salient max|Δ|=0.0e+00  non-sal OBS: RTN=3.123e+06 GPTQ=2.923e+06  (GPTQ/RTN=0.936)
+[OK] sym  INT4 gs64 gk128                       salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.948e+06 GPTQ=1.890e+06  (GPTQ/RTN=0.970)
+[OK] asym INT3 gs64 gk128                       salient max|Δ|=0.0e+00  non-sal OBS: RTN=6.826e+06 GPTQ=6.593e+06  (GPTQ/RTN=0.966)
+[OK] asym INT4 gs32 gk128                       salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.098e+06 GPTQ=1.065e+06  (GPTQ/RTN=0.971)
+[OK] asym INT4 gs128 gk128 (1 salient group)    salient max|Δ|=0.0e+00  non-sal OBS: RTN=1.749e+06 GPTQ=1.693e+06  (GPTQ/RTN=0.968)
+[OK] asym INT4 gs64 gk128 (q/k/v/gate/up/down)  AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] sym  INT4 gs64 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT3 gs64 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT4 gs32 gk128                       AWQ salient (post-/S) max|Δ|=0.0e+00
+[OK] asym INT4 gs128 gk128 (1 salient group)    AWQ salient (post-/S) max|Δ|=0.0e+00
+
+All GPTQ non-salient sanity tests passed.
++ set +x
+End time: Mon Aug 10 11:50:17 +08 2026
