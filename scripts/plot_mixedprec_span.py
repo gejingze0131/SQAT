@@ -149,7 +149,9 @@ def plot_share(cell, args, mp, sq, qa, floor, ceil_, gap, rec, mlabel, out):
         seen.add(name)
         ax.annotate(lab, xy=(0.0, y), xytext=(14, (i - mid) * 11), textcoords="offset points", fontsize=8.5, color=col, va="center")
     ax.set_xlim(-1.5, max(41, max(xs) * 1.06))
-    ax.set_ylim(floor - 0.06 * gap, ceil_ + 0.12 * gap)
+    # The reference points may sit ABOVE the fp16 line (INT3 SALT-Q 78.85 vs 77.75); keep them on the chart.
+    y_top = max([ceil_] + [s[0] for s in stack])
+    ax.set_ylim(floor - 0.06 * gap, y_top + 0.12 * gap)
     ax.set_xlabel("share of target weights kept in fp16  (%, true proportion)")
     ax.set_ylabel(mlabel)
     ax.set_title(f"{cell['title']}\n{mlabel} vs the true fp16 share", fontsize=10.5)
