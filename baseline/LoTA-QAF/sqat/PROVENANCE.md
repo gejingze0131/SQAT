@@ -126,3 +126,31 @@ obviously reachable with one.
 
 An arm using Eq. (4)'s scaling is a one-line change and would separate "the method is weak on
 this task" from "the released scaling is not what produced the published numbers". Not run.
+
+
+## INT2 g32, bcal cell (2026-08-30)
+
+Same recipe as the INT3 row above, on the matched bcal base (this repo's GPTQ, balanced
+in-domain calibration of 3500 records / ~471k real tokens, packed to GPTQModel format and
+asserted bit-exact on codes, zero points and scales).
+
+| Row | Avg (MEAN8) |
+|---|---|
+| LoTA-QAF | **50.04** |
+| its own base (bare, never fine-tuned) | **8.72** |
+
+Against the bcal INT2 references — fp16 77.75, GPTQ floor 66.22, QA-LoRA 72.96, SALT-Q 74.76.
+The comparable number is the absolute score against QA-LoRA's 72.96: same base, same data,
+same batch, same epoch. Gap-recovered percentages are NOT comparable across those rows,
+because the 66.22 floor is a QLoRA checkpoint merged and then quantized (it already emits the
+answer format) while LoTA-QAF's base is the raw quantized model at 8.72.
+
+The mechanism is the same one the INT3 run measured, and more extreme: at omega=48 the trained
+adapter fires **6** markers across four sampled q_proj layers (67M weights), against 4,621 at
+INT3. The integer merge does essentially nothing, so the entire +41.3 lift is the offset
+factor -- the quantity the released code divides by omega and Eq. (4) does not.
+
+That the result reproduces across two widths, two bases (GPTQModel's C4 base and our balanced
+matched base) and a 43.5 / 41.3 point lift each time is what makes the scaling question worth
+resolving before this baseline is quoted: everything else about the port is verified
+(train == deploy bit-exact at both widths, grid bit-exact against our GPTQ).
