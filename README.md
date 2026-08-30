@@ -4,7 +4,7 @@
 
 | env | built by | holds | used for |
 |-----|----------|-------|----------|
-| `saltq` | `requirements.txt` | torch / transformers / peft / bitsandbytes | training, the offline permute + GPTQ pre-steps, export |
+| `saltq` | `scripts/setup_saltq_env.sh` (pinned; `requirements.txt` is the unpinned list) | torch 2.11 cu128 / transformers 5.14 / accelerate / peft / bitsandbytes | training, the offline permute + GPTQ pre-steps, export, result collection |
 | `vllm-eval` | `scripts/setup_vllm_env.sh` (`requirements-vllm.txt`) | vLLM and its own pinned torch | generative evaluation |
 
 They are kept apart because vLLM pins its own torch build, and a quantization method is
@@ -12,10 +12,21 @@ exactly the kind of code whose numbers move when the numerics under it move. The
 never have to agree on anything — they exchange a plain HF checkpoint on disk.
 `runs/eval_vllm.sh` is the seam and hops between them itself, so a PBS job stays in `saltq`.
 
+Install both, once, on a login node (compute nodes have no route out):
+
 ```bash
 source ~/miniforge3/etc/profile.d/conda.sh
-bash scripts/setup_vllm_env.sh          # one-off
+bash scripts/setup_saltq_env.sh         # training env `saltq`: python 3.11, torch 2.11.0+cu128,
+                                        # transformers 5.14.1, accelerate 1.14.0, peft 0.20.0,
+                                        # bitsandbytes 0.50.0, datasets 5.0.1, safetensors 0.8.0
+bash scripts/setup_vllm_env.sh          # eval env `vllm-eval`: vLLM with its own torch
 ```
+
+The training script pins the versions every row of `results_saltq.csv` was produced with; torch
+is taken from the cu128 index only, so the CUDA runtime wheels match the cluster driver. To
+rebuild under a different name: `bash scripts/setup_saltq_env.sh myenv 3.11`. Model weights and
+datasets must be prefetched into the HF cache on a login node before submitting jobs
+(`HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1` in every PBS script).
 
 ## Data
 
