@@ -94,6 +94,10 @@ def _infer_method(model_dir: str) -> str:
         # would read as a catastrophic result for the method.
         ("lotabase", "LoTA-QAF base (GPTQModel)"),
         ("lota", "LoTA-QAF"),
+        # QWHA and its own base (baseline/QWHA/). Same ordering rule as LoTA-QAF above: the base
+        # dir also contains "qwha".
+        ("qwhabase", "QWHA base (bcal GPTQ)"),
+        ("qwha", "QWHA"),
         # QEFT and its own mixed-precision base (baseline/QEFT/). Same ordering rule again: the
         # base dir also contains "qeft", and the base is INT-b + k fp16 columns with NO tuning —
         # labelling it as the method would read as the method having done nothing.
