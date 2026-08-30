@@ -261,6 +261,23 @@ def _masked_xtx(x: torch.Tensor, mask: Optional[torch.Tensor]) -> torch.Tensor:
     return x.t() @ x
 
 
+def _front_permutation(ids: Sequence[int], n_cols: int, device) -> torch.Tensor:
+    """Column order [salient..., the rest in their original order] for an arbitrary salient set.
+
+    The ids are sorted first, so the permutation is a pure function of the SET rather than of the
+    order the selector happened to emit, and a salient set that IS a leading contiguous block
+    reproduces the identity permutation exactly.
+    """
+    ids_t = torch.as_tensor(list(ids), dtype=torch.long, device=device)
+    assert ids_t.numel() > 0, "empty salient id list"
+    assert ids_t.unique().numel() == ids_t.numel(), "duplicate salient column ids"
+    assert int(ids_t.max()) < n_cols and int(ids_t.min()) >= 0, "salient column id out of range"
+    ids_t = torch.sort(ids_t).values
+    mask = torch.ones(n_cols, dtype=torch.bool, device=device)
+    mask[ids_t] = False
+    return torch.cat([ids_t, torch.arange(n_cols, device=device)[mask]])
+
+
 def gptq_quantize_model_sequential(
     model: nn.Module,
     calibration_dataloader: DataLoader,
@@ -278,6 +295,7 @@ def gptq_quantize_model_sequential(
     keep_salient_fp16: bool = False,
     lsq_scales: Optional[dict] = None,
     obs_salient: bool = False,
+    salient_ids: Optional[Dict[str, Sequence[int]]] = None,
 ) -> Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """
     In-place sequential GPTQ on a dense (permuted) fp16 model. For every nn.Linear whose terminal
@@ -293,6 +311,16 @@ def gptq_quantize_model_sequential(
     The model MUST be the permuted base; boundary gathers from `perm_meta` are registered for the
     duration so the captured activations are in the deployment basis (and per-layer inputs are
     re-ordered at segment boundaries exactly as at inference).
+
+    `salient_ids` (opt-in, used by the QEFT baseline) names an ARBITRARY, not necessarily
+    contiguous, salient column set per module — {full_module_name: [col, ...]}. Those columns are
+    moved to the front of an INTERNAL column permutation together with the matching rows/columns
+    of the Hessian, quantized exactly as a leading slice would be, and the dequantized weight is
+    permuted back before it is written, so the model itself is never reordered. A module named
+    here overrides its perm_meta / o_proj group_k. Because the quantization groups then follow the
+    PERMUTED column order, the (W_int, scale, zp) returned for such a module are in that permuted
+    order too; the dense weight left in the model is in the model's own order either way. Modules
+    absent from the dict (and the default None) behave exactly as before.
     """
     target_terminals = set(target_terminals)
     name_of = {m: n for n, m in model.named_modules()}
@@ -386,12 +414,21 @@ def gptq_quantize_model_sequential(
         # 2) GPTQ each sublayer; replace its weight with quantize->dequant
         for nm, (mod, gk) in subs.items():
             W = mod.weight.data.float()
+            H = Hs[nm]
+            # Arbitrary (non-contiguous) salient set: quantize in a column order that puts it
+            # first, then undo. Nothing else in this loop has to know about it.
+            col_perm = None
+            if salient_ids is not None and nm in salient_ids:
+                col_perm = _front_permutation(salient_ids[nm], W.shape[1], W.device)
+                gk = len(salient_ids[nm])
+                W = W[:, col_perm]
+                H = H[col_perm][:, col_perm]
             awq_s = awq_s_for_module(awq_scales, nm, gk) if gk > 0 else None
             # LSQ: salient slice uses the learned scale[, zp] (o_proj gk=0 → none).
             fixed_scale = (lsq_scale_for_module(lsq_scales, nm, symmetric)
                            if (lsq_scales and gk > 0) else None)
             W_int, sc, zp = gptq_quantize_layer(
-                W, Hs[nm], gk, group_size, q_bits, symmetric,
+                W, H, gk, group_size, q_bits, symmetric,
                 percdamp=percdamp, blocksize=blocksize, awq_s=awq_s,
                 keep_salient_fp16=keep_salient_fp16,
                 fixed_scale=fixed_scale,
@@ -402,6 +439,8 @@ def gptq_quantize_model_sequential(
                 # Ablation: restore the un-quantized fp16 salient slice (group_dequantize left it 0).
                 # The cross-layer propagation below then sees the salient slice at full precision.
                 W_deq[:, :gk] = W[:, :gk]
+            if col_perm is not None:
+                W_deq = W_deq[:, torch.argsort(col_perm)]
             if awq_s is not None:
                 # bake 1/S back into the salient columns so the in-place (and exported) dense
                 # weight is the deployed value W_fq/S — matching the training fakequant.

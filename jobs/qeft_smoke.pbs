@@ -1,0 +1,22 @@
+#!/bin/bash
+#PBS -N qeft_smoke
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=2
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+# Harness check for the QEFT baseline: the unit tests plus the whole pipeline on a 2-layer random
+# Llama (base -> train -> export), through the same scripts the 7B run uses. ~10 minutes.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_DISABLE_XET=1
+mkdir -p logs/qeft
+bash baseline/QEFT/sqat/smoke_test.sh > logs/qeft/smoke.log 2>&1
+rc=$?
+echo "rc=$rc"; tail -40 logs/qeft/smoke.log; echo "End time: $(date)"
+exit $rc

@@ -1,0 +1,113 @@
+# =============================================================================
+# QEFT baseline — Commonsense-170k, INT3 g64, k=128 weak columns, ONE epoch, span cell,
+# BALANCED CALIBRATION.
+#
+# METHOD (QEFT, EMNLP 2024 Findings, arXiv:2410.08661; upstream github.com/xvyaward/qeft):
+#   * ONE global weak-column index set for the whole network, chosen from the Hessian diagonal
+#     λ = diag(2 X X^T) normalized per layer and summed over every q/k/v/gate/up layer
+#     (paper §3.2 / Alg. 1). Its permutation is folded offline into the embedding, both norms of
+#     every block, the q/k/v/gate/up input columns, the o_proj/down_proj output rows and the
+#     lm_head — one segment, so there is NO runtime gather anywhere.
+#   * those k columns stay in FP16; everything else is group-wise asymmetric INT-b (GPTQ).
+#   * fine-tuning trains ONLY the fp16 weak columns. No adapter, no fake-quant, the INT3 bulk is
+#     frozen with zero degrees of freedom.
+#
+# k = 128 IS THE PAPER'S OWN MAIN SETTING (Table 2/4: k=16 and k=128, "k/2 ≃ r" chosen to match
+# LoRA r=64's parameter count) AND this cell's protected-slice budget: the SALT-Q INT3 g64 row
+# runs group_k=128, and the fp16-salient PTQ sweep has a measured point at exactly k=128. So the
+# QEFT row reads directly as "that PTQ point, plus weak-column tuning".
+#
+# BASE + CALIBRATION (this repo): upstream calibrates on c4/wikitext2. This repo measured generic
+# calibration as the thing that breaks low-bit bases here — the same merged checkpoint scored
+# INT2 36.64 on the old first-N (100% BoolQ, 9.5k token) set and 66.22 on the task-balanced
+# 3500-record in-domain set, and C4 128x2048 loses the instruction template outright (30.67). So
+# BOTH offline consumers — the λ statistics that pick the weak columns and the GPTQ Hessians that
+# quantize everything else — run on the balanced in-domain set every `bcal` row is defined by.
+# qat.gptq.nsamples MUST equal qat.sqat.calibration_samples: gptq_quantize_model_sequential stops
+# after the first nsamples records.
+#
+# RECIPE (this repo): identical to configs/qalora_cs170k_int3_g64_ep1_span_bcal.yaml and the QWHA
+# row — datasets/commonsense, loss_span instruction+response, 1 epoch, effective batch 80,
+# cosine, warmup 0.03, wd 0.01, max_grad_norm 0.3, bf16, group_by_length false, seed 42, gradient
+# checkpointing on.
+#
+# The 80 is split 5 x 8 x 2 GPUs rather than the 5 x 4 x 4 the other bcal rows used: the g3 queue
+# had no schedulable 4-GPU node (the four wide enough were all offline). It is the SAME
+# experiment — effective batch and therefore the optimizer-step count T are identical, so every
+# learning rate transports unchanged (AGENTS.md's c ~ sqrt(T) rule is not triggered); only wall
+# clock doubles. If a 4-GPU slot is what you have, set gradient_accumulation_steps back to 4.
+#
+# NOT matched, deliberately: learning_rate is QEFT's own (paper Table 4, k=128 → 5e-6; Table 7
+# gives the same law across k). It does not follow this repo's 1/(2^b − 1) rule because the
+# trained tensors are plain fp16 weights, not values on a quantization grid — nothing about them
+# changes between INT3 and INT2. A baseline retuned to match the method under test is not a
+# baseline.
+#
+# DEPLOYMENT: like QWHA and unlike QA-LoRA / SALT-Q, this is NOT a pure INT3 row. It deploys as
+# INT3 codes PLUS k fp16 columns per layer; build_base.py prints the exact fp16 share and the
+# effective bit width, and export_dense.py records both in the checkpoint. Read the row as
+# "3 + fp16", next to the fp16-salient PTQ rows.
+# =============================================================================
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 3
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+qeft:
+  k: 128                  # weak columns per linear; must be a multiple of group_size
+  group_size: 64
+  base_dir: "outputs/qeft_bases/Llama-2-7B_int3_g64_k128_asym_bcal"
+  # o_proj cannot be reordered (multi-head structure forbids cross-head permutation), so upstream
+  # keeps it in OWQ's irregular mixed-precision format and reorders it online in its kernel. Here
+  # the irregular indices simply stay where they are — same arithmetic, no gather — and
+  # src/gptq.py's `salient_ids` quantizes around them. false drops o_proj's weak columns entirely
+  # (the ablation, and what SALT-Q does with its salient slice).
+  oproj_weak: true
+  targets: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+qat:
+  # Asymmetric, like every other row here: (q - z) * s is what a GPTQ checkpoint stores, and at
+  # low bit width the affine grid is strictly the better one.
+  symmetric: false
+  # Read by src/data.load_calibration_data — the ONE calibration set both offline stages use.
+  sqat:
+    calibration_samples: 3500      # task-balanced, ~471k real tokens
+    calibration_sampling: balanced
+    calibration_seq_len: 2048
+  gptq:
+    nsamples: 3500                 # MUST equal calibration_samples
+    percdamp: 0.01
+    blocksize: 128
+    batch_size: 8                  # calibration micro-batch (pure inference)
+
+data:
+  train_dataset: "datasets/commonsense"
+  train_split: "train"
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null
+  shuffle_dataset: true
+  loss_span: instruction+response
+  num_proc: 32
+
+training:
+  output_dir: "outputs/qeft_cs170k_int3_g64_ep1_span_bcal"
+  num_epochs: 1
+  per_device_train_batch_size: 5
+  gradient_accumulation_steps: 8      # x per_device 5 x 2 GPUs = effective batch 80
+  group_by_length: false
+  learning_rate: 5.0e-6            # QEFT paper Table 4, k=128
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "none"
+  seed: 42

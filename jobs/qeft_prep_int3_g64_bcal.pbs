@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -N qeft_prep_int3_g64
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# QEFT baseline, INT3 g64, k=128: the single-GPU stage that does not depend on the training
+# recipe -- the mixed-precision base. On the BALANCED in-domain calibration this repo's bcal cell
+# is defined by, it (a) measures lambda = diag(2 X^T X) for every linear's input, (b) picks ONE
+# global weak-column set for the whole network and folds its permutation into embedding / norms /
+# q,k,v,gate,up columns / o_proj,down_proj rows / lm_head, and (c) GPTQ-quantizes everything
+# EXCEPT those k columns, which stay fp16. Upstream's own path calibrates on c4/wikitext2, which
+# is the generic calibration measured here as the thing that breaks low-bit bases (INT2 floor
+# 36.64 first-N / 66.22 balanced / 30.67 C4).
+#
+# Idempotent and shared by every run at this (bits, group_size, k); the 4-GPU training job
+# depends on it. Rebuilding it later would move the weak-column SET and orphan the checkpoints.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+free -g | head -2
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_DISABLE_XET=1
+mkdir -p logs/commonsense_170k
+bash runs/qeft/run_qeft_commonsense.sh \
+    --config     baseline/QEFT/sqat/configs/qeft_cs170k_int3_g64_ep1_span_bcal.yaml \
+    --bits       3 \
+    --group_size 64 \
+    --skip_train --skip_export --skip_eval \
+    > logs/commonsense_170k/qeft_cs170k_int3_g64_ep1_span_bcal_prep.log 2>&1
+rc=$?
+echo "rc=$rc"; echo "End time: $(date)"
+# The job's exit status IS the dependency signal: a downstream `-W depend=afterok:` job is
+# released on it. Ending on `echo` would hand PBS the echo's 0 no matter how the run went.
+exit $rc

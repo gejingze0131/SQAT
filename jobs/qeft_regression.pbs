@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N qeft_regression
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+# AGENTS.md §6: any change to the quantization / permutation code has to leave the six existing
+# suites green. This run covers them plus the new QEFT suite, after src/gptq.py gained the
+# additive `salient_ids=` argument the QEFT baseline needs for o_proj's irregular weak columns.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/qeft
+rc=0
+for t in test_gptq_nonsalient test_saltq test_saltq_e2e test_qat_permute_sqat \
+         test_lsq_consistency test_lsq_permute_consistency test_qeft; do
+    echo "================ $t ================"
+    python "scripts/$t.py" > "logs/qeft/reg_$t.log" 2>&1
+    r=$?
+    tail -5 "logs/qeft/reg_$t.log"
+    echo "---- $t rc=$r"
+    [ $r -eq 0 ] || rc=1
+done
+echo "ALL SUITES rc=$rc"; echo "End time: $(date)"
+exit $rc
