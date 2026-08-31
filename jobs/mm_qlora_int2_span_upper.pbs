@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N mm_qlora_int2_span_upper
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=16:00:00
+#PBS -j oe
+# QLoRA fp16 upper bound of the MetaMath span bcal cell (see the config header): NF4 QLoRA at the
+# CS lr (2e-4, r=64 a=16), merged to fp16, scored on GSM8K (and MATH — the math eval covers both).
+# The floor (merged -> GPTQ) is deliberately NOT run here; add it later with export_gptq_dequant
+# if the cell needs it.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/metamath
+echo "Start time: $(date)"
+bash runs/qlora/run_qlora_math.sh \
+    --config     configs/qlora_none_mm_int2_g32_ep1_span.yaml \
+    --bits       2 \
+    --num_gpus   4 \
+    --output_dir outputs/qlora_none_mm_int2_ep1_span \
+    > logs/metamath/qlora_none_mm_int2_g32_ep1_span.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
