@@ -150,6 +150,31 @@ def select_local_weak_columns(second_moment: torch.Tensor, k: int) -> List[int]:
 # Part 2 — the QEFT layer
 # ============================================================================
 
+def _recover_grid_step(v: torch.Tensor, rel_floor: float = 3e-3) -> torch.Tensor:
+    """Per-(row, group) quantization step recovered from DEQUANTIZED values [out, ng, gs].
+
+    The base stores only dequantized weights; the non-weak values of a group sit on a grid
+    (q - z) * s, so the smallest positive gap between distinct values in the group is s (adjacent
+    levels are present with near certainty at gs >= 32 draws over 2^b levels). bf16 storage
+    perturbs values by <~0.4% relative, far below one step, so a fixed absolute floor separates
+    real gaps from rounding noise. Rows whose group shows no gap (all values on one level) fall
+    back to the row median, then the global median. The step only converts a LEVEL-unit zp shift
+    into weight units — an off-by-noise estimate mis-scales that group's effective lr, nothing
+    else."""
+    s, _ = torch.sort(v, dim=-1)
+    d = s[..., 1:] - s[..., :-1]
+    d = torch.where(d > rel_floor, d, torch.full_like(d, float("inf")))
+    step = d.min(dim=-1).values                                     # [out, ng]
+    finite = torch.isfinite(step)
+    if not bool(finite.all()):
+        row_med = torch.where(finite, step, torch.nan).nanmedian(dim=-1, keepdim=True).values
+        step = torch.where(finite, step, row_med.expand_as(step))
+        finite = torch.isfinite(step)
+        if not bool(finite.all()):
+            step = torch.where(finite, step, torch.full_like(step, float(step[finite].median())))
+    return step.clamp(min=1e-8)
+
+
 class QEFTLinear(nn.Module):
     """One linear layer split the way QEFT deploys it: frozen quantized bulk + fp16 weak columns.
 
@@ -167,7 +192,8 @@ class QEFTLinear(nn.Module):
     """
 
     def __init__(self, base: nn.Linear, weak_ids: Sequence[int],
-                 weak_dtype: torch.dtype = torch.float32):
+                 weak_dtype: torch.dtype = torch.float32,
+                 group_size: Optional[int] = None, train_zp: bool = False):
         super().__init__()
         if base.bias is not None:
             raise NotImplementedError("QEFTLinear assumes no bias (Llama has none)")
@@ -188,15 +214,50 @@ class QEFTLinear(nn.Module):
         frozen[:, ids] = 0
         self.weight = nn.Parameter(frozen, requires_grad=False)
 
+        # Optional zero-point tier (the SALT-Q comparison arm): one trainable shift per
+        # (row, group) of the NON-weak columns, in LEVEL units. A uniform per-group weight shift
+        # IS a zero-point update ((q - z) * s with z -> z - dz shifts every weight by dz * s), so
+        # it deploys inside the affine metadata a b-bit checkpoint already carries — no extra
+        # deployed parameters. zp_step converts levels to weight units so `zp_lr` means the same
+        # thing it does for SALT-Q's zero-point group.
+        self.train_zp = bool(train_zp)
+        if self.train_zp:
+            assert group_size, "train_zp needs the base's group_size"
+            self.group_size = int(group_size)
+            mask = torch.ones(self.in_features, dtype=torch.bool)
+            mask[ids] = False
+            nw = torch.arange(self.in_features, dtype=torch.long)[mask]
+            assert nw.numel() % self.group_size == 0, \
+                f"non-weak width {nw.numel()} not a multiple of group_size {self.group_size}"
+            self.ng = nw.numel() // self.group_size
+            self.register_buffer("nonweak_ids", nw, persistent=False)
+            v = frozen[:, nw].float().reshape(self.out_features, self.ng, self.group_size)
+            self.register_buffer("zp_step", _recover_grid_step(v), persistent=False)
+            self.zp_shift = nn.Parameter(torch.zeros(self.out_features, self.ng))
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         y = F.linear(x, self.weight)
         xw = x[..., :self.k] if self.contiguous_prefix else x.index_select(-1, self.weak_ids)
-        return y + F.linear(xw, self.weight_weak.to(x.dtype))
+        y = y + F.linear(xw, self.weight_weak.to(x.dtype))
+        if self.train_zp:
+            # A per-group-uniform weight shift only needs the group-SUMMED inputs (the QA-LoRA
+            # identity): [T, ng] @ [ng, out] instead of a second full GEMM.
+            x_nw = (x[..., self.k:] if self.contiguous_prefix
+                    else x.index_select(-1, self.nonweak_ids))
+            pooled = x_nw.reshape(*x_nw.shape[:-1], self.ng, self.group_size).sum(-1)
+            y = y + F.linear(pooled, (self.zp_shift * self.zp_step).to(x.dtype))
+        return y
 
     @torch.no_grad()
     def effective_weight(self, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """The dense weight this layer deploys as: frozen bulk with the weak columns written in."""
         dtype = dtype or self.weight.dtype
+        if self.train_zp:
+            W = self.weight.detach().float().clone()
+            delta = (self.zp_shift * self.zp_step).detach().float()
+            W[:, self.nonweak_ids] += delta.repeat_interleave(self.group_size, dim=1)
+            W[:, self.weak_ids] = self.weight_weak.detach().float()
+            return W.to(dtype)
         W = self.weight.detach().to(dtype).clone()
         W[:, self.weak_ids] = self.weight_weak.detach().to(dtype)
         return W
@@ -216,7 +277,8 @@ def qeft_layers(model: nn.Module) -> Dict[str, QEFTLinear]:
 
 
 def install_qeft_layers(model: nn.Module, weak_ids: Dict[str, Sequence[int]],
-                        weak_dtype: torch.dtype = torch.float32) -> int:
+                        weak_dtype: torch.dtype = torch.float32,
+                        group_size: Optional[int] = None, train_zp: bool = False) -> int:
     """Replace every named linear with a QEFTLinear and freeze everything else."""
     modules = dict(model.named_modules())
     missing = [n for n in weak_ids if n not in modules]
@@ -229,7 +291,8 @@ def install_qeft_layers(model: nn.Module, weak_ids: Dict[str, Sequence[int]],
     for name, ids in weak_ids.items():
         parent_name, child = _split_parent(name)
         parent = modules[parent_name] if parent_name else model
-        setattr(parent, child, QEFTLinear(modules[name], ids, weak_dtype=weak_dtype))
+        setattr(parent, child, QEFTLinear(modules[name], ids, weak_dtype=weak_dtype,
+                                          group_size=group_size, train_zp=train_zp))
         n += 1
     return n
 
@@ -486,14 +549,16 @@ def load_qeft_meta(base_dir: str) -> dict:
 
 
 def build_qeft_model(base_dir: str, *, dtype: torch.dtype = torch.bfloat16,
-                     device=None, weak_dtype: torch.dtype = torch.float32):
+                     device=None, weak_dtype: torch.dtype = torch.float32,
+                     train_zp: bool = False):
     """Load the QEFT base and turn its target linears into QEFTLinear. Returns (model, meta)."""
     from transformers import AutoModelForCausalLM
 
     meta = load_qeft_meta(base_dir)
     model = AutoModelForCausalLM.from_pretrained(
         base_dir, torch_dtype=dtype, low_cpu_mem_usage=True, trust_remote_code=True)
-    n = install_qeft_layers(model, meta["weak_ids"], weak_dtype=weak_dtype)
+    n = install_qeft_layers(model, meta["weak_ids"], weak_dtype=weak_dtype,
+                            group_size=meta["group_size"], train_zp=train_zp)
     if device is not None:
         model.to(device)
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -505,8 +570,12 @@ def build_qeft_model(base_dir: str, *, dtype: torch.dtype = torch.bfloat16,
 
 
 def qeft_trainable_state_dict(model: nn.Module) -> Dict[str, torch.Tensor]:
-    return {f"{n}.{WEAK_PARAM_NAME}": m.weight_weak.detach().cpu()
-            for n, m in qeft_layers(model).items()}
+    sd = {}
+    for n, m in qeft_layers(model).items():
+        sd[f"{n}.{WEAK_PARAM_NAME}"] = m.weight_weak.detach().cpu()
+        if getattr(m, "train_zp", False):
+            sd[f"{n}.zp_shift"] = m.zp_shift.detach().cpu()
+    return sd
 
 
 def save_qeft_trainable(model: nn.Module, output_dir: str, base_dir: Optional[str] = None,
@@ -552,6 +621,14 @@ def load_qeft_trainable(model: nn.Module, checkpoint_dir: str) -> int:
         with torch.no_grad():
             mod.weight_weak.copy_(t.to(mod.weight_weak.dtype).to(mod.weight_weak.device))
         n += 1
+        zkey = f"{name}.zp_shift"
+        if zkey in sd:
+            if not getattr(mod, "train_zp", False):
+                raise ValueError(f"{zkey} in the checkpoint but the model was built without "
+                                 f"train_zp — pass train_zp=True to build_qeft_model")
+            with torch.no_grad():
+                mod.zp_shift.copy_(sd[zkey].to(mod.zp_shift.dtype).to(mod.zp_shift.device))
+            n += 1
     if n != len(sd):
         raise ValueError(f"loaded {n} tensors but the checkpoint has {len(sd)}")
     return n

@@ -1,0 +1,101 @@
+# =============================================================================
+# QEFT baseline — Commonsense-170k, INT2 g32, k=256 weak columns, ONE epoch, span cell,
+# BALANCED CALIBRATION.
+#
+# Single-variable against configs/qeft_cs170k_int3_g64_ep1_span_bcal.yaml except for the three
+# things the INT2 cell changes for EVERY method in these tables: bit width 3 -> 2, group size
+# 64 -> 32, and the protected slice 128 -> 256 columns (SALT-Q's INT2 g32 row is group_k=256,
+# and the fp16-salient PTQ sweep has a measured point there). The learning rate moves with k, not
+# with the bit width — see below.
+#
+# METHOD (QEFT, EMNLP 2024 Findings, arXiv:2410.08661; upstream github.com/xvyaward/qeft):
+#   * ONE global weak-column index set for the whole network from the per-layer-normalized
+#     Hessian diagonal λ = diag(2 X X^T), summed over every q/k/v/gate/up layer (paper Alg. 1);
+#     its permutation folds offline into embedding / norms / q,k,v,gate,up columns /
+#     o_proj,down_proj rows / lm_head. One segment -> no runtime gather.
+#   * those k columns stay FP16, the rest is group-wise asymmetric INT2 (GPTQ).
+#   * fine-tuning trains ONLY the fp16 weak columns; the INT2 bulk is frozen.
+#
+# WHY THIS CELL IS THE INTERESTING ONE. At 2 bits the frozen bulk is where every method here
+# breaks down: SALT-Q's answer is to give the non-salient 98% an affine degree of freedom
+# ((s, z) per (row, group)), QA-LoRA's is a group-pooled adapter that folds into z, and QEFT's is
+# nothing at all — its entire adaptation capacity is k fp16 columns, and its entire quantization
+# quality is whatever GPTQ leaves behind. That is the comparison.
+#
+# BASE + CALIBRATION (this repo): balanced in-domain, 3500 records, for BOTH the λ statistics and
+# the GPTQ Hessians — the `bcal` cell (INT2 first-N calibration scored 36.64 against 66.22
+# balanced on the same merged checkpoint; C4 128x2048 loses the template at 30.67).
+# qat.gptq.nsamples MUST equal qat.sqat.calibration_samples.
+#
+# RECIPE (this repo): identical to configs/qalora_cs170k_int2_g32_ep1_span_bcal.yaml — 1 epoch,
+# effective batch 80, cosine, warmup 0.03, wd 0.01, max_grad_norm 0.3, bf16, seed 42.
+# The 80 is split 5 x 8 x 2 GPUs rather than 5 x 4 x 4 (no schedulable 4-GPU node on g3). Same
+# experiment: effective batch and step count T are unchanged, so every lr transports unchanged;
+# only wall clock doubles. Set gradient_accumulation_steps back to 4 for a 4-GPU slot.
+#
+# LEARNING RATE is QEFT's own and depends only on k. The paper's k-sweep (Table 7: 1.4e-5 at k=8
+# down to 0.4e-5 at k=128) is a ~1/sqrt(k) law, and Table 4's main-table value at k=128 is 5e-6;
+# transported one doubling to k=256 that is 5e-6/sqrt(2) = 3.5e-6. It does NOT follow this repo's
+# 1/(2^b - 1) rule, because the trained tensors are plain fp16 weights rather than values on a
+# quantization grid — the INT2 grid step never enters their update.
+#
+# DEPLOYMENT: INT2 codes PLUS k fp16 columns per layer — read the row as "2 + fp16", next to the
+# fp16-salient PTQ rows, never as a pure INT2 row. The exact fp16 share and effective bit width
+# are printed by build_base.py and stored in the export meta.
+# =============================================================================
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 2
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+qeft:
+  k: 256                  # weak columns per linear; must be a multiple of group_size
+  group_size: 32
+  base_dir: "outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_bcal"
+  oproj_weak: true
+  targets: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+qat:
+  symmetric: false
+  sqat:
+    calibration_samples: 3500      # task-balanced, ~471k real tokens
+    calibration_sampling: balanced
+    calibration_seq_len: 2048
+  gptq:
+    nsamples: 3500                 # MUST equal calibration_samples
+    percdamp: 0.01
+    blocksize: 128
+    batch_size: 8
+
+data:
+  train_dataset: "datasets/commonsense"
+  train_split: "train"
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null
+  shuffle_dataset: true
+  loss_span: instruction+response
+  num_proc: 32
+
+training:
+  output_dir: "outputs/qeft_cs170k_int2_g32_ep1_span_bcal_lr5e5_zp"
+  num_epochs: 1
+  per_device_train_batch_size: 5
+  gradient_accumulation_steps: 8      # x per_device 5 x 2 GPUs = effective batch 80
+  group_by_length: false
+  learning_rate: 5.0e-5            # the INT3 finding transported: the paper-law lr under-trained INT3 by ten points (66.73 -> 77.68 at 5e-5); same absolute 5e-5 here
+  zp_lr: 3.46e-3                   # NEW: trainable non-weak zero-points (per-(row,group) shifts in LEVEL units, step recovered from the dequantized grid) at SALT-Q's bracketed best zp rate — QEFT + zp vs QEFT 73.71 vs SALT-Q 74.76 vs SALT-Q-zp-frozen
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "none"
+  seed: 42

@@ -92,7 +92,8 @@ def main():
 
     dtype = getattr(torch, mcfg.get("dtype", "bfloat16"))
     tokenizer = load_tokenizer(cfg)
-    model, meta = build_qeft_model(base_dir, dtype=dtype, device=device)
+    zp_lr = float(tcfg.get("zp_lr", 0.0))
+    model, meta = build_qeft_model(base_dir, dtype=dtype, device=device, train_zp=zp_lr > 0)
     model.config.use_cache = False
 
     eff_batch = (tcfg["per_device_train_batch_size"] * tcfg["gradient_accumulation_steps"]
@@ -105,6 +106,11 @@ def main():
         print(f"  base   {base_dir}")
         print(f"  lr     {tcfg['learning_rate']}   eff batch {eff_batch}   "
               f"epochs {tcfg['num_epochs']}")
+        if zp_lr > 0:
+            n_zp = sum(p.numel() for n, p in model.named_parameters()
+                       if p.requires_grad and n.endswith('zp_shift'))
+            print(f"  zp     TRAINABLE non-weak zero-points, {n_zp / 1e6:.1f}M shifts at "
+                  f"zp_lr {zp_lr} (LEVEL units, via the recovered per-group step)")
         print(f"  out    {tcfg['output_dir']}")
         print("=" * 78)
 
@@ -157,8 +163,20 @@ def main():
         train_dataset, _eval_dataset, collator = load_sqat_data_module(cfg, tokenizer)
 
     trainer_cls = _make_qeft_trainer_cls(base_dir)
+    # zp_lr > 0: the two tiers live in different units (weight units vs quantization LEVELS), so
+    # they need their own optimizer groups — exactly src/trainer.py's reasoning for SALT-Q.
+    _opt = None
+    if zp_lr > 0:
+        _weak = [p for n, p in model.named_parameters() if p.requires_grad and n.endswith(WEAK_PARAM_NAME)]
+        _zps = [p for n, p in model.named_parameters() if p.requires_grad and n.endswith("zp_shift")]
+        assert _weak and _zps
+        _opt = torch.optim.AdamW(
+            [{"params": _weak, "lr": tcfg["learning_rate"], "weight_decay": tcfg["weight_decay"]},
+             {"params": _zps, "lr": zp_lr, "weight_decay": 0.0}],
+            lr=tcfg["learning_rate"], betas=(0.9, 0.999))
     trainer = trainer_cls(model=model, args=training_args, train_dataset=train_dataset,
-                          data_collator=collator, processing_class=tokenizer)
+                          data_collator=collator, processing_class=tokenizer,
+                          optimizers=(_opt, None))
     trainer.train(resume_from_checkpoint=args.resume_from)
     trainer.save_state()
 
@@ -169,7 +187,7 @@ def main():
             model_id=mcfg["name"], bits=meta["q_bits"], group_size=meta["group_size"],
             k=meta["k"], oproj_weak=meta["oproj_weak"], base_dir=os.path.abspath(base_dir),
             fp16_share=meta["fp16_share"], effective_bits=meta["effective_bits"],
-            learning_rate=tcfg["learning_rate"], epochs=tcfg["num_epochs"],
+            learning_rate=tcfg["learning_rate"], zp_lr=zp_lr, epochs=tcfg["num_epochs"],
             effective_batch=eff_batch, loss_span=cfg["data"]["loss_span"],
             calibration=cfg["qat"]["sqat"], config=os.path.abspath(args.config),
             trainable_params=int(sum(p.numel() for n, p in model.named_parameters()
