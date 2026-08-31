@@ -1,0 +1,27 @@
+#!/bin/bash
+#PBS -N qeft_int2_eval_tp4
+#PBS -q normal
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=2:00:00
+#PBS -P personal-jingzege
+#PBS -j oe
+# Third eval attempt for the TRAINED QEFT INT3 export. All four QEFT eval jobs (three crashes,
+# one clean untrained-base run) landed on the SAME node, so the hardware is exonerated; the one
+# configuration every successful trained-model eval in this repo shared and QEFT lacked is 4-GPU
+# tensor parallel (QEFT ran TP=2, crashing in vLLM's TP sampler bookkeeping at 22313-22316/22419).
+# Same eval as the pipeline's stage 3 at TP=4, plus the CSV collection the crashed runs never
+# reached.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+nvidia-smi | head -12; hostname
+mkdir -p logs/commonsense_170k
+D=outputs/qeft_cs170k_int2_g32_ep1_span_bcal-2bit-qeft-dense-eval
+bash runs/eval_vllm.sh --model_path "$D" --dataset commonsense --gpus 0,1,2,3 --tag "$(basename $D)" \
+    > logs/commonsense_170k/qeft_int2_eval_tp4.log 2>&1
+RC=$?
+conda run -n saltq python scripts/collect_saltq_results.py --results_dir results --csv results_saltq.csv \
+    --config baseline/QEFT/sqat/configs/qeft_cs170k_int2_g32_ep1_span_bcal.yaml --filter qeft \
+    --note "bcal 3500 balanced; k=256 fp16 weak cols; lr from QEFT paper; TP=4 eval rescue of the crashed TP=2 run" \
+    >> logs/commonsense_170k/qeft_int2_eval_tp4.log 2>&1
+echo "rc=$RC"; echo "End time: $(date)"
