@@ -133,7 +133,7 @@ GSM8K/MATH500: MetaMath 微调;Wiki2: 在 train split 微调报 test PPL(LoftQ/A
 | QWHA | 2 | 32 | — | — | — |
 | **SALT-Q** | 2 | 32 | **40.94** | — | — |
 | **SALT-Q**(span bcal gptq_latent 重跑,CS 经验 lr,zp×2) | 2 | 32 | 15860115 排队 | — | — |
-| SALT-Q **zp 冻结对照**(同基座,zp_lr=0) | 2 | 32 | 15860169 排队(依赖主 run 的基座) | — | — |
+| QEFT(fp16 弱列,无 zp;weak lr 5e-5;替代 zp 冻结对照) | 2 | 32 | 15860370 排队 | — | — |
 
 ## T3 Pareto 表:vs 全量 QAT(精度+成本,全宽)
 1×A100-80G,seq/batch 统一,吞吐相对 QLoRA=1.00;显存/时长必须实测,禁止引原文
