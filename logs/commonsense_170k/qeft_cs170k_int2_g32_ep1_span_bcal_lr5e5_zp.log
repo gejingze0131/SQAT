@@ -1,0 +1,52 @@
+============================================================
+  QEFT — Quantization for Efficient Fine-Tuning (baseline)
+  Config:     baseline/QEFT/sqat/configs/qeft_cs170k_int2_g32_ep1_span_bcal_lr5e5_zp.yaml
+  Dataset:    commonsense
+  Bits:       INT2 g32, k=256 fp16 weak columns (asym, bcal)
+  Base:       outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_bcal
+  Output dir: outputs/qeft_cs170k_int2_g32_ep1_span_bcal_lr5e5_zp
+  GPUs:       2 (train) / [0,1,2,3] (eval)
+============================================================
+
+>>> Stage 0: skipped by flag
+
+>>> Stage 1: QEFT weak-column tuning
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   2%|▏         | 7/291 [00:00<00:04, 63.91it/s]Loading weights:   6%|▌         | 18/291 [00:00<00:02, 136.38it/s]Loading weights:   7%|▋         | 20/291 [00:00<00:03, 73.14it/s]Loading weights:  11%|█▏        | 33/291 [00:00<00:02, 107.03it/s]Loading weights:  14%|█▎        | 40/291 [00:00<00:02, 113.10it/s]Loading weights:  18%|█▊        | 51/291 [00:00<00:02, 114.63it/s]Loading weights:  18%|█▊        | 52/291 [00:00<00:02, 103.24it/s]Loading weights:  22%|██▏       | 63/291 [00:00<00:02, 79.32it/s] Loading weights:  22%|██▏       | 63/291 [00:00<00:03, 62.74it/s] Loading weights:  26%|██▌       | 75/291 [00:00<00:02, 80.03it/s]Loading weights:  30%|██▉       | 86/291 [00:01<00:02, 88.32it/s]Loading weights:  32%|███▏      | 93/291 [00:00<00:02, 96.85it/s]Loading weights:  35%|███▌      | 102/291 [00:01<00:01, 98.69it/s]Loading weights:  37%|███▋      | 109/291 [00:01<00:01, 105.05it/s]Loading weights:  39%|███▉      | 114/291 [00:01<00:01, 89.32it/s]Loading weights:  42%|████▏     | 121/291 [00:01<00:01, 93.79it/s] Loading weights:  43%|████▎     | 125/291 [00:01<00:01, 92.53it/s]Loading weights:  45%|████▌     | 131/291 [00:01<00:01, 90.98it/s]Loading weights:  47%|████▋     | 136/291 [00:01<00:01, 84.28it/s]Loading weights:  49%|████▉     | 142/291 [00:01<00:01, 87.39it/s]Loading weights:  53%|█████▎    | 153/291 [00:01<00:01, 100.62it/s]Loading weights:  55%|█████▍    | 159/291 [00:01<00:01, 102.56it/s]Loading weights:  56%|█████▋    | 164/291 [00:01<00:01, 100.17it/s]Loading weights:  59%|█████▉    | 171/291 [00:01<00:01, 100.05it/s]Loading weights:  62%|██████▏   | 181/291 [00:01<00:00, 114.64it/s]Loading weights:  63%|██████▎   | 183/291 [00:01<00:01, 97.38it/s] Loading weights:  67%|██████▋   | 194/291 [00:02<00:00, 108.33it/s]Loading weights:  69%|██████▉   | 201/291 [00:02<00:00, 110.30it/s]Loading weights:  71%|███████   | 207/291 [00:02<00:00, 102.40it/s]Loading weights:  73%|███████▎  | 213/291 [00:02<00:00, 97.49it/s] Loading weights:  75%|███████▍  | 218/291 [00:02<00:00, 101.90it/s]Loading weights:  79%|███████▉  | 231/291 [00:02<00:00, 113.74it/s]Loading weights:  80%|███████▉  | 232/291 [00:02<00:00, 94.35it/s] Loading weights:  84%|████████▎ | 243/291 [00:02<00:00, 111.08it/s]Loading weights:  85%|████████▌ | 248/291 [00:02<00:00, 109.77it/s]Loading weights:  88%|████████▊ | 255/291 [00:02<00:00, 103.72it/s]Loading weights:  91%|█████████▏| 266/291 [00:02<00:00, 115.69it/s]Loading weights:  91%|█████████▏| 266/291 [00:02<00:00, 98.37it/s] Loading weights:  96%|█████████▌| 280/291 [00:02<00:00, 112.59it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 105.79it/s]
+Loading weights: 100%|██████████| 291/291 [00:02<00:00, 102.56it/s]
+[QEFT] 224 QEFTLinear layers | trainable 539.6M / 7278.0M (7.41%) | k=256 INT2 g32
+==============================================================================
+  QEFT — weak column tuning | INT2 g32 k=256 | fp16 share 5.38% (2.75 effective bits)
+  base   outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_bcal
+  lr     5e-05   eff batch 80   epochs 1
+  zp     TRAINABLE non-weak zero-points, 191.5M shifts at zp_lr 0.00346 (LEVEL units, via the recovered per-group step)
+  out    outputs/qeft_cs170k_int2_g32_ep1_span_bcal_lr5e5_zp
+==============================================================================
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[QEFT] 224 QEFTLinear layers | trainable 539.6M / 7278.0M (7.41%) | k=256 INT2 g32
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] loss_span=instruction+response: 132.7 supervised tokens/record (82.1% of all tokens, first 2000 records)
+/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[rank0]:[W831 15:43:03.922050086 ProcessGroupNCCL.cpp:5188] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'pad_token_id': 2}.
+[Data] datasets/commonsense train: 147580 records
+[Data]   instruction: Please answer the following question with true or false, question: do iran and afghanistan speak the same language?
+
+Answer format: true/false
+[Data]   input: 
+[Data]   output: the correct answer is true
+[Data]   type: boolq
+[Data] loss_span=instruction+response: 132.7 supervised tokens/record (82.1% of all tokens, first 2000 records)
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'pad_token_id': 2}.
+  0%|          | 0/1845 [00:00<?, ?it/s]  0%|          | 1/1845 [00:06<3:13:36,  6.30s/it]  0%|          | 2/1845 [00:11<2:46:54,  5.43s/it]  0%|          | 3/1845 [00:15<2:35:44,  5.07s/it]  0%|          | 4/1845 [00:20<2:26:54,  4.79s/it]  0%|          | 5/1845 [00:25<2:38:24,  5.17s/it]  0%|          | 6/1845 [00:29<2:26:13,  4.77s/it]  0%|          | 7/1845 [00:34<2:25:27,  4.75s/it]  0%|          | 8/1845 [00:39<2:24:26,  4.72s/it]  0%|          | 9/1845 [00:43<2:23:54,  4.70s/it]  1%|          | 10/1845 [00:48<2:21:06,  4.61s/it]                                                   {'loss': '2.202', 'grad_norm': '5.628', 'learning_rate': '8.036e-06', 'epoch': '0.005421'}
+  1%|          | 10/1845 [00:48<2:21:06,  4.61s/it]  1%|          | 11/1845 [00:53<2:24:56,  4.74s/it]  1%|          | 12/1845 [00:58<2:25:15,  4.75s/it]  1%|          | 13/1845 [01:02<2:25:04,  4.75s/it]  1%|          | 14/1845 [01:08<2:34:21,  5.06s/it]  1%|          | 15/1845 [01:13<2:32:33,  5.00s/it]  1%|          | 16/1845 [01:17<2:22:28,  4.67s/it]  1%|          | 17/1845 [01:22<2:28:08,  4.86s/it]  1%|          | 18/1845 [01:27<2:26:46,  4.82s/it]  1%|          | 19/1845 [01:31<2:23:20,  4.71s/it]
