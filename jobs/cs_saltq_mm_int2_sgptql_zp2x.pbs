@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N cs_saltq_mm_int2_sgptql_zp2x
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=16:00:00
+#PBS -j oe
+# MetaMath replica of the Commonsense bcal gptq_latent SALT-Q cell (see the config header).
+# Fresh bases on this dataset's balanced 1000-record calibration; scored on GSM8K only.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/metamath
+echo "Start time: $(date)"
+bash runs/saltq/run_saltq_math.sh \
+    --config            configs/saltq_mm_int2_g32_ep1_span_bcal_sgptql_zp2x.yaml \
+    --bits              2 \
+    --output_root       outputs/saltq_mm_int2_g32_ep1_span_bcal_sgptql_zp2x \
+    --train_layernorms  false \
+    --eval_tasks        gsm8k \
+    --note              "MetaMath span bcal gptq_latent, CS-bracketed lrs, balanced 1000-record calibration" \
+    > logs/metamath/saltq_mm_int2_g32_ep1_span_bcal_sgptql_zp2x.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

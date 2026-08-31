@@ -127,11 +127,13 @@ GSM8K/MATH500: MetaMath 微调;Wiki2: 在 train split 微调报 test PPL(LoftQ/A
 | LoTA-QAF | 3 | 64 | — | — | — |
 | QWHA | 3 | 64 | — | — | — |
 | **SALT-Q** | 3 | 64 | **45.11** | — | — |
+| **SALT-Q**(span bcal gptq_latent 重跑,CS 经验 lr,balanced 1k 校准) | 3 | 64 | 15860116 排队 | — | — |
 | GPTQ floor | 2 | 32 | 崩 | — | — |
 | QA-LoRA (tuned) | 2 | 32 | 37.38 | — | — |
 | LoTA-QAF | 2 | 32 | — | — | — |
 | QWHA | 2 | 32 | — | — | — |
 | **SALT-Q** | 2 | 32 | **40.94** | — | — |
+| **SALT-Q**(span bcal gptq_latent 重跑,CS 经验 lr,zp×2) | 2 | 32 | 15860115 排队 | — | — |
 
 ## T3 Pareto 表:vs 全量 QAT(精度+成本,全宽)
 1×A100-80G,seq/batch 统一,吞吐相对 QLoRA=1.00;显存/时长必须实测,禁止引原文
