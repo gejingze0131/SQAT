@@ -133,7 +133,7 @@ GSM8K/MATH500: MetaMath 微调;Wiki2: 在 train split 微调报 test PPL(LoftQ/A
 | QWHA | 2 | 32 | — | — | — |
 | **SALT-Q** | 2 | 32 | **40.94** | — | — |
 | **SALT-Q**(span bcal gptq_latent,CS 经验 lr,zp×2,balanced 1k 校准) | 2 | 32 | **56.33**(旧格 40.94) | — | — |
-| QLoRA fp16 上限(同 recipe/lr 2e-4,span;定标 56.33) | 16 | — | 15869412 排队 | — | — |
+| QLoRA fp16 上限(同 recipe,lr 2e-4,span) | 16 | — | **58.07**(MATH 10.64) | — | — |
 | QEFT(fp16 弱列,无 zp;weak lr 5e-5) | 2 | 32 | **48.90**(裸基座 0.00) | — | — |
 
 ## T3 Pareto 表:vs 全量 QAT(精度+成本,全宽)
