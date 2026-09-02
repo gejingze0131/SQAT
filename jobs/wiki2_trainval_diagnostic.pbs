@@ -1,0 +1,90 @@
+#!/bin/bash
+#PBS -N wiki2_trainval_diag
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=2:00:00
+#PBS -j oe
+# =============================================================================
+# DIAGNOSTIC for the T2 Wiki2 column — is the ordering capacity/regularization, or quantization?
+#
+# WHY. On the test split SALT-Q (10.15) came in ABOVE QA-LoRA (8.82), which inverts every other
+# cell in the tables. But the training losses invert the other way: SALT-Q's final train loss is
+# 0.472 (train ppl ~1.60) against QA-LoRA's 0.881 (~2.41). Fitting the training text far better
+# and the held-out text worse is the signature of overfitting, and the capacities are consistent
+# with it — SALT-Q trains 527M parameters, QA-LoRA's group-pooled adapter far fewer, on a corpus
+# of 2.87M tokens seen three times. WikiText-2 is ~12x smaller than Commonsense-170k and ~50x
+# smaller than MetaMath, so this column can measure regularization rather than quantization
+# quality, and the paper must not report the ordering without knowing which.
+#
+# The export is NOT the suspect: SALT-Q asserted deploy == train with max|delta| = 0 on every
+# layer checked, so the 10.15 is the trained model's own generalization.
+#
+# WHAT THIS MEASURES, per deployed artifact, all at seq_len 2048:
+#   train split, first 166 windows   IN-SAMPLE. Truncated to 166 so it costs the same and carries
+#                                    the same statistical weight as the 166-window test set.
+#   validation split (full)          A SECOND held-out set. If validation agrees with test, the
+#                                    test ordering is real and not a quirk of one split.
+#
+# READ IT AS: train/test ratio per arm. A large ratio for SALT-Q and a small one for QA-LoRA
+# means capacity, and the column then needs either a regularization note or a smaller-capacity
+# SALT-Q point (fewer epochs / smaller group_k) to be a fair quantization comparison.
+#
+# NOT a row of the T2 table. Results land in results/wikitext2_ppl_diagnostic/ on purpose.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+
+run_arm () {   # run_arm <tag> <model_dir>
+    local tag="$1" dir="$2"
+    if [ ! -f "$dir/config.json" ]; then echo ">>> SKIP $tag: no config.json at $dir"; return; fi
+    echo -e "\n============ $tag :: TRAIN split (in-sample, first 166 windows) ============"
+    python scripts/eval_ppl.py --model_path "$dir" --data datasets/wikitext2 --split train \
+        --seq_len 2048 --max_windows 166 --tag "${tag}__train166" \
+        --output_dir results/wikitext2_ppl_diagnostic \
+        --note "DIAGNOSTIC, not a T2 row: in-sample train-split PPL, first 166 windows"
+    echo -e "\n============ $tag :: VALIDATION split (held out) ============"
+    python scripts/eval_ppl.py --model_path "$dir" --data datasets/wikitext2 --split validation \
+        --seq_len 2048 --tag "${tag}__validation" \
+        --output_dir results/wikitext2_ppl_diagnostic \
+        --note "DIAGNOSTIC, not a T2 row: second held-out split, cross-check on test"
+}
+
+run_arm saltq   outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x-2bit-saltq-deploy-eval
+run_arm qalora  outputs/qalora_wiki2_int2_g32_ep3-2bit-qalora-dequant-eval
+run_arm qlora_upper_fp16 outputs/qlora_none_wiki2_int2_g32_ep3-2bit-none-merged-eval
+run_arm gptq_floor       outputs/qlora_none_wiki2_int2_g32_ep3-2bit-none-gptq-eval
+run_arm qeft    outputs/qeft_wiki2_int2_g32_ep3_lr9e5-2bit-qeft-dense-eval
+
+echo -e "\n>>> Summary: train / validation / test, and the train->test ratio"
+python - <<'PY'
+import glob, json, os
+TEST = {}
+for p in glob.glob("results/wikitext2_ppl/*.json"):
+    r = json.load(open(p)); d = r["config"]["model_path"]
+    if "seq_len_2048" in r["results"]:
+        TEST[os.path.basename(d)] = r["results"]["seq_len_2048"]["ppl"]
+DIRS = {
+    "saltq": "saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x-2bit-saltq-deploy-eval",
+    "qalora": "qalora_wiki2_int2_g32_ep3-2bit-qalora-dequant-eval",
+    "qlora_upper_fp16": "qlora_none_wiki2_int2_g32_ep3-2bit-none-merged-eval",
+    "gptq_floor": "qlora_none_wiki2_int2_g32_ep3-2bit-none-gptq-eval",
+    "qeft": "qeft_wiki2_int2_g32_ep3_lr9e5-2bit-qeft-dense-eval",
+}
+def get(tag, suffix):
+    p = f"results/wikitext2_ppl_diagnostic/{tag}__{suffix}.json"
+    if not os.path.exists(p): return None
+    return json.load(open(p))["results"]["seq_len_2048"]["ppl"]
+print(f"{'arm':<18} {'train166':>9} {'valid':>9} {'test':>9} {'test/train':>11}")
+for tag, d in DIRS.items():
+    tr, va, te = get(tag, "train166"), get(tag, "validation"), TEST.get(d)
+    f = lambda x: f"{x:9.4f}" if x is not None else "        -"
+    ratio = f"{te/tr:11.2f}" if (tr and te) else "          -"
+    print(f"{tag:<18} {f(tr)} {f(va)} {f(te)} {ratio}")
+PY
+echo "End time: $(date)"

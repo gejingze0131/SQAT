@@ -127,6 +127,11 @@ def main() -> int:
     ap.add_argument("--tag", default=None, help="output file stem (default: basename of model_path)")
     ap.add_argument("--output_dir", default=None,
                     help="default: results/<dataset name>_ppl/")
+    ap.add_argument("--max_windows", type=int, default=None,
+                    help="score only the first N windows. For the TEST split leave this unset — "
+                         "a partial test set is not the published metric. Its purpose is the "
+                         "train-split diagnostic, where the point is an equal-cost in-sample "
+                         "number and the full 1403-window train stream is 8x the test set.")
     ap.add_argument("--tokenizer", default=None,
                     help="tokenizer to use (default: the model dir; falls back to the base model)")
     ap.add_argument("--note", default="")
@@ -160,14 +165,20 @@ def main() -> int:
     results = {}
     for seq_len in [args.seq_len] + list(args.also_seq_len):
         windows = lm_windows(stream, seq_len)
+        n_full = windows.shape[0]
+        if args.max_windows and args.max_windows < n_full:
+            windows = windows[: args.max_windows]
         print(f"[ppl] seq_len={seq_len}: {windows.shape[0]} non-overlapping windows "
-              f"({windows.size} tokens scored)")
+              f"({windows.size} tokens scored)"
+              + (f" — TRUNCATED from {n_full}" if windows.shape[0] < n_full else ""))
         ppl, ppl_exact = perplexity(model, windows, device)
         results[f"seq_len_{seq_len}"] = {
             "ppl": ppl,
             "ppl_exact": ppl_exact,
             "n_windows": int(windows.shape[0]),
             "n_tokens": int(windows.size),
+            # Loud, in the artifact itself: a truncated run is not the column's metric.
+            "truncated_from": int(n_full) if windows.shape[0] < n_full else None,
         }
         print(f"[ppl] seq_len={seq_len}  PPL {ppl:.4f}  (exact-denominator {ppl_exact:.4f})")
 

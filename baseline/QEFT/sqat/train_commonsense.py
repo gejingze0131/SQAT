@@ -188,7 +188,16 @@ def main():
             k=meta["k"], oproj_weak=meta["oproj_weak"], base_dir=os.path.abspath(base_dir),
             fp16_share=meta["fp16_share"], effective_bits=meta["effective_bits"],
             learning_rate=tcfg["learning_rate"], zp_lr=zp_lr, epochs=tcfg["num_epochs"],
-            effective_batch=eff_batch, loss_span=cfg["data"]["loss_span"],
+            effective_batch=eff_batch,
+            # data.loss_span does not exist for a raw-text causal-LM dataset (task_type: lm):
+            # there is no prompt to mask, every token is supervised. A bare subscript here threw
+            # KeyError AFTER the WikiText-2 run had finished all 528 steps and saved its weak
+            # columns, losing only this sidecar (2026-09-03, job 16072464). Record what the run
+            # actually supervised instead of assuming the instruction schema.
+            loss_span=cfg["data"].get(
+                "loss_span",
+                f"n/a (task_type={cfg['data'].get('task_type', 'instruction')}: every token supervised)"),
+            task_type=cfg["data"].get("task_type", "instruction"),
             calibration=cfg["qat"]["sqat"], config=os.path.abspath(args.config),
             trainable_params=int(sum(p.numel() for n, p in model.named_parameters()
                                      if p.requires_grad and WEAK_PARAM_NAME in n)),
