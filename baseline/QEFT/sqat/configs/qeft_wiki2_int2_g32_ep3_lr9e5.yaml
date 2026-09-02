@@ -1,0 +1,83 @@
+# =============================================================================
+# QEFT — WikiText-2 (T2's Wiki2 column), INT2 g32, k=256
+#
+# Transported from baseline/QEFT/sqat/configs/qeft_mm_int2_g32_ep1_span_bcal_lr5e5.yaml
+# (MetaMath GSM8K 48.90 / MATH 7.44) with only the three task-forced families of change
+# described in the SALT-Q WikiText-2 config header: the data block, 3 epochs at effective batch
+# 16, and every lr multiplied by sqrt(T_ref / T_here) = sqrt(1845 / 528) = 1.8693.
+#
+#       learning_rate   5.0e-5 (T=1845)  ->  9.35e-5
+#
+# 5.0e-5 is NOT QEFT's paper-law lr: the paper value under-trained INT3 by ten MEAN(8) points
+# (66.73 -> 77.68 at 5e-5) and INT2 by twenty (56.26 -> 73.71), so this repo's QEFT rows use the
+# x10 value throughout. Keeping that here is what makes this row comparable to the QEFT rows in
+# T1 and T2; going back to the paper lr would produce a number that is under-trained rather than
+# a baseline. The x1.8693 on top is the same transport every arm of this column gets.
+#
+# ---- WHAT IS SCORED -------------------------------------------------------------------------
+# QEFT's MIXED-PRECISION product: INT2 g32 codes PLUS k=256 fp16 weak columns per linear
+# (5.37% of the target weights, 2.75 effective bits). It is NOT a pure 2-bit artifact and the
+# table must say so — see baseline/QEFT/sqat/PROVENANCE.md. Perplexity by scripts/eval_ppl.py in
+# the GPTQ lineage's protocol, on <output_dir>-2bit-qeft-dense-eval.
+# --with_base additionally scores the bare mixed-precision base (this row's own floor): a
+# pretrained Llama-2 that has never seen WikiText-2 fine-tuning.
+# =============================================================================
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 2
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+qeft:
+  k: 256                  # weak columns per linear; must be a multiple of group_size
+  group_size: 32
+  base_dir: "outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_wiki2"
+  oproj_weak: true
+  targets: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+qat:
+  symmetric: false
+  # 256 windows x 2048 tokens = 524,288 in-domain WikiText-2 train tokens. Both offline
+  # consumers read this: the lambda = diag(2 X^T X) statistics that pick the weak columns, and
+  # the GPTQ Hessians that quantize everything else.
+  sqat:
+    calibration_samples: 256
+    calibration_sampling: balanced      # ignored under data.task_type=lm
+    calibration_seq_len: 2048
+  gptq:
+    nsamples: 256                       # MUST equal calibration_samples
+    percdamp: 0.01
+    blocksize: 128
+    batch_size: 4
+
+data:
+  task_type: lm
+  train_dataset: "datasets/wikitext2"
+  train_split: "train"
+  text_field: "text"
+  block_size: 1024
+  val_split: null
+  shuffle_dataset: true
+  num_proc: 32
+
+training:
+  output_dir: "outputs/qeft_wiki2_int2_g32_ep3_lr9e5"
+  num_epochs: 3
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 1        # x 4 GPUs = effective batch 16 blocks = 16.4k tok/step
+  group_by_length: false
+  learning_rate: 9.35e-5                # 5.0e-5 x sqrt(1845/528); see the header
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "none"
+  seed: 42

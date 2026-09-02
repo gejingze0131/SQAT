@@ -1,0 +1,115 @@
+# =============================================================================
+# QA-LoRA — WikiText-2 (T2's Wiki2 column), INT2 g32
+#
+# Transported from configs/qalora_mm_int2_g32_ep1_span_bcal.yaml (MetaMath GSM8K 52.54 /
+# MATH 11.04) with only the three task-forced families of change described in the SALT-Q
+# WikiText-2 config header: the data block, 3 epochs at effective batch 16, and every lr
+# multiplied by sqrt(T_ref / T_here) = sqrt(1845 / 528) = 1.8693.
+#
+#       learning_rate   5.0e-3 (T=1845, tuned on this cell)  ->  9.35e-3
+#
+# ---- WHAT IS SCORED -------------------------------------------------------------------------
+# The MERGED artifact: <output_dir>-2bit-qalora-dequant-eval, where the group-pooled adapter has
+# been folded into the affine zero-points and the model is a plain INT2 g32 checkpoint. That is
+# QA-LoRA's whole point and it is what the CS / MetaMath rows score, so it is what this row
+# scores. Perplexity by scripts/eval_ppl.py in the GPTQ lineage's protocol.
+#
+# The frozen GPTQ base is rebuilt on THIS task's ~0.5M in-domain WikiText-2 tokens, matching
+# every other arm of the column.
+# =============================================================================
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 2
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "sqat_permute"        # schema only — the pipeline passes --qat_mode qalora
+  symmetric: false
+  group_size: 32
+  lsq:
+    enabled: false
+    scales_lr: 1.0e-5
+
+  # 256 windows x 2048 tokens = 524,288 in-domain WikiText-2 train tokens.
+  sqat:
+    calibration_samples: 256
+    calibration_sampling: balanced      # ignored under data.task_type=lm
+    calibration_seq_len: 2048
+
+  # The QA-LoRA base: GPTQ INT-b codes, frozen, with the pooled adapter folded into (s, z).
+  qalora:
+    gptq:
+      nsamples: 256           # MUST equal calibration_samples
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 4
+
+  sqat_permute:
+    boundary_sizes: [2, 30]
+    group_k: 128
+    top_k_ratio: 0.01
+    outlier_log_sigma: 3.0
+    down_outlier_log_sigma: 3.0
+    stage: 2
+    gptq:
+      enabled: true
+      nsamples: 256
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 4
+    awq_scale:
+      enabled: true
+      alpha: 0.5
+      max: 2.0
+
+data:
+  task_type: lm
+  train_dataset: "datasets/wikitext2"
+  train_split: "train"
+  text_field: "text"
+  block_size: 1024
+  val_split: null
+  shuffle_dataset: true
+  num_proc: 32
+
+training:
+  output_dir: "outputs/qalora_wiki2_int2_g32_ep3"
+  num_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 1        # x 4 GPUs = effective batch 16 blocks = 16.4k tok/step
+  group_by_length: false
+  learning_rate: 9.35e-3                # 5.0e-3 x sqrt(1845/528); see the header
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true

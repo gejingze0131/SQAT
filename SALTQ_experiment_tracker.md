@@ -119,6 +119,45 @@ INT3 不受影响(首 loss 2.38,RTN 损伤小)。修正方向:显著列用 GPTQ 
 ## T2 副表:GSM8K + MATH500 + WikiText-2 PPL(单栏)
 GSM8K/MATH500: MetaMath 微调;Wiki2: 在 train split 微调报 test PPL(LoftQ/ApiQ 协议)
 
+### Wiki2 列的协议(四个必须披露的细节;caption:**after WikiText-2 fine-tuning (deployed artifacts)**)
+
+| # | 项 | 本列固定值 |
+|---|---|---|
+| 1 | **测什么模型状态** | **部署形态**,与主表口径一致。SALT-Q = 导出后的统一低比特 checkpoint(identity merge,`export_saltq` 断言 deployed == trained,max\|Δ\| == 0);QA-LoRA = 合并后的 INT2(pooled adapter 折进 zero-point);QEFT† = 混合精度产物(INT2 codes + k=256 fp16 弱列,**2.75 等效 bit,不是纯 2bit**);QLoRA 上界 = adapter 挂载态(NF4 反量化 + adapter 合并的 dense fp16,**未重量化,所以是 fp16 行**);floor = 同一 merged ckpt → GPTQ INT2 g32 |
+| 2 | **数据变体** | `wikitext-2-raw-v1`(**不是** processed 版;后者把生僻词换成 `<unk>`,PPL 低一大截且不可比)。`datasets/wikitext2/{train,test,validation}.json` |
+| 3 | **评测方式** | GPTQ 一系惯例:test split 全文用 `"\n\n"` 拼接 → **一次性** tokenize(全流只有开头一个 BOS)→ 按固定 seqlen 切**非重叠**窗口(尾部不足一窗丢弃)→ **全 token 计损**,`ppl = exp(Σ loss_w·L / (n·L))`。实现:`scripts/eval_ppl.py` |
+| 4 | **seqlen** | **1024**(主报告值)+ 2048(同一次 load 里附带)。1024 = LoftQ / ApiQ `train_clm.sh` 的 `block_size`,也是本列的训练 block;2048 = GPTQ 论文长度。test split = 341,469 token → 333 窗 @1024 / **166 窗 @2048**(166 正是 GPTQ 一系对 Llama-2 的标准窗数)|
+
+**训练 recipe(四臂逐字相同,只有方法本身不同)**:block_size 1024、**3 epoch**(LoftQ/ApiQ 对
+WikiText-2 的 epoch 数)、per_device 4 × ga 1 × 4 GPU = **effective batch 16 blocks = 16.4k
+token/step**(与 commonsense recipe 的 80 records × ~250 supervised token ≈ 20k token/step 同量级
+—— "同 recipe" 按 token/step 对齐,records/step 在两个任务间不可比)、cosine + 3% warmup、wd 0.01、
+max_grad_norm 0.3、bf16、seed 42。→ **T = ceil(2807/16) × 3 = 528 步**。
+
+**校准**:各臂的量化基座都在**任务自己的文本**上重建,256 窗 × 2048 = **524,288 token**
+(≈0.5M,与 bcal 的 471k 同量级),从与训练 block 同一套非重叠切分里按 seed 抽取。
+
+**lr 全部 × sqrt(T_ref/T_here) = sqrt(1845/528) = 1.8693**(AGENTS.md 的位移定律 c ≈ 0.47·√T;
+T_ref = 1845 是 commonsense-170k 147580/80 的步数,即那批已验证 lr 的标定点)。**统一施加于四臂**,
+没有任何一臂是在 WikiText-2 分数上调出来的:
+
+| 臂 | T=1845 已验证 lr | ×1.8693 |
+|---|---|---|
+| SALT-Q salient / scales / zp | 1.25e-4 / 1.73e-5 / 3.46e-3 | 2.34e-4 / 3.23e-5 / 6.47e-3 |
+| QA-LoRA | 5.0e-3 | 9.35e-3 |
+| QLoRA(上界 + floor 的母 ckpt) | 2.0e-4 | 3.74e-4 |
+| QEFT(弱列;5e-5 是本仓库的 ×10 值,不是 paper-law) | 5.0e-5 | 9.35e-5 |
+
+> 旁证(不是依据):ApiQ 自己在 WikiText-2 上的 LoRA lr 是 3e-4 @ block 1024 / 3 epoch,与本列
+> QLoRA 臂推导出的 3.74e-4 同量级。
+
+**跑法**:`jobs/wiki2_{saltq,qalora,qlora_int2_g32_ep3_upper,qeft}_*.pbs`,floor 用
+`jobs/wiki2_qlora_int2_floor.pbs`(须 `-W depend=afterok:<upper job>`)。
+入口 `runs/<method>/run_<method>_wikitext2.sh`;Stage 3 由 `runs/eval_vllm.sh` 的 perplexity
+分支派发到 `scripts/eval_ppl.py`(不经 vLLM、不 fold —— boundary gather 在评测里直接注册,
+所以打分的就是导出的那个东西)。结果落 `results/wikitext2_ppl/*.json` → `results_saltq.csv`
+(`source=ppl`,task 写成 `wikitext2@1024` / `wikitext2@2048`,因为 PPL 跨 seqlen 不可比)。
+
 | Method | Bits | g | GSM8K↑ | MATH500↑ | Wiki2 PPL↓ |
 |---|---|---|---|---|---|
 | FP16 upper | 16 | — | 45.2 | — | — |
@@ -132,11 +171,14 @@ GSM8K/MATH500: MetaMath 微调;Wiki2: 在 train split 微调报 test PPL(LoftQ/A
 | LoTA-QAF | 2 | 32 | — | — | — |
 | QWHA | 2 | 32 | — | — | — |
 | **SALT-Q** | 2 | 32 | **40.94** | — | — |
-| **SALT-Q**(span bcal gptq_latent,CS 经验 lr,zp×2,balanced 1k 校准) | 2 | 32 | **56.33**(旧格 40.94;补评 MATH **13.68**,全格最高、超 fp16 参考 10.64;复验 gsm8k 56.48,job 16045646) | — | — |
-| QLoRA fp16 上限(同 recipe,lr 2e-4,span) | 16 | — | **58.07**(MATH 10.64) | — | — |
-| QLoRA→GPTQ floor(58.07 merged ckpt 经 balanced 1k 校准 GPTQ INT2 g32) | 2 | 32 | **22.06**(MATH 2.16;健康生成,1319 distinct,非坏文件) | — | — |
-| QA-LoRA(同 recipe,lr 5e-3,balanced 1k 基座) | 2 | 32 | **52.54**(MATH 11.04;train_loss 0.2646) | — | — |
-| QEFT(fp16 弱列,无 zp;weak lr 5e-5) | 2 | 32 | **48.90**(裸基座 0.00;补评 MATH **7.44**,复验 gsm8k 48.52,job 16046801) | — | — |
+| **SALT-Q**(span bcal gptq_latent,CS 经验 lr,zp×2,balanced 1k 校准) | 2 | 32 | **56.33**(旧格 40.94;补评 MATH **13.68**,全格最高、超 fp16 参考 10.64;复验 gsm8k 56.48,job 16045646) | — | ⏳ |
+| QLoRA fp16 上限(同 recipe,lr 2e-4,span) | 16 | — | **58.07**(MATH 10.64) | — | ⏳ 16072408 |
+| QLoRA→GPTQ floor(58.07 merged ckpt 经 balanced 1k 校准 GPTQ INT2 g32) | 2 | 32 | **22.06**(MATH 2.16;健康生成,1319 distinct,非坏文件) | — | ⏳ 待 chain |
+| QA-LoRA(同 recipe,lr 5e-3,balanced 1k 基座) | 2 | 32 | **52.54**(MATH 11.04;train_loss 0.2646) | — | ⏳ |
+| QEFT(fp16 弱列,无 zp;weak lr 5e-5) | 2 | 32 | **48.90**(裸基座 0.00;补评 MATH **7.44**,复验 gsm8k 48.52,job 16046801) | — | ⏳ |
+
+> Wiki2 列的 ⏳ 是各臂的 job;GSM8K/MATH 那两列的数字来自 MetaMath 微调,**与 Wiki2 列不是同一个
+> checkpoint**(每列各自在自己的任务上微调),同一行并排只表示"同一个方法、同一个 bit/group 设置"。
 
 ## T3 Pareto 表:vs 全量 QAT(精度+成本,全宽)
 1×A100-80G,seq/batch 统一,吞吐相对 QLoRA=1.00;显存/时长必须实测,禁止引原文
@@ -192,6 +234,44 @@ GSM8K/MATH500: MetaMath 微调;Wiki2: 在 train split 微调报 test PPL(LoftQ/A
 | segment P ×4 | — | — | — |
 | 无P(scatter-gather) | — | — | — |
 
+## T8 校准消融 · 验证① 未微调量化基座的 PPL(caption:**quantized base, no fine-tuning**)
+
+**与 T2 的 Wiki2 列无关**,放论文的校准附录,不放主结果。两处都写着 "WikiText-2 PPL",但测的东西、
+目的、结论都不同,表格 caption 必须把它们分开:
+
+| | T2 Wiki2 列 | T8 验证① |
+|---|---|---|
+| 对象 | 在 WikiText-2 上微调后的**部署产物** | **未微调**的量化基座 |
+| 变量 | 方法(SALT-Q / QEFT / QA-LoRA / QLoRA / floor) | **只有校准集** |
+| caption | after WikiText-2 fine-tuning (deployed artifacts) | quantized base, no fine-tuning |
+
+同一份 QLoRA-merged fp16 checkpoint(commonsense-170k 微调),同一套 GPTQ、同 bit、同 group,
+**只换校准集**:
+
+| 基座 | 校准集 | tokens | CS MEAN(8) | Wiki2 PPL↓ | C4-val PPL↓ |
+|---|---|---|---|---|---|
+| fp16 参考(原始 Llama-2-7B,协议锚点) | — | — | — | ⏳(seqlen 2048 应 ≈ 5.47) | ⏳ |
+| fp16 母 ckpt(INT2 那一支被量化前的样子) | — | — | — | ⏳ | ⏳ |
+| **D** INT2 g32 | balanced 任务校准 3500 | 471k | **66.22** | ⏳ | ⏳ |
+| **E** INT2 g32 | C4 通用 128×2048 | 262k | **30.67** | ⏳ | ⏳ |
+| **D** INT3 g64 | balanced 任务校准 3500 | 471k | **76.05** | ⏳ | ⏳ |
+| **E** INT3 g64 | C4 通用 128×2048 | 262k | **72.07** | ⏳ | ⏳ |
+
+**要检验的预测**:E 的 PPL **更好**,而任务分崩 **35.55 分**(INT2)。一行数据就说明
+"GPTQ 忠实地优化了校准集提出的目标 —— INT2 下问错问题是致命的",而 PPL 这个最常用的量化指标
+根本看不见它。
+
+**协议锚点**:第一臂是原始 fp16 Llama-2-7B。它在本协议下 seqlen 2048 的 WikiText-2 PPL 是一个
+公开常数(≈5.47)。**它不落在那里,`scripts/eval_ppl.py` 就是错的,Wiki2 那一列一个数都不能信**
+—— 读这个 job 的日志先看这一行。
+
+C4 对照用 `datasets/c4_val_ppl.json`(C4 en **validation** 分片),与 E 校准所用的
+`datasets/c4_calib_1024.json`(**train** 分片)按构造不相交;切窗协议与 WikiText-2 相同,所以它
+是 D-vs-E 的内部对照,**不要**与文献里的 C4 PPL 并排读(那些按文档随机取段)。
+
+job:`jobs/wiki2_t8_calib_ppl.pbs`(16072379)。结果落
+`results/{wikitext2_ppl_nofinetune,c4_val_ppl_nofinetune}/*.json`。
+
 ## 图
 - F0: 列级 Fisher vs E[x²] 秩相关(256样本一次backward)
 - F1: 相邻层 outlier 集合 Jaccard 曲线
@@ -204,7 +284,7 @@ GSM8K/MATH500: MetaMath 微调;Wiki2: 在 train split 微调报 test PPL(LoftQ/A
 2. LoTA-QAF / QWHA 复现(T1/T2;LoTA-QAF 有官方代码、GPTQ 系基座对齐成本低;ApiQ 不跑,引用+附录讨论,由 QWHA 代表初始化线)
 3. trained FP16-salient(T5 关键格,与 QEFT 实现同源)
 4. EfficientQAT / LR-QAT(T3:精度+实测成本)
-5. Wiki2 + MATH500 补列
+5. ~~Wiki2 补列~~ ⏳ 五臂已提交(见 T2 的 Wiki2 协议小节)+ T8 验证① ⏳ 16072379;MATH500 补列
 6. 第二模型(Llama-3-8B 或 Qwen2.5-7B)INT3+INT2 主设置 ← reviewer 硬需求
 7. T4/T6/T7 补格;QA-LoRA INT3 tuned-lr 复核
 8. 3 seeds std;效率实测;kernel microbench

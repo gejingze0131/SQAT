@@ -22,6 +22,7 @@ migration/train.py ignores it; a non-empty one raises rather than being silently
 """
 
 import copy
+import hashlib
 import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -283,6 +284,199 @@ def _to_instruction_output(ds: Dataset, cfg_template: Optional[str], data_path: 
 
 
 # ============================================================================
+# Raw-text causal LM (WikiText-2) — the GPTQ-lineage protocol
+# ============================================================================
+#
+# The instruction pipeline above renders every record through PROMPT and supervises a response
+# span. WikiText-2 has no instruction and no response: the task IS language modelling, and the
+# metric is perplexity. Mixing the two would be a silent error in both directions — a PROMPT
+# header prepended to every 1024-token block of Wikipedia, and a perplexity that is not
+# comparable to any published number.
+#
+# So `data.task_type: lm` switches to the convention the GPTQ / AWQ / OmniQuant / LoftQ / ApiQ
+# line all use, and which the WikiText-2 numbers in the literature are produced with:
+#
+#   1. JOIN every row's raw text with "\n\n" into ONE string (rows of wikitext-2-raw-v1 are
+#      lines, most of them fragments, many empty — tokenizing them individually and inserting an
+#      EOS per row, which is what `calibration_source` does for C4 documents, would put ~36k
+#      spurious EOS into a 2.4M-token stream).
+#   2. Tokenize that string ONCE. add_special_tokens is left at its default, so exactly one BOS
+#      sits at the front of the whole stream — again the lineage's convention, not a choice.
+#   3. Cut the token stream into NON-OVERLAPPING windows of `block_size`. The tail that does not
+#      fill a window is dropped (torch's `nsamples = numel // seqlen`).
+#   4. labels == input_ids: EVERY token carries loss. There is no mask here.
+#
+# Training and evaluation share steps 1-3 through `lm_token_stream`, which is the point: the
+# blocks a model is fine-tuned on and the windows its perplexity is measured over are cut by the
+# same code from the same kind of stream, so `block_size` is one number, not two that can drift.
+#
+# `wikitext-2-raw-v1` vs `wikitext-2-v1` is NOT a detail: the processed variant replaces rare
+# words with <unk>, which lowers perplexity by a wide margin. Perplexities across the two are not
+# comparable. datasets/wikitext2 is the RAW variant.
+
+LM_TEXT_JOIN = "\n\n"
+
+
+def _lm_raw_texts(data_path: str, split: str, text_field: str = "text") -> List[str]:
+    """Every row's raw text for one split, in file order.
+
+    A bare JSON FILE is accepted as well as a `<dir>/<split>.json` dataset, and its top level may
+    be a list of strings — which `datasets` cannot load, and which is the shape of the C4 control
+    files (datasets/c4_calib_1024.json, datasets/c4_val_ppl.json). `split` is ignored for a file.
+    """
+    if os.path.isfile(data_path):
+        import json as _json
+        with open(data_path, encoding="utf-8") as f:
+            raw = _json.load(f)
+        return [r if isinstance(r, str) else r[text_field] for r in raw]
+
+    ds = _load_raw_split(data_path, split)
+    if ds is None:
+        raise FileNotFoundError(
+            f"Could not load split '{split}' from '{data_path}' for a task_type=lm dataset."
+        )
+    if text_field not in ds.column_names:
+        raise ValueError(
+            f"data.text_field='{text_field}' is not a column of {data_path}/{split} "
+            f"(columns: {ds.column_names})."
+        )
+    return list(ds[text_field])
+
+
+def lm_token_stream(
+    data_path: str,
+    split: str,
+    tokenizer: PreTrainedTokenizer,
+    text_field: str = "text",
+    join: str = LM_TEXT_JOIN,
+) -> np.ndarray:
+    """Steps 1-2 above: one split -> one int64 token stream.
+
+    Cached on disk under HF_HOME, keyed by everything that can change the result. Without it the
+    11 MB WikiText-2 train string is re-tokenized once per DDP rank on every launch, and again by
+    the offline calibration stage.
+    """
+    key = "|".join([
+        os.path.abspath(data_path), split, text_field, join,
+        getattr(tokenizer, "name_or_path", ""),
+        str(getattr(tokenizer, "vocab_size", "")),
+    ])
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+    cache_root = os.path.join(
+        os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface")), "sqat_lm_streams")
+    cache_path = os.path.join(cache_root, f"{digest}.npy")
+    if os.path.exists(cache_path):
+        return np.load(cache_path)
+
+    text = join.join(_lm_raw_texts(data_path, split, text_field))
+    prev_max_len = tokenizer.model_max_length
+    tokenizer.model_max_length = int(1e12)          # the whole split is ONE sequence here
+    try:
+        ids = tokenizer(text, truncation=False).input_ids
+    finally:
+        tokenizer.model_max_length = prev_max_len
+    stream = np.asarray(ids, dtype=np.int64)
+
+    os.makedirs(cache_root, exist_ok=True)
+    # np.save APPENDS ".npy" unless the name already ends with it, so the temp file is written
+    # through a handle: a ".tmp" path would land at ".tmp.npy" and the rename would miss it.
+    tmp = f"{cache_path}.{os.getpid()}.tmp"
+    with open(tmp, "wb") as fh:
+        np.save(fh, stream)
+    os.replace(tmp, cache_path)
+    return stream
+
+
+def lm_windows(stream: np.ndarray, seq_len: int) -> np.ndarray:
+    """Step 3: [n_windows, seq_len] of NON-OVERLAPPING windows; the ragged tail is dropped."""
+    n = stream.shape[0] // seq_len
+    if n == 0:
+        raise ValueError(f"token stream of {stream.shape[0]} tokens is shorter than one "
+                         f"{seq_len}-token window")
+    return stream[: n * seq_len].reshape(n, seq_len)
+
+
+def _lm_dataset(windows: np.ndarray) -> Dataset:
+    """Step 4: every token supervised."""
+    rows = [w for w in windows]
+    return Dataset.from_dict({"input_ids": rows, "labels": [w.copy() for w in rows]})
+
+
+def load_lm_blocks(cfg: dict, tokenizer: PreTrainedTokenizer, split: str) -> Dataset:
+    """One split of a `task_type: lm` dataset as fixed-length, fully supervised blocks."""
+    data_cfg = cfg["data"]
+    block_size = int(data_cfg.get("block_size") or cfg["model"]["max_seq_len"])
+    stream = lm_token_stream(
+        data_cfg["train_dataset"], split, tokenizer,
+        text_field=str(data_cfg.get("text_field", "text")),
+        join=str(data_cfg.get("text_join", LM_TEXT_JOIN)),
+    )
+    windows = lm_windows(stream, block_size)
+    print(f"[Data] lm {data_cfg['train_dataset']}/{split}: {stream.shape[0]} tokens -> "
+          f"{windows.shape[0]} x {block_size} blocks (every token supervised)")
+    return _lm_dataset(windows)
+
+
+def _load_lm_for_training(cfg: dict, tokenizer: PreTrainedTokenizer):
+    """`load_dataset_for_training`'s task_type=lm branch."""
+    data_cfg = cfg["data"]
+    train = load_lm_blocks(cfg, tokenizer, data_cfg.get("train_split", "train"))
+    if data_cfg.get("shuffle_dataset", True):
+        train = train.shuffle(seed=cfg["training"]["seed"])
+    max_train = data_cfg.get("max_train_samples")
+    if max_train and max_train < len(train):
+        train = train.select(range(max_train))
+
+    eval_ds = None
+    val_split = data_cfg.get("val_split")
+    if val_split:
+        eval_ds = load_lm_blocks(cfg, tokenizer, val_split)
+        max_eval = data_cfg.get("max_eval_samples")
+        if max_eval and max_eval < len(eval_ds):
+            eval_ds = eval_ds.select(range(max_eval))
+    return train, eval_ds
+
+
+def _load_lm_calibration(cfg: dict, tokenizer: PreTrainedTokenizer) -> Dataset:
+    """`load_calibration_data`'s task_type=lm branch: the task's own text, per the brief.
+
+    The calibration budget is stated in TOKENS (calibration_samples x calibration_seq_len)
+    because that is the quantity the GPTQ Hessian actually sees, and it is the axis the
+    calibration ablation moves. Windows are drawn from the SAME non-overlapping cut the training
+    blocks come from, shuffled with the run seed and truncated — so the set is reproducible from
+    (seed, samples, seq_len) alone and never overlaps itself.
+    """
+    sqat_cfg = cfg["qat"]["sqat"]
+    n_samples = int(sqat_cfg["calibration_samples"])
+    seq_len = int(sqat_cfg["calibration_seq_len"])
+    data_cfg = cfg["data"]
+    stream = lm_token_stream(
+        data_cfg["train_dataset"], data_cfg.get("train_split", "train"), tokenizer,
+        text_field=str(data_cfg.get("text_field", "text")),
+        join=str(data_cfg.get("text_join", LM_TEXT_JOIN)),
+    )
+    windows = lm_windows(stream, seq_len)
+    if n_samples > windows.shape[0]:
+        raise ValueError(
+            f"calibration_samples={n_samples} exceeds the {windows.shape[0]} non-overlapping "
+            f"{seq_len}-token windows in {data_cfg['train_dataset']}/"
+            f"{data_cfg.get('train_split', 'train')}")
+    rng = np.random.default_rng(int(cfg.get("training", {}).get("seed", 42)))
+    pick = rng.permutation(windows.shape[0])[:n_samples]
+    pick.sort()
+    print(f"[Data] calibration: {n_samples} in-domain LM windows x {seq_len} tokens "
+          f"({n_samples * seq_len} tokens) from {data_cfg['train_dataset']}/"
+          f"{data_cfg.get('train_split', 'train')}, seeded draw from "
+          f"{windows.shape[0]} non-overlapping windows")
+    return _lm_dataset(windows[pick])
+
+
+def is_lm_task(cfg: dict) -> bool:
+    """True when data.task_type selects the raw-text causal-LM pipeline."""
+    return str(cfg.get("data", {}).get("task_type", "instruction")).lower() == "lm"
+
+
+# ============================================================================
 # Main entry
 # ============================================================================
 
@@ -345,6 +539,10 @@ def load_dataset_for_training(
     """
     data_cfg = cfg["data"]
     num_proc = int(data_cfg.get("num_proc", 32))
+
+    # data.task_type: lm -> raw text, no PROMPT, no mask, fixed-length blocks (see above).
+    if is_lm_task(cfg):
+        return _load_lm_for_training(cfg, tokenizer)
 
     train_raw, fields = _prepare_raw(cfg, data_cfg.get("train_split", "train"))
     if train_raw is None:
@@ -434,6 +632,11 @@ def load_calibration_data(
     cal_seq_len = sqat_cfg["calibration_seq_len"]
     sampling = str(sqat_cfg.get("calibration_sampling", "first"))
     source = sqat_cfg.get("calibration_source")
+    # A task_type=lm dataset calibrates on its OWN text, cut the same way its training blocks
+    # are. calibration_source still wins when set, because "generic C4 text vs the task's own
+    # text" is exactly the ablation this switch exists for.
+    if source is None and is_lm_task(cfg):
+        return _load_lm_calibration(cfg, tokenizer)
     if source:
         # GENERIC-TEXT calibration (the GPTQ-paper recipe): a JSON list of raw strings (e.g.
         # datasets/c4_calib_1024.json), concatenated with EOS and cut into calibration_seq_len

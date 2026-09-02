@@ -75,7 +75,8 @@ done
 case "$DATASET_NAME" in
     commonsense) DATA_PATH="datasets/commonsense" ;;
     math)        DATA_PATH="datasets/metamath" ;;
-    *) echo "ERROR: --dataset must be 'commonsense' or 'math' (got '$DATASET_NAME')"; exit 1 ;;
+    wikitext2)   DATA_PATH="datasets/wikitext2" ;;
+    *) echo "ERROR: --dataset must be 'commonsense', 'math' or 'wikitext2' (got '$DATASET_NAME')"; exit 1 ;;
 esac
 [ -d "$DATA_PATH" ] || { echo "ERROR: missing dataset dir $DATA_PATH"; exit 1; }
 
@@ -87,8 +88,6 @@ MODEL_PATH="${MODEL_PATH%/}"
 VLLM_MODEL_DIR="${MODEL_PATH}-vllm"
 RESPONSE_FILE="${OUTPUT_DIR}/${TAG}.jsonl"
 SUMMARY_FILE="${OUTPUT_DIR}/${TAG}.json"
-
-mkdir -p "$OUTPUT_DIR"
 
 # `conda activate` reads variables (PS1, ...) that `set -u` treats as fatal, so every hop is
 # wrapped. Failing to find conda here is a setup error, not something to discover halfway
@@ -118,6 +117,55 @@ activate_env() {
     set -u
 }
 deactivate_env() { set +u; conda deactivate; set -u; }
+
+mkdir -p "$OUTPUT_DIR"
+
+# ---------------------------------------------------------------------------
+# PERPLEXITY BRANCH — wikitext2
+#
+# WikiText-2 is a raw-text causal-LM task: there is no prompt, no generation and no answer to
+# extract, so none of the three stages below apply. It is scored by scripts/eval_ppl.py, in the
+# TRAIN env, with the GPTQ lineage's protocol (see that script's header).
+#
+# It also does NOT need the fold: eval_ppl.py registers the boundary gathers itself, so a
+# SALT-Q / SQAT-permute export is scored in exactly the shape it is exported in, with no second
+# checkpoint standing between the artifact and its number.
+#
+# This lives here rather than in each method's pipeline because runs/eval_vllm.sh is the single
+# seam all four pipelines (saltq / qalora / qlora / qeft) already call with the same arguments;
+# putting the dispatch anywhere else would mean four copies of it.
+# ---------------------------------------------------------------------------
+if [ "$DATASET_NAME" = "wikitext2" ]; then
+    if [ -n "$SUB_TASK" ]; then
+        echo "ERROR: --sub_task has no meaning for wikitext2 (there are no tasks, only text)" >&2
+        exit 1
+    fi
+    OUTPUT_DIR="${OUTPUT_DIR/_vllm/_ppl}"
+    mkdir -p "$OUTPUT_DIR"
+    echo "============================================================"
+    echo "  Perplexity evaluation (wikitext-2-raw-v1 test, GPTQ protocol)"
+    echo "  Model:     $MODEL_PATH"
+    echo "  Output:    ${OUTPUT_DIR}/${TAG}.json"
+    echo "============================================================"
+    activate_env "$TRAIN_ENV"
+    # set +e so a failure still hops back out of the env with its own status, instead of
+    # `set -e` exiting mid-env and leaving rc unassigned.
+    set +e
+    # shellcheck disable=SC2086
+    python scripts/eval_ppl.py \
+        --model_path "$MODEL_PATH" \
+        --data       "$DATA_PATH" \
+        --split      test \
+        --seq_len    "${PPL_SEQ_LEN:-1024}" \
+        --also_seq_len ${PPL_ALSO_SEQ_LEN:-2048} \
+        --tag        "$TAG" \
+        --output_dir "$OUTPUT_DIR"
+    rc=$?
+    set -e
+    deactivate_env
+    exit $rc
+fi
+
 
 echo "============================================================"
 echo "  Generative evaluation (vLLM)"

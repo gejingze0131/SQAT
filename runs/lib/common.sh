@@ -30,7 +30,12 @@ dataset_dir_for() {
     case "$1" in
         math)        echo "datasets/metamath" ;;
         commonsense) echo "datasets/commonsense" ;;
-        *) echo "ERROR: unknown --dataset '$1' (expected math or commonsense)" >&2; return 1 ;;
+        # wikitext2 is a RAW-TEXT causal-LM task (data.task_type: lm) scored by perplexity, not
+        # by generation + exact match. runs/eval_vllm.sh dispatches it to scripts/eval_ppl.py;
+        # everything upstream of eval -- the config/dataset agreement check included -- is the
+        # same as for the other two.
+        wikitext2)   echo "datasets/wikitext2" ;;
+        *) echo "ERROR: unknown --dataset '$1' (expected math, commonsense or wikitext2)" >&2; return 1 ;;
     esac
 }
 

@@ -250,12 +250,57 @@ def _rows_from_vllm_json(payload: dict, path: str, cfg: Optional[dict],
     return rows
 
 
+def _rows_from_ppl_json(payload: dict, path: str, cfg: Optional[dict],
+                        note: str) -> List[Dict[str, object]]:
+    """Ingest a scripts/eval_ppl.py summary (teacher-forced perplexity on raw text).
+
+    A THIRD source alongside "lm-eval" and "vllm-generative", and it has to stay a third: the
+    other two are accuracies where higher is better, this is a perplexity where lower is. A row
+    that did not name its source would invite a mean across the two.
+
+    One row per window length, with the length IN the task name ("wikitext2@1024") because
+    perplexity is not comparable across sequence lengths — that is the whole reason the length
+    is pinned and disclosed.
+    """
+    conf = payload.get("config", {}) or {}
+    model_dir = conf.get("model_path", "")
+    ctx = _run_context(model_dir, cfg)
+    ctx.update(
+        source="ppl",
+        timestamp=payload.get("timestamp", ""),
+        method=_infer_method(model_dir),
+        model_dir=model_dir,
+        dataset=conf.get("dataset", ""),
+        num_fewshot=0,
+        result_json=path,
+        note=note,
+    )
+
+    rows: List[Dict[str, object]] = []
+    for key, metrics in (payload.get("results", {}) or {}).items():
+        if not isinstance(metrics, dict) or not key.startswith("seq_len_"):
+            continue
+        seq_len = key[len("seq_len_"):]
+        for metric in ("ppl", "ppl_exact"):
+            if metric not in metrics:
+                continue
+            row = dict(ctx)
+            row["task"] = f"{conf.get('dataset', 'ppl')}@{seq_len}"
+            row["metric"] = metric
+            row["value"] = metrics[metric]
+            row["stderr"] = ""
+            rows.append(row)
+    return rows
+
+
 def _rows_from_json(path: str, cfg: Optional[dict], note: str) -> List[Dict[str, object]]:
     with open(path, encoding="utf-8") as f:
         payload = json.load(f)
 
     if payload.get("source") == "vllm-generative":
         return _rows_from_vllm_json(payload, path, cfg, note)
+    if payload.get("source") == "ppl":
+        return _rows_from_ppl_json(payload, path, cfg, note)
 
     conf = payload.get("config", {})
     model_dir = conf.get("model_path", "")

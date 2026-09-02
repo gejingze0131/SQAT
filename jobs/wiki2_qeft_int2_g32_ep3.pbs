@@ -1,0 +1,35 @@
+#!/bin/bash
+#PBS -N wiki2_qeft_int2
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+# =============================================================================
+# T2 Wiki2 column, arm QEFT. INT2 g32 k=256, weak-column lr 9.35e-5 = 5.0e-5 x sqrt(1845/528).
+# 5e-5 (not the paper-law lr) is what every QEFT row in this repo uses — the paper value
+# under-trains by 10-20 points; see the config header.
+#
+# Stage 0 builds a fresh mixed-precision base on this task's 524,288 in-domain WikiText-2 train
+# tokens. --with_base also scores the bare base: a pretrained Llama-2 that never saw WikiText-2
+# fine-tuning, i.e. this row's OWN floor, not the column's.
+#
+# Scored: INT2 codes + 256 fp16 weak columns per linear = 2.75 effective bits. NOT a pure 2-bit
+# row; the table must label it "2 + fp16" exactly as T1 and T2 do.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+bash runs/qeft/run_qeft_wikitext2.sh \
+    --bits       2 \
+    --group_size 32 \
+    --with_base \
+    --num_gpus   4 \
+    --note       "T2 Wiki2: WikiText-2 fine-tuning, 2+fp16 mixed-precision artifact, weak lr 5e-5 x sqrt(1845/528)" \
+    > logs/wikitext2/qeft_wiki2_int2_g32_ep3.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

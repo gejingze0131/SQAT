@@ -1,0 +1,56 @@
+#!/bin/bash
+#PBS -N wiki2_qlora_floor
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=3:00:00
+#PBS -j oe
+# =============================================================================
+# T2 Wiki2 column, arm FLOOR: QLoRA -> merged fp16 -> GPTQ INT2 g32.
+#
+# The "fine-tune in full precision, then post-hoc quantize" deployment bound. It pairs with the
+# fp16 upper bound produced by jobs/wiki2_qlora_int2_g32_ep3_upper.pbs — same checkpoint, one
+# extra step — so the pair brackets every QAT-in-the-loop arm of the column, and the distance
+# between them is exactly the merge damage the paper is about. Same construction as the CS
+# floor (calib-D 66.22) and the MetaMath floor (GSM8K 22.06).
+#
+# Calibration: 256 x 2048 = 524,288 in-domain WikiText-2 TRAIN tokens (nsamples ==
+# calibration_samples, the bcal rule), the same budget and the same text every other arm of the
+# column calibrates on. So the floor is not handicapped by a calibration choice — the only thing
+# separating it from the QAT arms is when the quantization happened.
+#
+# CHAIN THIS AFTER THE UPPER-BOUND JOB:
+#   up=$(qsub jobs/wiki2_qlora_int2_g32_ep3_upper.pbs)
+#   qsub -W depend=afterok:$up jobs/wiki2_qlora_int2_floor.pbs
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+
+SRC=outputs/qlora_none_wiki2_int2_g32_ep3-2bit-none-merged-eval
+DST=outputs/qlora_none_wiki2_int2_g32_ep3-2bit-none-gptq-eval
+if [ ! -f "$SRC/config.json" ]; then
+    echo "ERROR: $SRC not found — run jobs/wiki2_qlora_int2_g32_ep3_upper.pbs first."; exit 1
+fi
+
+python scripts/export_gptq_dequant.py \
+    --model_path "$SRC" --output_dir "$DST" \
+    --config configs/qlora_none_wiki2_int2_g32_ep3.yaml \
+    --bits 2 --group_size 32 \
+    --nsamples 256 --calibration_samples 256 --calibration_seq_len 2048 \
+    --batch_size 2 \
+    2>&1 | tee logs/wikitext2/qlora_wiki2_gptq_int2_export.log
+
+bash runs/eval_vllm.sh --model_path "$DST" --dataset wikitext2 --gpus 0 \
+    --tag "$(basename $DST)" > logs/wikitext2/qlora_wiki2_gptq_int2_ppl.log 2>&1
+echo "floor ppl rc=$?"
+
+python scripts/collect_saltq_results.py \
+    --results_dir results/wikitext2_ppl --csv results_saltq.csv \
+    --config configs/qlora_none_wiki2_int2_g32_ep3.yaml \
+    --note "T2 Wiki2 floor: QLoRA merged fp16 -> GPTQ INT2 g32, in-domain 0.5M-token calibration"
+echo "End time: $(date)"

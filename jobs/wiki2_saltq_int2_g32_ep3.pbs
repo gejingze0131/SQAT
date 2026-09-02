@@ -1,0 +1,36 @@
+#!/bin/bash
+#PBS -N wiki2_saltq_int2
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=16:00:00
+#PBS -j oe
+# =============================================================================
+# T2 Wiki2 column, arm SALT-Q. INT2 g32, k=256, salient_init=gptq_latent, zp_lr x2 — the same
+# method configuration as the CS cell (MEAN(8) 74.76) and the MetaMath cell (GSM8K 56.33),
+# transported to WikiText-2 by the data block, 3 epochs at effective batch 16, and the
+# sqrt(T_ref/T_here) = 1.8693 lr law. See the config header for all three.
+#
+# Offline stages (rank 0, automatic): permuted_fp16_base (~13 GB) and saltq_base_2bit_g32, both
+# calibrated on 256 x 2048 = 524,288 in-domain WikiText-2 train tokens. They are TASK-specific:
+# saliency is an activation statistic, so the commonsense/metamath bases must NOT be reused.
+#
+# Scored: the exported unified low-bit checkpoint (identity merge), perplexity on
+# wikitext-2-raw-v1 test at seq_len 1024 and 2048, by scripts/eval_ppl.py. No vLLM in this path.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+bash runs/saltq/run_saltq_wikitext2.sh \
+    --bits             2 \
+    --num_gpus         4 \
+    --output_root      outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x \
+    --train_layernorms false \
+    --note             "T2 Wiki2: WikiText-2 fine-tuning, deployed artifact, in-domain 0.5M-token calibration, lr x sqrt(1845/528)" \
+    > logs/wikitext2/saltq_wiki2_int2_g32_ep3.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"
