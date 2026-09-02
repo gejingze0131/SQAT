@@ -132,7 +132,7 @@ GSM8K/MATH500: MetaMath 微调;Wiki2: 在 train split 微调报 test PPL(LoftQ/A
 | LoTA-QAF | 2 | 32 | — | — | — |
 | QWHA | 2 | 32 | — | — | — |
 | **SALT-Q** | 2 | 32 | **40.94** | — | — |
-| **SALT-Q**(span bcal gptq_latent,CS 经验 lr,zp×2,balanced 1k 校准) | 2 | 32 | **56.33**(旧格 40.94) | — | — |
+| **SALT-Q**(span bcal gptq_latent,CS 经验 lr,zp×2,balanced 1k 校准) | 2 | 32 | **56.33**(旧格 40.94;补评 MATH **13.68**,全格最高、超 fp16 参考 10.64;复验 gsm8k 56.48,job 16045646) | — | — |
 | QLoRA fp16 上限(同 recipe,lr 2e-4,span) | 16 | — | **58.07**(MATH 10.64) | — | — |
 | QLoRA→GPTQ floor(58.07 merged ckpt 经 balanced 1k 校准 GPTQ INT2 g32) | 2 | 32 | **22.06**(MATH 2.16;健康生成,1319 distinct,非坏文件) | — | — |
 | QA-LoRA(同 recipe,lr 5e-3,balanced 1k 基座) | 2 | 32 | **52.54**(MATH 11.04;train_loss 0.2646) | — | — |
