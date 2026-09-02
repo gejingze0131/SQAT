@@ -1,0 +1,10 @@
+============================================================
+  QA-LoRA (qat_mode=qalora) Pipeline
+  Config:      configs/qalora_wiki2_int2_g32_ep1.yaml
+  Model:       meta-llama/Llama-2-7b-hf
+  GPUs:        4 (train) / cuda:0 (export) / [0,1,2,3] (eval, vLLM tensor-parallel)
+  Bits:        2  (affine asymmetric, group-wise)
+  Output dir:  outputs/qalora_wiki2_int2_g32_ep1
+============================================================
+
+>>> Stage 1: QA-LoRA 2-bit training
