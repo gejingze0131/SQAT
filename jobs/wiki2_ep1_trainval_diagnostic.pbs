@@ -1,0 +1,83 @@
+#!/bin/bash
+#PBS -N wiki2_ep1_diag
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=2:00:00
+#PBS -j oe
+# =============================================================================
+# The same train/validation diagnostic, on the 1-EPOCH artifacts.
+#
+# WHY IT IS NEEDED AGAIN. The 1-epoch cell improved every arm, and most where the 3-epoch cell
+# overfit most (SALT-Q -3.15, QA-LoRA -2.52, QEFT -0.66, fp16 upper -0.24), which is the
+# predicted signature. But the ordering among the 2.00-bit arms did NOT invert: QA-LoRA 6.296
+# still leads SALT-Q 7.002, gap narrowed 1.34 -> 0.71.
+#
+# The HF `train_loss` numbers CANNOT settle whether overfitting is gone. They are averages over
+# the whole run, so a 176-step run is dominated by its warmup while a 528-step run averages three
+# passes; the 1-epoch ordering (SALT-Q 2.112 > QA-LoRA 1.942 > QEFT 1.888 > QLoRA 1.666) is not
+# comparable with the 3-epoch one. Only the FINAL artifact's in-sample perplexity is, and that is
+# what this measures — the identical protocol, the identical 166 train windows.
+#
+# READ IT AS: has SALT-Q's test/train ratio come down from 6.75x toward the fp16 arm's 1.30x? If
+# yes, the residual gap to QA-LoRA is a quantization result and can be reported as one. If the
+# ratio is still high, the next lever is displacement (do NOT transport the lr) — a separate cell.
+#
+# NOT rows of the T2 table. results/wikitext2_ppl_diagnostic_ep1/.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+
+run_arm () {   # run_arm <tag> <model_dir>
+    local tag="$1" dir="$2"
+    if [ ! -f "$dir/config.json" ]; then echo ">>> SKIP $tag: no config.json at $dir"; return; fi
+    echo -e "\n============ $tag :: TRAIN split (in-sample, first 166 windows) ============"
+    python scripts/eval_ppl.py --model_path "$dir" --data datasets/wikitext2 --split train \
+        --seq_len 2048 --max_windows 166 --tag "${tag}__train166" \
+        --output_dir results/wikitext2_ppl_diagnostic_ep1 \
+        --note "DIAGNOSTIC, not a T2 row: in-sample train-split PPL, first 166 windows"
+    echo -e "\n============ $tag :: VALIDATION split (held out) ============"
+    python scripts/eval_ppl.py --model_path "$dir" --data datasets/wikitext2 --split validation \
+        --seq_len 2048 --tag "${tag}__validation" \
+        --output_dir results/wikitext2_ppl_diagnostic_ep1 \
+        --note "DIAGNOSTIC, not a T2 row: second held-out split, cross-check on test"
+}
+
+run_arm saltq_ep1   outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval
+run_arm qalora_ep1  outputs/qalora_wiki2_int2_g32_ep1-2bit-qalora-dequant-eval
+run_arm qlora_upper_fp16_ep1 outputs/qlora_none_wiki2_int2_g32_ep1-2bit-none-merged-eval
+run_arm gptq_floor_ep1       outputs/qlora_none_wiki2_int2_g32_ep1-2bit-none-gptq-eval
+run_arm qeft_ep1    outputs/qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval
+
+echo -e "\n>>> Summary: train / validation / test, and the train->test ratio"
+python - <<'PY'
+import glob, json, os
+TEST = {}
+for p in glob.glob("results/wikitext2_ppl/*.json"):
+    r = json.load(open(p)); d = r["config"]["model_path"]
+    if "seq_len_2048" in r["results"]:
+        TEST[os.path.basename(d)] = r["results"]["seq_len_2048"]["ppl"]
+DIRS = {
+    "saltq_ep1": "saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval",
+    "qalora_ep1": "qalora_wiki2_int2_g32_ep1-2bit-qalora-dequant-eval",
+    "qlora_upper_fp16_ep1": "qlora_none_wiki2_int2_g32_ep1-2bit-none-merged-eval",
+    "gptq_floor_ep1": "qlora_none_wiki2_int2_g32_ep1-2bit-none-gptq-eval",
+    "qeft_ep1": "qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval",
+}
+def get(tag, suffix):
+    p = f"results/wikitext2_ppl_diagnostic_ep1/{tag}__{suffix}.json"
+    if not os.path.exists(p): return None
+    return json.load(open(p))["results"]["seq_len_2048"]["ppl"]
+print(f"{'arm':<18} {'train166':>9} {'valid':>9} {'test':>9} {'test/train':>11}")
+for tag, d in DIRS.items():
+    tr, va, te = get(tag, "train166"), get(tag, "validation"), TEST.get(d)
+    f = lambda x: f"{x:9.4f}" if x is not None else "        -"
+    ratio = f"{te/tr:11.2f}" if (tr and te) else "          -"
+    print(f"{tag:<18} {f(tr)} {f(va)} {f(te)} {ratio}")
+PY
+echo "End time: $(date)"

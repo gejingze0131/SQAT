@@ -1,0 +1,175 @@
+============================================================
+  QEFT — Quantization for Efficient Fine-Tuning (baseline)
+  Config:     baseline/QEFT/sqat/configs/qeft_wiki2_int2_g32_ep1_lr16e5.yaml
+  Dataset:    wikitext2
+  Bits:       INT2 g32, k=256 fp16 weak columns (asym, bcal)
+  Base:       outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_wiki2
+  Output dir: outputs/qeft_wiki2_int2_g32_ep1_lr16e5
+  GPUs:       4 (train) / [0,1,2,3] (eval)
+============================================================
+
+>>> Stage 0: QEFT base — global weak columns + GPTQ (balanced in-domain calibration)
+[QEFT] base already at outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_wiki2 (settings match) — skipping
+
+>>> Stage 1: QEFT weak-column tuning
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   9%|▊         | 25/291 [00:00<00:01, 233.94it/s]Loading weights:  13%|█▎        | 37/291 [00:00<00:00, 353.24it/s]Loading weights:  11%|█▏        | 33/291 [00:00<00:00, 265.78it/s]Loading weights:  16%|█▋        | 48/291 [00:00<00:01, 239.24it/s]Loading weights:  17%|█▋        | 50/291 [00:00<00:01, 217.12it/s]Loading weights:  21%|██        | 60/291 [00:00<00:00, 238.54it/s]Loading weights:  25%|██▌       | 73/291 [00:00<00:00, 300.36it/s]Loading weights:  38%|███▊      | 112/291 [00:00<00:00, 400.54it/s]Loading weights:  38%|███▊      | 112/291 [00:00<00:00, 381.97it/s]Loading weights:  44%|████▎     | 127/291 [00:00<00:00, 409.27it/s]Loading weights:  45%|████▍     | 130/291 [00:00<00:00, 394.09it/s]Loading weights:  64%|██████▍   | 187/291 [00:00<00:00, 505.09it/s]Loading weights:  65%|██████▍   | 188/291 [00:00<00:00, 517.34it/s]Loading weights:  68%|██████▊   | 198/291 [00:00<00:00, 507.60it/s]Loading weights:  71%|███████▏  | 208/291 [00:00<00:00, 532.01it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 555.20it/s]
+Loading weights: 100%|██████████| 291/291 [00:00<00:00, 535.49it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 569.24it/s]
+
+Loading weights: 100%|██████████| 291/291 [00:00<00:00, 540.63it/s]
+[QEFT] 224 QEFTLinear layers | trainable 348.1M / 7086.5M (4.91%) | k=256 INT2 g32
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[QEFT] 224 QEFTLinear layers | trainable 348.1M / 7086.5M (4.91%) | k=256 INT2 g32
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[QEFT] 224 QEFTLinear layers | trainable 348.1M / 7086.5M (4.91%) | k=256 INT2 g32
+==============================================================================
+  QEFT — weak column tuning | INT2 g32 k=256 | fp16 share 5.38% (2.75 effective bits)
+  base   outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_wiki2
+  lr     0.000162   eff batch 16   epochs 1
+  out    outputs/qeft_wiki2_int2_g32_ep1_lr16e5
+==============================================================================
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[Data] lm datasets/wikitext2/train: 2874559 tokens -> 2807 x 1024 blocks (every token supervised)
+/home/users/nus/jingzege/miniforge3/envs/saltq/lib/python3.11/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+[rank0]:[W903 03:50:22.167139058 ProcessGroupNCCL.cpp:5188] Guessing device ID based on global rank. This can cause a hang if rank to GPU mapping is heterogeneous. You can specify device_id in init_process_group()
+[QEFT] 224 QEFTLinear layers | trainable 348.1M / 7086.5M (4.91%) | k=256 INT2 g32
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[Data] lm datasets/wikitext2/train: 2874559 tokens -> 2807 x 1024 blocks (every token supervised)
+[Data] lm datasets/wikitext2/train: 2874559 tokens -> 2807 x 1024 blocks (every token supervised)
+[Data] lm datasets/wikitext2/train: 2874559 tokens -> 2807 x 1024 blocks (every token supervised)
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'pad_token_id': 2}.
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'pad_token_id': 2}.
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'pad_token_id': 2}.
+[transformers] The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'pad_token_id': 2}.
+  0%|          | 0/176 [00:00<?, ?it/s]  1%|          | 1/176 [00:01<05:27,  1.87s/it]  1%|          | 2/176 [00:02<04:08,  1.43s/it]  2%|▏         | 3/176 [00:04<03:42,  1.28s/it]  2%|▏         | 4/176 [00:05<03:29,  1.22s/it]  3%|▎         | 5/176 [00:06<03:22,  1.18s/it]  3%|▎         | 6/176 [00:07<03:17,  1.16s/it]  4%|▍         | 7/176 [00:08<03:13,  1.15s/it]  5%|▍         | 8/176 [00:09<03:11,  1.14s/it]  5%|▌         | 9/176 [00:10<03:09,  1.13s/it]  6%|▌         | 10/176 [00:11<03:07,  1.13s/it]                                                {'loss': '2.037', 'grad_norm': '1.854', 'learning_rate': '0.0001619', 'epoch': '0.05682'}
+  6%|▌         | 10/176 [00:11<03:07,  1.13s/it]  6%|▋         | 11/176 [00:13<03:05,  1.13s/it]  7%|▋         | 12/176 [00:14<03:04,  1.13s/it]  7%|▋         | 13/176 [00:15<03:03,  1.12s/it]  8%|▊         | 14/176 [00:16<03:02,  1.12s/it]  9%|▊         | 15/176 [00:17<03:00,  1.12s/it]  9%|▉         | 16/176 [00:18<02:59,  1.12s/it] 10%|▉         | 17/176 [00:19<02:58,  1.12s/it] 10%|█         | 18/176 [00:20<02:57,  1.12s/it] 11%|█         | 19/176 [00:22<02:56,  1.12s/it] 11%|█▏        | 20/176 [00:23<02:55,  1.12s/it]                                                {'loss': '1.958', 'grad_norm': '1.659', 'learning_rate': '0.0001597', 'epoch': '0.1136'}
+ 11%|█▏        | 20/176 [00:23<02:55,  1.12s/it] 12%|█▏        | 21/176 [00:24<02:53,  1.12s/it] 12%|█▎        | 22/176 [00:25<02:52,  1.12s/it] 13%|█▎        | 23/176 [00:26<02:51,  1.12s/it] 14%|█▎        | 24/176 [00:27<02:50,  1.12s/it] 14%|█▍        | 25/176 [00:28<02:49,  1.12s/it] 15%|█▍        | 26/176 [00:29<02:48,  1.12s/it] 15%|█▌        | 27/176 [00:31<02:47,  1.12s/it] 16%|█▌        | 28/176 [00:32<02:46,  1.12s/it] 16%|█▋        | 29/176 [00:33<02:45,  1.12s/it] 17%|█▋        | 30/176 [00:34<02:43,  1.12s/it]                                                {'loss': '1.929', 'grad_norm': '1.7', 'learning_rate': '0.0001548', 'epoch': '0.1705'}
+ 17%|█▋        | 30/176 [00:34<02:43,  1.12s/it] 18%|█▊        | 31/176 [00:35<02:42,  1.12s/it] 18%|█▊        | 32/176 [00:36<02:41,  1.12s/it] 19%|█▉        | 33/176 [00:37<02:40,  1.12s/it] 19%|█▉        | 34/176 [00:38<02:41,  1.13s/it] 20%|█▉        | 35/176 [00:40<02:39,  1.13s/it] 20%|██        | 36/176 [00:41<02:38,  1.13s/it] 21%|██        | 37/176 [00:42<02:36,  1.13s/it] 22%|██▏       | 38/176 [00:43<02:35,  1.13s/it] 22%|██▏       | 39/176 [00:44<02:34,  1.13s/it] 23%|██▎       | 40/176 [00:45<02:33,  1.13s/it]                                                {'loss': '1.934', 'grad_norm': '1.613', 'learning_rate': '0.0001474', 'epoch': '0.2273'}
+ 23%|██▎       | 40/176 [00:45<02:33,  1.13s/it] 23%|██▎       | 41/176 [00:46<02:31,  1.13s/it] 24%|██▍       | 42/176 [00:47<02:30,  1.13s/it] 24%|██▍       | 43/176 [00:49<02:29,  1.13s/it] 25%|██▌       | 44/176 [00:50<02:28,  1.13s/it] 26%|██▌       | 45/176 [00:51<02:27,  1.13s/it] 26%|██▌       | 46/176 [00:52<02:26,  1.13s/it] 27%|██▋       | 47/176 [00:53<02:25,  1.13s/it] 27%|██▋       | 48/176 [00:54<02:23,  1.12s/it] 28%|██▊       | 49/176 [00:55<02:22,  1.12s/it] 28%|██▊       | 50/176 [00:56<02:21,  1.12s/it]                                                {'loss': '1.954', 'grad_norm': '1.54', 'learning_rate': '0.0001377', 'epoch': '0.2841'}
+ 28%|██▊       | 50/176 [00:56<02:21,  1.12s/it] 29%|██▉       | 51/176 [00:58<02:20,  1.12s/it] 30%|██▉       | 52/176 [00:59<02:19,  1.13s/it] 30%|███       | 53/176 [01:00<02:18,  1.13s/it] 31%|███       | 54/176 [01:01<02:17,  1.13s/it] 31%|███▏      | 55/176 [01:02<02:16,  1.13s/it] 32%|███▏      | 56/176 [01:03<02:15,  1.13s/it] 32%|███▏      | 57/176 [01:04<02:13,  1.13s/it] 33%|███▎      | 58/176 [01:05<02:12,  1.13s/it] 34%|███▎      | 59/176 [01:07<02:11,  1.13s/it] 34%|███▍      | 60/176 [01:08<02:10,  1.13s/it]                                                {'loss': '1.899', 'grad_norm': '1.461', 'learning_rate': '0.0001262', 'epoch': '0.3409'}
+ 34%|███▍      | 60/176 [01:08<02:10,  1.13s/it] 35%|███▍      | 61/176 [01:09<02:09,  1.13s/it] 35%|███▌      | 62/176 [01:10<02:08,  1.13s/it] 36%|███▌      | 63/176 [01:11<02:07,  1.13s/it] 36%|███▋      | 64/176 [01:12<02:06,  1.13s/it] 37%|███▋      | 65/176 [01:13<02:05,  1.13s/it] 38%|███▊      | 66/176 [01:14<02:03,  1.13s/it] 38%|███▊      | 67/176 [01:16<02:02,  1.13s/it] 39%|███▊      | 68/176 [01:17<02:01,  1.13s/it] 39%|███▉      | 69/176 [01:18<02:00,  1.13s/it] 40%|███▉      | 70/176 [01:19<02:04,  1.17s/it]                                                {'loss': '1.867', 'grad_norm': '1.525', 'learning_rate': '0.000113', 'epoch': '0.3977'}
+ 40%|███▉      | 70/176 [01:19<02:04,  1.17s/it] 40%|████      | 71/176 [01:20<02:01,  1.16s/it] 41%|████      | 72/176 [01:21<01:59,  1.15s/it] 41%|████▏     | 73/176 [01:22<01:57,  1.14s/it] 42%|████▏     | 74/176 [01:24<01:55,  1.14s/it] 43%|████▎     | 75/176 [01:25<01:54,  1.13s/it] 43%|████▎     | 76/176 [01:26<01:53,  1.13s/it] 44%|████▍     | 77/176 [01:27<01:51,  1.13s/it] 44%|████▍     | 78/176 [01:28<01:50,  1.13s/it] 45%|████▍     | 79/176 [01:29<01:49,  1.13s/it] 45%|████▌     | 80/176 [01:30<01:48,  1.13s/it]                                                {'loss': '1.899', 'grad_norm': '1.446', 'learning_rate': '9.882e-05', 'epoch': '0.4545'}
+ 45%|████▌     | 80/176 [01:30<01:48,  1.13s/it] 46%|████▌     | 81/176 [01:31<01:47,  1.13s/it] 47%|████▋     | 82/176 [01:33<01:45,  1.13s/it] 47%|████▋     | 83/176 [01:34<01:44,  1.13s/it] 48%|████▊     | 84/176 [01:35<01:43,  1.13s/it] 48%|████▊     | 85/176 [01:36<01:42,  1.13s/it] 49%|████▉     | 86/176 [01:37<01:41,  1.13s/it] 49%|████▉     | 87/176 [01:38<01:40,  1.13s/it] 50%|█████     | 88/176 [01:39<01:39,  1.13s/it] 51%|█████     | 89/176 [01:40<01:38,  1.13s/it] 51%|█████     | 90/176 [01:42<01:36,  1.13s/it]                                                {'loss': '1.863', 'grad_norm': '1.371', 'learning_rate': '8.399e-05', 'epoch': '0.5114'}
+ 51%|█████     | 90/176 [01:42<01:36,  1.13s/it] 52%|█████▏    | 91/176 [01:43<01:35,  1.13s/it] 52%|█████▏    | 92/176 [01:44<01:34,  1.13s/it] 53%|█████▎    | 93/176 [01:45<01:33,  1.13s/it] 53%|█████▎    | 94/176 [01:46<01:32,  1.13s/it] 54%|█████▍    | 95/176 [01:47<01:31,  1.13s/it] 55%|█████▍    | 96/176 [01:48<01:30,  1.13s/it] 55%|█████▌    | 97/176 [01:50<01:28,  1.13s/it] 56%|█████▌    | 98/176 [01:51<01:27,  1.13s/it] 56%|█████▋    | 99/176 [01:52<01:26,  1.13s/it] 57%|█████▋    | 100/176 [01:53<01:25,  1.13s/it]                                                 {'loss': '1.906', 'grad_norm': '1.328', 'learning_rate': '6.907e-05', 'epoch': '0.5682'}
+ 57%|█████▋    | 100/176 [01:53<01:25,  1.13s/it] 57%|█████▋    | 101/176 [01:54<01:25,  1.14s/it] 58%|█████▊    | 102/176 [01:55<01:23,  1.13s/it] 59%|█████▊    | 103/176 [01:56<01:22,  1.13s/it] 59%|█████▉    | 104/176 [01:57<01:21,  1.13s/it] 60%|█████▉    | 105/176 [01:59<01:20,  1.13s/it] 60%|██████    | 106/176 [02:00<01:19,  1.13s/it] 61%|██████    | 107/176 [02:01<01:17,  1.13s/it] 61%|██████▏   | 108/176 [02:02<01:16,  1.13s/it] 62%|██████▏   | 109/176 [02:03<01:15,  1.13s/it] 62%|██████▎   | 110/176 [02:04<01:14,  1.13s/it]                                                 {'loss': '1.869', 'grad_norm': '1.419', 'learning_rate': '5.455e-05', 'epoch': '0.625'}
+ 62%|██████▎   | 110/176 [02:04<01:14,  1.13s/it] 63%|██████▎   | 111/176 [02:05<01:13,  1.13s/it] 64%|██████▎   | 112/176 [02:06<01:12,  1.13s/it] 64%|██████▍   | 113/176 [02:08<01:11,  1.13s/it] 65%|██████▍   | 114/176 [02:09<01:09,  1.13s/it] 65%|██████▌   | 115/176 [02:10<01:08,  1.13s/it] 66%|██████▌   | 116/176 [02:11<01:07,  1.13s/it] 66%|██████▋   | 117/176 [02:12<01:06,  1.13s/it] 67%|██████▋   | 118/176 [02:13<01:05,  1.13s/it] 68%|██████▊   | 119/176 [02:14<01:04,  1.13s/it] 68%|██████▊   | 120/176 [02:15<01:03,  1.13s/it]                                                 {'loss': '1.806', 'grad_norm': '1.31', 'learning_rate': '4.093e-05', 'epoch': '0.6818'}
+ 68%|██████▊   | 120/176 [02:15<01:03,  1.13s/it] 69%|██████▉   | 121/176 [02:17<01:01,  1.13s/it] 69%|██████▉   | 122/176 [02:18<01:00,  1.13s/it] 70%|██████▉   | 123/176 [02:19<00:59,  1.13s/it] 70%|███████   | 124/176 [02:20<00:58,  1.13s/it] 71%|███████   | 125/176 [02:21<00:57,  1.13s/it] 72%|███████▏  | 126/176 [02:22<00:56,  1.13s/it] 72%|███████▏  | 127/176 [02:23<00:55,  1.13s/it] 73%|███████▎  | 128/176 [02:24<00:54,  1.13s/it] 73%|███████▎  | 129/176 [02:26<00:52,  1.13s/it] 74%|███████▍  | 130/176 [02:27<00:51,  1.13s/it]                                                 {'loss': '1.862', 'grad_norm': '1.483', 'learning_rate': '2.868e-05', 'epoch': '0.7386'}
+ 74%|███████▍  | 130/176 [02:27<00:51,  1.13s/it] 74%|███████▍  | 131/176 [02:28<00:50,  1.13s/it] 75%|███████▌  | 132/176 [02:29<00:49,  1.13s/it] 76%|███████▌  | 133/176 [02:30<00:48,  1.13s/it] 76%|███████▌  | 134/176 [02:31<00:47,  1.13s/it] 77%|███████▋  | 135/176 [02:32<00:46,  1.13s/it] 77%|███████▋  | 136/176 [02:33<00:45,  1.13s/it] 78%|███████▊  | 137/176 [02:35<00:43,  1.13s/it] 78%|███████▊  | 138/176 [02:36<00:42,  1.13s/it] 79%|███████▉  | 139/176 [02:37<00:41,  1.13s/it] 80%|███████▉  | 140/176 [02:38<00:40,  1.13s/it]                                                 {'loss': '1.83', 'grad_norm': '1.398', 'learning_rate': '1.821e-05', 'epoch': '0.7955'}
+ 80%|███████▉  | 140/176 [02:38<00:40,  1.13s/it] 80%|████████  | 141/176 [02:39<00:39,  1.13s/it] 81%|████████  | 142/176 [02:40<00:38,  1.13s/it] 81%|████████▏ | 143/176 [02:41<00:37,  1.13s/it] 82%|████████▏ | 144/176 [02:42<00:36,  1.13s/it] 82%|████████▏ | 145/176 [02:44<00:34,  1.13s/it] 83%|████████▎ | 146/176 [02:45<00:33,  1.13s/it] 84%|████████▎ | 147/176 [02:46<00:32,  1.13s/it] 84%|████████▍ | 148/176 [02:47<00:31,  1.13s/it] 85%|████████▍ | 149/176 [02:48<00:30,  1.13s/it] 85%|████████▌ | 150/176 [02:49<00:29,  1.13s/it]                                                 {'loss': '1.855', 'grad_norm': '1.479', 'learning_rate': '9.875e-06', 'epoch': '0.8523'}
+ 85%|████████▌ | 150/176 [02:49<00:29,  1.13s/it] 86%|████████▌ | 151/176 [02:50<00:28,  1.13s/it] 86%|████████▋ | 152/176 [02:52<00:27,  1.13s/it] 87%|████████▋ | 153/176 [02:53<00:25,  1.13s/it] 88%|████████▊ | 154/176 [02:54<00:24,  1.13s/it] 88%|████████▊ | 155/176 [02:55<00:23,  1.13s/it] 89%|████████▊ | 156/176 [02:56<00:22,  1.13s/it] 89%|████████▉ | 157/176 [02:57<00:21,  1.13s/it] 90%|████████▉ | 158/176 [02:58<00:20,  1.13s/it] 90%|█████████ | 159/176 [02:59<00:19,  1.13s/it] 91%|█████████ | 160/176 [03:01<00:18,  1.13s/it]                                                 {'loss': '1.835', 'grad_norm': '1.367', 'learning_rate': '3.964e-06', 'epoch': '0.9091'}
+ 91%|█████████ | 160/176 [03:01<00:18,  1.13s/it] 91%|█████████▏| 161/176 [03:02<00:16,  1.13s/it] 92%|█████████▏| 162/176 [03:03<00:15,  1.13s/it] 93%|█████████▎| 163/176 [03:04<00:14,  1.13s/it] 93%|█████████▎| 164/176 [03:05<00:13,  1.13s/it] 94%|█████████▍| 165/176 [03:06<00:12,  1.13s/it] 94%|█████████▍| 166/176 [03:07<00:11,  1.13s/it] 95%|█████████▍| 167/176 [03:08<00:10,  1.13s/it] 95%|█████████▌| 168/176 [03:10<00:09,  1.13s/it] 96%|█████████▌| 169/176 [03:11<00:07,  1.13s/it] 97%|█████████▋| 170/176 [03:12<00:06,  1.13s/it]                                                 {'loss': '1.839', 'grad_norm': '1.404', 'learning_rate': '6.768e-07', 'epoch': '0.9659'}
+ 97%|█████████▋| 170/176 [03:12<00:06,  1.13s/it] 97%|█████████▋| 171/176 [03:13<00:05,  1.13s/it] 98%|█████████▊| 172/176 [03:14<00:04,  1.13s/it] 98%|█████████▊| 173/176 [03:15<00:03,  1.13s/it] 99%|█████████▉| 174/176 [03:16<00:02,  1.13s/it] 99%|█████████▉| 175/176 [03:17<00:01,  1.13s/it]100%|██████████| 176/176 [03:19<00:00,  1.15s/it]                                                 {'train_runtime': '205.1', 'train_samples_per_second': '13.68', 'train_steps_per_second': '0.858', 'train_loss': '1.888', 'epoch': '1'}
+100%|██████████| 176/176 [03:25<00:00,  1.15s/it]100%|██████████| 176/176 [03:25<00:00,  1.17s/it]
+[QEFT] peak GPU 21.8 GB
+[QEFT] saved trained weak columns to outputs/qeft_wiki2_int2_g32_ep1_lr16e5/final
+[rank0]:[W903 03:53:51.028410117 ProcessGroupNCCL.cpp:1575] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+
+>>> Stage 2: dense export (+ per-layer equivalence check)
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[export] base /home/users/nus/jingzege/projects/SQAT/outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_wiki2: INT2 g32 k=256 (5.38% fp16 → 2.75 effective bits)
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 9647.41it/s]
+[QEFT] 224 QEFTLinear layers | trainable 348.1M / 7086.5M (4.91%) | k=256 INT2 g32
+[export] loaded 224 trained weak-column tensors from outputs/qeft_wiki2_int2_g32_ep1_lr16e5/final
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 8236.22it/s]
+Materializing:   0%|          | 0/224 [00:00<?, ?it/s]Materializing:   0%|          | 1/224 [00:00<00:32,  6.86it/s]Materializing:   1%|▏         | 3/224 [00:00<00:21, 10.29it/s]Materializing:   3%|▎         | 6/224 [00:00<00:13, 16.27it/s]Materializing:   4%|▎         | 8/224 [00:00<00:12, 16.93it/s]Materializing:   4%|▍         | 10/224 [00:00<00:14, 15.28it/s]Materializing:   6%|▋         | 14/224 [00:00<00:10, 20.29it/s]Materializing:   8%|▊         | 17/224 [00:01<00:12, 17.05it/s]Materializing:   9%|▉         | 21/224 [00:01<00:09, 20.61it/s]Materializing:  11%|█         | 24/224 [00:01<00:11, 17.61it/s]Materializing:  12%|█▎        | 28/224 [00:01<00:09, 21.10it/s]Materializing:  14%|█▍        | 31/224 [00:01<00:10, 17.96it/s]Materializing:  16%|█▌        | 35/224 [00:01<00:09, 20.98it/s]Materializing:  17%|█▋        | 38/224 [00:02<00:10, 17.99it/s]Materializing:  19%|█▉        | 42/224 [00:02<00:08, 20.88it/s]Materializing:  20%|██        | 45/224 [00:02<00:09, 17.92it/s]Materializing:  22%|██▏       | 49/224 [00:02<00:08, 20.84it/s]Materializing:  23%|██▎       | 52/224 [00:02<00:09, 17.94it/s]Materializing:  25%|██▍       | 55/224 [00:02<00:08, 20.07it/s]Materializing:  26%|██▌       | 58/224 [00:03<00:08, 18.91it/s]Materializing:  27%|██▋       | 61/224 [00:03<00:08, 20.15it/s]Materializing:  29%|██▊       | 64/224 [00:03<00:07, 20.73it/s]Materializing:  30%|██▉       | 67/224 [00:03<00:08, 19.05it/s]Materializing:  31%|███▏      | 70/224 [00:03<00:07, 21.33it/s]Materializing:  33%|███▎      | 73/224 [00:03<00:08, 18.28it/s]Materializing:  34%|███▍      | 77/224 [00:04<00:06, 21.85it/s]Materializing:  36%|███▌      | 80/224 [00:04<00:07, 18.15it/s]Materializing:  38%|███▊      | 84/224 [00:04<00:06, 21.35it/s]Materializing:  39%|███▉      | 87/224 [00:04<00:07, 17.97it/s]Materializing:  41%|████      | 91/224 [00:04<00:06, 21.15it/s]Materializing:  42%|████▏     | 94/224 [00:04<00:07, 17.94it/s]Materializing:  43%|████▎     | 97/224 [00:05<00:06, 20.12it/s]Materializing:  45%|████▍     | 100/224 [00:05<00:06, 18.76it/s]Materializing:  46%|████▌     | 103/224 [00:05<00:06, 19.23it/s]Materializing:  47%|████▋     | 106/224 [00:05<00:06, 19.57it/s]Materializing:  49%|████▊     | 109/224 [00:05<00:06, 18.20it/s]Materializing:  50%|█████     | 112/224 [00:05<00:05, 20.38it/s]Materializing:  51%|█████▏    | 115/224 [00:06<00:06, 17.39it/s]Materializing:  53%|█████▎    | 118/224 [00:06<00:05, 19.66it/s]Materializing:  54%|█████▍    | 121/224 [00:06<00:05, 18.30it/s]Materializing:  55%|█████▌    | 124/224 [00:06<00:05, 18.71it/s]Materializing:  57%|█████▋    | 127/224 [00:06<00:05, 19.06it/s]Materializing:  58%|█████▊    | 129/224 [00:06<00:05, 17.00it/s]Materializing:  59%|█████▉    | 132/224 [00:06<00:04, 19.68it/s]Materializing:  60%|██████    | 135/224 [00:07<00:04, 18.23it/s]Materializing:  61%|██████    | 137/224 [00:07<00:04, 18.03it/s]Materializing:  62%|██████▎   | 140/224 [00:07<00:04, 20.47it/s]Materializing:  64%|██████▍   | 143/224 [00:07<00:04, 16.98it/s]Materializing:  66%|██████▌   | 147/224 [00:07<00:03, 20.43it/s]Materializing:  67%|██████▋   | 150/224 [00:07<00:04, 17.30it/s]Materializing:  69%|██████▉   | 154/224 [00:08<00:03, 20.52it/s]Materializing:  70%|███████   | 157/224 [00:08<00:03, 17.49it/s]Materializing:  72%|███████▏  | 161/224 [00:08<00:03, 20.77it/s]Materializing:  73%|███████▎  | 164/224 [00:08<00:03, 17.65it/s]Materializing:  75%|███████▍  | 167/224 [00:08<00:02, 19.91it/s]Materializing:  76%|███████▌  | 170/224 [00:09<00:02, 18.49it/s]Materializing:  77%|███████▋  | 173/224 [00:09<00:02, 19.12it/s]Materializing:  79%|███████▊  | 176/224 [00:09<00:02, 19.53it/s]Materializing:  80%|███████▉  | 179/224 [00:09<00:02, 17.99it/s]Materializing:  82%|████████▏ | 183/224 [00:09<00:02, 19.45it/s]Materializing:  83%|████████▎ | 186/224 [00:09<00:02, 18.22it/s]Materializing:  85%|████████▍ | 190/224 [00:10<00:01, 19.61it/s]Materializing:  86%|████████▌ | 193/224 [00:10<00:01, 18.41it/s]Materializing:  88%|████████▊ | 197/224 [00:10<00:01, 19.78it/s]Materializing:  89%|████████▉ | 200/224 [00:10<00:01, 18.65it/s]Materializing:  91%|█████████ | 203/224 [00:10<00:01, 20.60it/s]Materializing:  92%|█████████▏| 206/224 [00:10<00:01, 17.63it/s]Materializing:  94%|█████████▍| 210/224 [00:11<00:00, 21.06it/s]Materializing:  95%|█████████▌| 213/224 [00:11<00:00, 18.02it/s]Materializing:  97%|█████████▋| 217/224 [00:11<00:00, 21.48it/s]Materializing:  98%|█████████▊| 220/224 [00:11<00:00, 18.34it/s]Materializing: 100%|██████████| 224/224 [00:11<00:00, 22.00it/s]Materializing: 100%|██████████| 224/224 [00:11<00:00, 19.09it/s]
+[export] 224 layers; worst relative forward error 7.80e-07 (tol 1e-04)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:15<00:00, 15.15s/it]Writing model shards: 100%|██████████| 1/1 [00:15<00:00, 15.15s/it]
+[export] wrote outputs/qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval
+
+>>> Stage 3: Generative evaluation (vLLM)
+============================================================
+  Perplexity evaluation (wikitext-2-raw-v1 test, GPTQ protocol)
+  Model:     outputs/qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval
+  Output:    results/wikitext2_ppl/qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval.json
+============================================================
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<00:55,  5.24it/s]Loading weights:   5%|▌         | 15/291 [00:00<00:04, 62.45it/s]Loading weights:   8%|▊         | 24/291 [00:00<00:03, 70.97it/s]Loading weights:  11%|█▏        | 33/291 [00:00<00:03, 74.04it/s]Loading weights:  16%|█▌        | 46/291 [00:00<00:02, 86.05it/s]Loading weights:  19%|█▉        | 56/291 [00:00<00:02, 83.53it/s]Loading weights:  23%|██▎       | 67/291 [00:00<00:02, 88.96it/s]Loading weights:  28%|██▊       | 81/291 [00:01<00:02, 94.15it/s]Loading weights:  32%|███▏      | 92/291 [00:01<00:02, 89.27it/s]Loading weights:  35%|███▌      | 103/291 [00:01<00:02, 91.07it/s]Loading weights:  39%|███▉      | 113/291 [00:01<00:01, 89.95it/s]Loading weights:  42%|████▏     | 123/291 [00:01<00:01, 90.78it/s]Loading weights:  47%|████▋     | 136/291 [00:01<00:01, 96.38it/s]Loading weights:  51%|█████     | 147/291 [00:01<00:01, 98.95it/s]Loading weights:  54%|█████▍    | 157/291 [00:01<00:01, 86.33it/s]Loading weights:  58%|█████▊    | 168/291 [00:01<00:01, 90.89it/s]Loading weights:  61%|██████    | 178/291 [00:02<00:01, 91.70it/s]Loading weights:  65%|██████▌   | 190/291 [00:02<00:01, 98.74it/s]Loading weights:  69%|██████▉   | 201/291 [00:02<00:00, 93.52it/s]Loading weights:  73%|███████▎  | 211/291 [00:02<00:00, 87.06it/s]Loading weights:  76%|███████▌  | 220/291 [00:02<00:00, 86.97it/s]Loading weights:  79%|███████▉  | 230/291 [00:02<00:00, 87.37it/s]Loading weights:  84%|████████▎ | 243/291 [00:02<00:00, 95.95it/s]Loading weights:  87%|████████▋ | 254/291 [00:02<00:00, 88.37it/s]Loading weights:  91%|█████████▏| 266/291 [00:03<00:00, 92.67it/s]Loading weights:  95%|█████████▍| 276/291 [00:03<00:00, 91.79it/s]Loading weights:  99%|█████████▉| 289/291 [00:03<00:00, 101.86it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 89.68it/s] 
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 5.7574
+[ppl]   40/333 windows  running ppl 6.4376
+[ppl]   60/333 windows  running ppl 6.5433
+[ppl]   80/333 windows  running ppl 6.7149
+[ppl]   100/333 windows  running ppl 6.3506
+[ppl]   120/333 windows  running ppl 6.4696
+[ppl]   140/333 windows  running ppl 6.2157
+[ppl]   160/333 windows  running ppl 6.1862
+[ppl]   180/333 windows  running ppl 6.1800
+[ppl]   200/333 windows  running ppl 6.1760
+[ppl]   220/333 windows  running ppl 6.3760
+[ppl]   240/333 windows  running ppl 6.4065
+[ppl]   260/333 windows  running ppl 6.3895
+[ppl]   280/333 windows  running ppl 6.4049
+[ppl]   300/333 windows  running ppl 6.3556
+[ppl]   320/333 windows  running ppl 6.3138
+[ppl] seq_len=1024  PPL 6.3542  (exact-denominator 6.3542)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 6.0548
+[ppl]   40/166 windows  running ppl 6.3424
+[ppl]   60/166 windows  running ppl 6.1213
+[ppl]   80/166 windows  running ppl 5.8623
+[ppl]   100/166 windows  running ppl 5.8362
+[ppl]   120/166 windows  running ppl 6.0696
+[ppl]   140/166 windows  running ppl 6.0736
+[ppl]   160/166 windows  running ppl 5.9839
+[ppl] seq_len=2048  PPL 6.0242  (exact-denominator 6.0242)
+[ppl] wrote results/wikitext2_ppl/qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval.json
+============================================================
+  Perplexity evaluation (wikitext-2-raw-v1 test, GPTQ protocol)
+  Model:     outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_wiki2-2bit-qeftbase-eval
+  Output:    results/wikitext2_ppl/Llama-2-7B_int2_g32_k256_asym_wiki2-2bit-qeftbase-eval.json
+============================================================
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_wiki2-2bit-qeftbase-eval
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:01<07:31,  1.56s/it]Loading weights:   6%|▌         | 17/291 [00:01<00:21, 12.78it/s]Loading weights:   8%|▊         | 22/291 [00:02<00:24, 11.08it/s]Loading weights:  11%|█         | 31/291 [00:02<00:17, 14.51it/s]Loading weights:  13%|█▎        | 38/291 [00:02<00:12, 19.53it/s]Loading weights:  15%|█▍        | 43/291 [00:03<00:15, 16.04it/s]Loading weights:  17%|█▋        | 49/291 [00:03<00:15, 15.47it/s]Loading weights:  19%|█▉        | 55/291 [00:03<00:12, 18.76it/s]Loading weights:  20%|█▉        | 58/291 [00:04<00:14, 16.57it/s]Loading weights:  21%|██        | 61/291 [00:04<00:14, 16.18it/s]Loading weights:  23%|██▎       | 67/291 [00:05<00:17, 12.90it/s]Loading weights:  26%|██▌       | 76/291 [00:05<00:12, 17.89it/s]Loading weights:  27%|██▋       | 79/291 [00:05<00:12, 17.17it/s]Loading weights:  29%|██▉       | 85/291 [00:05<00:11, 17.94it/s]Loading weights:  30%|███       | 88/291 [00:05<00:10, 19.37it/s]Loading weights:  32%|███▏      | 94/291 [00:06<00:10, 18.95it/s]Loading weights:  34%|███▍      | 99/291 [00:06<00:09, 19.97it/s]Loading weights:  35%|███▌      | 103/291 [00:06<00:09, 20.14it/s]Loading weights:  36%|███▋      | 106/291 [00:06<00:10, 16.93it/s]Loading weights:  38%|███▊      | 112/291 [00:07<00:09, 18.88it/s]Loading weights:  39%|███▉      | 114/291 [00:07<00:09, 18.56it/s]Loading weights:  42%|████▏     | 121/291 [00:07<00:10, 16.36it/s]Loading weights:  44%|████▍     | 128/291 [00:07<00:07, 22.16it/s]Loading weights:  45%|████▌     | 131/291 [00:08<00:10, 15.82it/s]Loading weights:  47%|████▋     | 136/291 [00:08<00:07, 19.83it/s]Loading weights:  48%|████▊     | 139/291 [00:08<00:10, 13.99it/s]Loading weights:  50%|████▉     | 145/291 [00:09<00:07, 19.19it/s]Loading weights:  51%|█████     | 149/291 [00:09<00:08, 16.52it/s]Loading weights:  53%|█████▎    | 155/291 [00:09<00:06, 21.17it/s]Loading weights:  55%|█████▍    | 159/291 [00:09<00:08, 16.24it/s]Loading weights:  57%|█████▋    | 166/291 [00:10<00:07, 15.80it/s]Loading weights:  60%|██████    | 175/291 [00:10<00:06, 17.99it/s]Loading weights:  63%|██████▎   | 182/291 [00:11<00:05, 19.96it/s]Loading weights:  64%|██████▎   | 185/291 [00:11<00:06, 17.64it/s]Loading weights:  66%|██████▌   | 191/291 [00:11<00:04, 22.21it/s]Loading weights:  67%|██████▋   | 194/291 [00:11<00:05, 17.90it/s]Loading weights:  69%|██████▊   | 200/291 [00:11<00:04, 21.86it/s]Loading weights:  70%|██████▉   | 203/291 [00:12<00:05, 16.85it/s]Loading weights:  72%|███████▏  | 209/291 [00:12<00:04, 20.40it/s]Loading weights:  73%|███████▎  | 212/291 [00:12<00:04, 17.42it/s]Loading weights:  75%|███████▍  | 218/291 [00:12<00:03, 21.30it/s]Loading weights:  76%|███████▌  | 221/291 [00:13<00:05, 13.70it/s]Loading weights:  79%|███████▊  | 229/291 [00:13<00:04, 15.45it/s]Loading weights:  82%|████████▏ | 238/291 [00:14<00:02, 18.12it/s]Loading weights:  85%|████████▍ | 247/291 [00:14<00:02, 17.76it/s]Loading weights:  87%|████████▋ | 253/291 [00:14<00:01, 20.84it/s]Loading weights:  88%|████████▊ | 256/291 [00:15<00:02, 17.06it/s]Loading weights:  89%|████████▉ | 259/291 [00:15<00:01, 18.53it/s]Loading weights:  91%|█████████ | 265/291 [00:15<00:01, 17.16it/s]Loading weights:  93%|█████████▎| 272/291 [00:15<00:00, 22.27it/s]Loading weights:  95%|█████████▍| 275/291 [00:16<00:00, 18.32it/s]Loading weights:  96%|█████████▌| 280/291 [00:16<00:00, 21.68it/s]Loading weights:  97%|█████████▋| 283/291 [00:16<00:00, 16.26it/s]Loading weights: 100%|██████████| 291/291 [00:16<00:00, 17.42it/s]
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 8.0063
+[ppl]   40/333 windows  running ppl 8.7014
+[ppl]   60/333 windows  running ppl 8.7476
+[ppl]   80/333 windows  running ppl 8.9259
+[ppl]   100/333 windows  running ppl 8.5019
+[ppl]   120/333 windows  running ppl 8.6558
+[ppl]   140/333 windows  running ppl 8.4103
+[ppl]   160/333 windows  running ppl 8.3488
+[ppl]   180/333 windows  running ppl 8.3426
+[ppl]   200/333 windows  running ppl 8.3121
+[ppl]   220/333 windows  running ppl 8.5655
+[ppl]   240/333 windows  running ppl 8.5775
+[ppl]   260/333 windows  running ppl 8.5565
+[ppl]   280/333 windows  running ppl 8.5734
+[ppl]   300/333 windows  running ppl 8.5264
+[ppl]   320/333 windows  running ppl 8.4588
+[ppl] seq_len=1024  PPL 8.5111  (exact-denominator 8.5111)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 7.5868
+[ppl]   40/166 windows  running ppl 7.8914
+[ppl]   60/166 windows  running ppl 7.6496
+[ppl]   80/166 windows  running ppl 7.3720
+[ppl]   100/166 windows  running ppl 7.3249
+[ppl]   120/166 windows  running ppl 7.5952
+[ppl]   140/166 windows  running ppl 7.6014
+[ppl]   160/166 windows  running ppl 7.4905
+[ppl] seq_len=2048  PPL 7.5383  (exact-denominator 7.5383)
+[ppl] wrote results/wikitext2_ppl/Llama-2-7B_int2_g32_k256_asym_wiki2-2bit-qeftbase-eval.json
+
+>>> Collecting results into results_saltq.csv
+[collect] appended 4 row(s) to results_saltq.csv
+    QEFT base (bcal GPTQ + fp16 weak) wikitext2@1024       ppl                          8.5111
+    QEFT base (bcal GPTQ + fp16 weak) wikitext2@2048       ppl                          7.5383
+    QEFT           wikitext2@1024       ppl                          6.3542
+    QEFT           wikitext2@2048       ppl                          6.0242
+
+============================================================
+  QEFT pipeline complete!
+============================================================

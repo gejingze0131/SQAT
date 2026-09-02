@@ -1,0 +1,301 @@
+============================================================
+  SALT-Q — Saliency-Allocated Low-bit Trainability
+  Config:        configs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x.yaml
+  Model:         meta-llama/Llama-2-7b-hf
+  Bits:          INT2 (asymmetric affine)
+  GPUs:          4 (train) / [0,1,2,3] (eval, vLLM tensor-parallel)
+  salient_lr:    <from yaml>   (REAL weights — not an adapter lr)
+  scales_lr:     <from yaml>   ((s, z) of both segments)
+  train_LN:      false
+  Frozen codes:  outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/saltq_base_2bit_g32
+  Permuted base: outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base
+============================================================
+
+>>> Stage 1: SALT-Q training
+======================================================================
+======================================================================  QLoRA Training — 2-bit | QAT mode: saltq | symmetric=False======================================================================
+
+
+  QLoRA Training — 2-bit | QAT mode: saltq | symmetric=False======================================================================  QLoRA Training — 2-bit | QAT mode: saltq | symmetric=False
+
+
+======================================================================  Train dataset:   datasets/wikitext2======================================================================
+
+
+  Train dataset:   datasets/wikitext2  Train split:     train  Train dataset:   datasets/wikitext2
+
+
+  Train split:     train  Val split:       None  Train split:     train
+
+
+  Val split:       None  Sub-tasks:       all  Val split:       None
+
+
+  Sub-tasks:       all  Sub-tasks:       all
+
+======================================================================
+  QLoRA Training — 2-bit | QAT mode: saltq | symmetric=False
+======================================================================
+  Train dataset:   datasets/wikitext2
+  Train split:     train
+  Val split:       None
+  Sub-tasks:       all
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+
+[SQAT-Permute] 复用已有 permuted base（配置一致，不重建）: outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base
+[SQAT-Permute]   group_k=256 boundary_sizes=[1, 31] group_size=32
+[SQAT-Permute] Using permuted base outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base (num_runtime_permutes=1)
+[SQAT-Permute] Using permuted base outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base (num_runtime_permutes=1)
+[SQAT-Permute] Using permuted base outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base (num_runtime_permutes=1)
+[SQAT-Permute] Using permuted base outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base (num_runtime_permutes=1)
+
+[SALT-Q] 复用已有 frozen-code base（INT2 g32 asym salient_init=gptq_latent，配置一致，不重新 GPTQ）: outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/saltq_base_2bit_g32
+[SALT-Q] Using frozen-code base outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/saltq_base_2bit_g32[SALT-Q] Using frozen-code base outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/saltq_base_2bit_g32[SALT-Q] Using frozen-code base outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/saltq_base_2bit_g32
+[SALT-Q] Using frozen-code base outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/saltq_base_2bit_g32
+
+
+[1/5] Loading model and tokenizer...
+
+[1/5] Loading model and tokenizer...
+[1/5] Loading model and tokenizer...
+
+[1/5] Loading model and tokenizer...
+
+
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base ...
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base ...
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base ...
+[SALT-Q] Loading permuted base /home/users/nus/jingzege/projects/SQAT/outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x/permuted_fp16_base ...
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   4%|▍         | 11/291 [00:00<00:02, 94.36it/s]Loading weights:   5%|▌         | 15/291 [00:00<00:01, 142.60it/s]Loading weights:   3%|▎         | 10/291 [00:00<00:03, 79.78it/s]Loading weights:   5%|▍         | 14/291 [00:00<00:02, 132.04it/s]Loading weights:   7%|▋         | 20/291 [00:00<00:03, 79.77it/s]Loading weights:  10%|█         | 30/291 [00:00<00:05, 51.40it/s] Loading weights:  10%|▉         | 28/291 [00:00<00:05, 47.96it/s] Loading weights:  10%|▉         | 28/291 [00:00<00:06, 43.64it/s]Loading weights:  13%|█▎        | 38/291 [00:00<00:04, 57.35it/s]Loading weights:   7%|▋         | 21/291 [00:00<00:09, 27.65it/s]Loading weights:  13%|█▎        | 37/291 [00:00<00:04, 53.09it/s]Loading weights:  13%|█▎        | 38/291 [00:00<00:04, 52.88it/s]Loading weights:  18%|█▊        | 52/291 [00:00<00:03, 75.51it/s]Loading weights:  20%|█▉        | 58/291 [00:00<00:02, 87.32it/s]Loading weights:  20%|█▉        | 58/291 [00:00<00:02, 87.86it/s]Loading weights:  19%|█▉        | 56/291 [00:00<00:02, 79.03it/s]Loading weights:  24%|██▍       | 70/291 [00:01<00:03, 73.12it/s]Loading weights:  23%|██▎       | 68/291 [00:00<00:03, 68.62it/s]Loading weights:  25%|██▍       | 72/291 [00:01<00:03, 72.73it/s]Loading weights:  23%|██▎       | 68/291 [00:01<00:03, 67.27it/s]Loading weights:  28%|██▊       | 81/291 [00:01<00:02, 76.64it/s]Loading weights:  28%|██▊       | 81/291 [00:01<00:02, 75.97it/s]Loading weights:  32%|███▏      | 93/291 [00:01<00:02, 77.21it/s]Loading weights:  31%|███▏      | 91/291 [00:01<00:02, 77.79it/s]Loading weights:  31%|███▏      | 91/291 [00:01<00:02, 72.13it/s]Loading weights:  33%|███▎      | 97/291 [00:01<00:02, 80.07it/s]Loading weights:  36%|███▋      | 106/291 [00:01<00:02, 72.16it/s]Loading weights:  36%|███▋      | 106/291 [00:01<00:02, 73.14it/s]Loading weights:  36%|███▋      | 106/291 [00:01<00:02, 67.12it/s]Loading weights:  41%|████      | 119/291 [00:01<00:02, 78.89it/s]Loading weights:  37%|███▋      | 107/291 [00:01<00:03, 55.36it/s]Loading weights:  41%|████      | 119/291 [00:01<00:02, 72.55it/s]Loading weights:  41%|████      | 120/291 [00:01<00:02, 69.56it/s]Loading weights:  45%|████▌     | 132/291 [00:01<00:01, 83.95it/s]Loading weights:  48%|████▊     | 140/291 [00:01<00:01, 99.51it/s]Loading weights:  50%|█████     | 146/291 [00:01<00:01, 104.35it/s]Loading weights:  48%|████▊     | 141/291 [00:01<00:01, 97.39it/s]Loading weights:  53%|█████▎    | 153/291 [00:01<00:01, 100.29it/s]Loading weights:  53%|█████▎    | 155/291 [00:01<00:01, 100.65it/s]Loading weights:  53%|█████▎    | 154/291 [00:02<00:01, 81.24it/s]Loading weights:  57%|█████▋    | 165/291 [00:02<00:01, 96.14it/s] Loading weights:  55%|█████▍    | 159/291 [00:02<00:01, 81.02it/s] Loading weights:  58%|█████▊    | 169/291 [00:02<00:01, 92.80it/s] Loading weights:  62%|██████▏   | 180/291 [00:02<00:01, 102.61it/s]Loading weights:  61%|██████    | 177/291 [00:02<00:01, 95.29it/s]Loading weights:  63%|██████▎   | 182/291 [00:02<00:01, 106.92it/s]Loading weights:  64%|██████▍   | 186/291 [00:02<00:01, 100.05it/s]Loading weights:  67%|██████▋   | 195/291 [00:02<00:00, 107.94it/s]Loading weights:  68%|██████▊   | 199/291 [00:02<00:00, 112.77it/s]Loading weights:  67%|██████▋   | 194/291 [00:02<00:00, 99.77it/s]Loading weights:  68%|██████▊   | 198/291 [00:02<00:01, 88.99it/s] Loading weights:  72%|███████▏  | 209/291 [00:02<00:00, 107.06it/s]Loading weights:  71%|███████▏  | 208/291 [00:02<00:00, 101.03it/s]Loading weights:  73%|███████▎  | 212/291 [00:02<00:00, 96.72it/s] Loading weights:  74%|███████▎  | 214/291 [00:02<00:00, 98.15it/s]Loading weights:  76%|███████▌  | 221/291 [00:02<00:00, 103.99it/s]Loading weights:  76%|███████▌  | 221/291 [00:02<00:00, 106.03it/s]Loading weights:  77%|███████▋  | 225/291 [00:02<00:00, 97.72it/s]Loading weights:  80%|████████  | 233/291 [00:02<00:00, 102.49it/s]Loading weights:  80%|███████▉  | 232/291 [00:02<00:00, 90.38it/s] Loading weights:  79%|███████▊  | 229/291 [00:02<00:00, 90.22it/s]Loading weights:  82%|████████▏ | 238/291 [00:02<00:00, 102.37it/s]Loading weights:  84%|████████▍ | 244/291 [00:02<00:00, 96.67it/s] Loading weights:  87%|████████▋ | 253/291 [00:02<00:00, 108.14it/s]Loading weights:  85%|████████▍ | 246/291 [00:02<00:00, 96.05it/s]Loading weights:  86%|████████▌ | 249/291 [00:02<00:00, 94.43it/s] Loading weights:  89%|████████▉ | 260/291 [00:02<00:00, 103.98it/s]Loading weights:  91%|█████████ | 265/291 [00:03<00:00, 98.30it/s] Loading weights:  91%|█████████ | 265/291 [00:03<00:00, 101.69it/s]Loading weights:  90%|█████████ | 262/291 [00:03<00:00, 98.03it/s]Loading weights:  93%|█████████▎| 271/291 [00:03<00:00, 81.44it/s] Loading weights:  94%|█████████▍| 273/291 [00:03<00:00, 92.13it/s]Loading weights:  95%|█████████▍| 276/291 [00:03<00:00, 86.37it/s] Loading weights:  95%|█████████▍| 276/291 [00:03<00:00, 80.65it/s]Loading weights:  98%|█████████▊| 285/291 [00:03<00:00, 91.64it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 88.47it/s]
+Loading weights: 100%|██████████| 291/291 [00:03<00:00, 87.94it/s]
+Loading weights: 100%|██████████| 291/291 [00:03<00:00, 87.30it/s]
+Loading weights: 100%|██████████| 291/291 [00:03<00:00, 88.46it/s]
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 55.8%, worst 165.5% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 526.8M params (66.75% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6161.4M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.3 GB)
+
+[2/5] Loading datasets...
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 55.8%, worst 165.5% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 526.8M params (66.75% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6161.4M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.3 GB)
+
+[2/5] Loading datasets...
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 55.8%, worst 165.5% (model.layers.0.self_attn.q_proj)
+[SALT-Q] frozen-code reconstruction error over the first 8 layers: median 55.8%, worst 165.5% (model.layers.0.self_attn.q_proj)
+[SALT-Q] Replaced 224 linears; trainable 526.8M params (66.75% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6161.4M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.3 GB)
+
+[2/5] Loading datasets...
+[SALT-Q] Replaced 224 linears; trainable 526.8M params (66.75% of the fp-parameter tree)
+[SALT-Q] affine training mode: z-only (default; forward is a frozen GEMM + pooled correction), continuous z (fractional zero-point)
+[SALT-Q] frozen: 6161.4M codes (host, int8, export/verify only) -> precomputed q*s on device as torch.bfloat16 (12.3 GB)
+
+[2/5] Loading datasets...
+[Data] lm datasets/wikitext2/train: 2874559 tokens -> 2807 x 1024 blocks (every token supervised)
+  Train: 2807 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 256], group_size=32, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 314.6M full-freedom salient weights + 404.8M affine (s,z) + 6161.4M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=314,572,800; of_qat_target_weights=5.30% (5,939,134,464 params); of_lora_target_weights=4.86% (6,476,005,376 params); of_model_params=4.67% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[Data] lm datasets/wikitext2/train: 2874559 tokens -> 2807 x 1024 blocks (every token supervised)[Data] lm datasets/wikitext2/train: 2874559 tokens -> 2807 x 1024 blocks (every token supervised)
+[Data] lm datasets/wikitext2/train: 2874559 tokens -> 2807 x 1024 blocks (every token supervised)
+
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+  Train: 2807 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 256], group_size=32, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 314.6M full-freedom salient weights + 404.8M affine (s,z) + 6161.4M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=314,572,800; of_qat_target_weights=5.30% (5,939,134,464 params); of_lora_target_weights=4.86% (6,476,005,376 params); of_model_params=4.67% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+  Train: 2807 samples
+  Eval:  None
+
+[3/5] Setting up QAT handler: saltq
+  Train: 2807 samples[SegPerm] Boundary hook: seg 0→1 after layer 0
+
+  Eval:  None[SegPerm] num_runtime_permutes=1
+
+
+[3/5] Setting up QAT handler: saltq
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 256], group_size=32, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 314.6M full-freedom salient weights + 404.8M affine (s,z) + 6161.4M zero-freedom codes
+[SALT-Q] salient coverage: fakequant_params=314,572,800; of_qat_target_weights=5.30% (5,939,134,464 params); of_lora_target_weights=4.86% (6,476,005,376 params); of_model_params=4.67% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[SALT-Q] prepare_model done: 224 SALT-Q linears, num_runtime_permutes=1, group_k values=[0, 256], group_size=32, bits=2, symmetric=False
+[SALT-Q] freedom allocation: 314.6M full-freedom salient weights + 404.8M affine (s,z) + 6161.4M zero-freedom codes[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+
+[SALT-Q] salient coverage: fakequant_params=314,572,800; of_qat_target_weights=5.30% (5,939,134,464 params); of_lora_target_weights=4.86% (6,476,005,376 params); of_model_params=4.67% (6,738,415,616 params)
+
+[4/5] Building trainer...
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+
+[5/5] Starting training...
+[5/5] Starting training...
+
+
+[5/5] Starting training...
+
+[5/5] Starting training...
+[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):
+  salient weights    314.6M  lr=0.000405   (weight units)
+  scales               9.8M  lr=5.59e-05   (weight units, wd=0)
+  zero-points        202.4M  lr=0.0112   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)
+  LoRA (B, A_N, A_S)     0.0M  lr=0.005   (sqrt of a LEVEL - a fourth unit, wd=0)
+  other                0.0M  lr=3.46e-05
+[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):
+  salient weights    314.6M  lr=0.000405   (weight units)
+  scales               9.8M  lr=5.59e-05   (weight units, wd=0)
+  zero-points        202.4M  lr=0.0112   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)
+  LoRA (B, A_N, A_S)     0.0M  lr=0.005   (sqrt of a LEVEL - a fourth unit, wd=0)
+  other                0.0M  lr=3.46e-05
+[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):
+  salient weights    314.6M  lr=0.000405   (weight units)
+  scales               9.8M  lr=5.59e-05   (weight units, wd=0)
+  zero-points        202.4M  lr=0.0112   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)
+  LoRA (B, A_N, A_S)     0.0M  lr=0.005   (sqrt of a LEVEL - a fourth unit, wd=0)
+  other                0.0M  lr=3.46e-05
+[Trainer][SALT-Q] optimizer groups (grouped by UNITS, see qat_saltq):
+  salient weights    314.6M  lr=0.000405   (weight units)
+  scales               9.8M  lr=5.59e-05   (weight units, wd=0)
+  zero-points        202.4M  lr=0.0112   (QUANTIZATION LEVELS - needs a far larger lr, wd=0)
+  LoRA (B, A_N, A_S)     0.0M  lr=0.005   (sqrt of a LEVEL - a fourth unit, wd=0)
+  other                0.0M  lr=3.46e-05
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/users/nus/jingzege/.netrc.
+wandb: Currently logged in as: kosmos0131 (kosmos0131-national-university-of-singapore) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run nm8xvk81
+wandb: Tracking run with wandb version 0.28.1
+wandb: Run data is saved locally in /scratch/users/nus/jingzege/cache/wandb/wandb/run-20260903_040226-nm8xvk81
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run vocal-paper-238
+wandb: ⭐️ View project at https://wandb.ai/kosmos0131-national-university-of-singapore/huggingface
+wandb: 🚀 View run at https://wandb.ai/kosmos0131-national-university-of-singapore/huggingface/runs/nm8xvk81
+  0%|          | 0/176 [00:00<?, ?it/s]  1%|          | 1/176 [00:02<06:33,  2.25s/it]  1%|          | 2/176 [00:03<05:11,  1.79s/it]  2%|▏         | 3/176 [00:05<04:44,  1.64s/it]  2%|▏         | 4/176 [00:06<04:30,  1.58s/it]  3%|▎         | 5/176 [00:08<04:22,  1.54s/it]  3%|▎         | 6/176 [00:09<04:17,  1.52s/it]  4%|▍         | 7/176 [00:11<04:13,  1.50s/it]  5%|▍         | 8/176 [00:12<04:10,  1.49s/it]  5%|▌         | 9/176 [00:14<04:08,  1.49s/it]  6%|▌         | 10/176 [00:15<04:06,  1.48s/it]                                                {'loss': '2.617', 'grad_norm': '9.767', 'learning_rate': '0.0004047', 'epoch': '0.05682'}
+  6%|▌         | 10/176 [00:15<04:06,  1.48s/it]  6%|▋         | 11/176 [00:17<04:14,  1.54s/it]  7%|▋         | 12/176 [00:18<04:09,  1.52s/it]  7%|▋         | 13/176 [00:20<04:05,  1.51s/it]  8%|▊         | 14/176 [00:21<04:02,  1.50s/it]  9%|▊         | 15/176 [00:23<04:00,  1.49s/it]  9%|▉         | 16/176 [00:24<03:57,  1.49s/it] 10%|▉         | 17/176 [00:26<03:55,  1.48s/it] 10%|█         | 18/176 [00:27<03:53,  1.48s/it] 11%|█         | 19/176 [00:28<03:52,  1.48s/it] 11%|█▏        | 20/176 [00:30<03:50,  1.48s/it]                                                {'loss': '2.597', 'grad_norm': '2.911', 'learning_rate': '0.0003992', 'epoch': '0.1136'}
+ 11%|█▏        | 20/176 [00:30<03:50,  1.48s/it] 12%|█▏        | 21/176 [00:31<03:49,  1.48s/it] 12%|█▎        | 22/176 [00:33<03:55,  1.53s/it] 13%|█▎        | 23/176 [00:35<03:56,  1.54s/it] 14%|█▎        | 24/176 [00:36<03:51,  1.52s/it] 14%|█▍        | 25/176 [00:38<03:47,  1.51s/it] 15%|█▍        | 26/176 [00:39<03:44,  1.50s/it] 15%|█▌        | 27/176 [00:41<03:42,  1.49s/it] 16%|█▌        | 28/176 [00:42<03:40,  1.49s/it] 16%|█▋        | 29/176 [00:44<03:38,  1.48s/it] 17%|█▋        | 30/176 [00:45<03:36,  1.48s/it]                                                {'loss': '2.227', 'grad_norm': '2.189', 'learning_rate': '0.000387', 'epoch': '0.1705'}
+ 17%|█▋        | 30/176 [00:45<03:36,  1.48s/it] 18%|█▊        | 31/176 [00:46<03:34,  1.48s/it] 18%|█▊        | 32/176 [00:48<03:32,  1.48s/it] 19%|█▉        | 33/176 [00:50<03:36,  1.51s/it] 19%|█▉        | 34/176 [00:51<03:37,  1.53s/it] 20%|█▉        | 35/176 [00:53<03:33,  1.51s/it] 20%|██        | 36/176 [00:54<03:30,  1.50s/it] 21%|██        | 37/176 [00:56<03:27,  1.50s/it] 22%|██▏       | 38/176 [00:57<03:25,  1.49s/it] 22%|██▏       | 39/176 [00:58<03:23,  1.49s/it] 23%|██▎       | 40/176 [01:00<03:21,  1.48s/it]                                                {'loss': '2.14', 'grad_norm': '3.023', 'learning_rate': '0.0003685', 'epoch': '0.2273'}
+ 23%|██▎       | 40/176 [01:00<03:21,  1.48s/it] 23%|██▎       | 41/176 [01:01<03:19,  1.48s/it] 24%|██▍       | 42/176 [01:03<03:18,  1.48s/it] 24%|██▍       | 43/176 [01:04<03:16,  1.48s/it] 25%|██▌       | 44/176 [01:06<03:19,  1.51s/it] 26%|██▌       | 45/176 [01:07<03:16,  1.50s/it] 26%|██▌       | 46/176 [01:09<03:18,  1.52s/it] 27%|██▋       | 47/176 [01:11<03:14,  1.51s/it] 27%|██▋       | 48/176 [01:12<03:11,  1.50s/it] 28%|██▊       | 49/176 [01:13<03:09,  1.49s/it] 28%|██▊       | 50/176 [01:15<03:07,  1.49s/it]                                                {'loss': '2.172', 'grad_norm': '1.879', 'learning_rate': '0.0003444', 'epoch': '0.2841'}
+ 28%|██▊       | 50/176 [01:15<03:07,  1.49s/it] 29%|██▉       | 51/176 [01:16<03:05,  1.49s/it] 30%|██▉       | 52/176 [01:18<03:03,  1.48s/it] 30%|███       | 53/176 [01:19<03:02,  1.48s/it] 31%|███       | 54/176 [01:21<03:00,  1.48s/it] 31%|███▏      | 55/176 [01:22<02:59,  1.48s/it] 32%|███▏      | 56/176 [01:24<03:03,  1.53s/it] 32%|███▏      | 57/176 [01:25<02:59,  1.51s/it] 33%|███▎      | 58/176 [01:27<03:01,  1.54s/it] 34%|███▎      | 59/176 [01:29<02:58,  1.52s/it] 34%|███▍      | 60/176 [01:30<02:55,  1.51s/it]                                                {'loss': '2.111', 'grad_norm': '1.367', 'learning_rate': '0.0003154', 'epoch': '0.3409'}
+ 34%|███▍      | 60/176 [01:30<02:55,  1.51s/it] 35%|███▍      | 61/176 [01:31<02:52,  1.50s/it] 35%|███▌      | 62/176 [01:33<02:50,  1.49s/it] 36%|███▌      | 63/176 [01:34<02:48,  1.49s/it] 36%|███▋      | 64/176 [01:36<02:46,  1.49s/it] 37%|███▋      | 65/176 [01:37<02:44,  1.48s/it] 38%|███▊      | 66/176 [01:39<02:42,  1.48s/it] 38%|███▊      | 67/176 [01:41<02:47,  1.53s/it] 39%|███▊      | 68/176 [01:42<02:43,  1.52s/it] 39%|███▉      | 69/176 [01:44<02:44,  1.54s/it] 40%|███▉      | 70/176 [01:45<02:40,  1.52s/it]                                                {'loss': '2.074', 'grad_norm': '1.588', 'learning_rate': '0.0002826', 'epoch': '0.3977'}
+ 40%|███▉      | 70/176 [01:45<02:40,  1.52s/it] 40%|████      | 71/176 [01:47<02:38,  1.51s/it] 41%|████      | 72/176 [01:48<02:35,  1.50s/it] 41%|████▏     | 73/176 [01:50<02:33,  1.49s/it] 42%|████▏     | 74/176 [01:51<02:31,  1.49s/it] 43%|████▎     | 75/176 [01:52<02:30,  1.49s/it] 43%|████▎     | 76/176 [01:54<02:28,  1.48s/it] 44%|████▍     | 77/176 [01:55<02:26,  1.48s/it] 44%|████▍     | 78/176 [01:57<02:29,  1.52s/it] 45%|████▍     | 79/176 [01:59<02:26,  1.51s/it] 45%|████▌     | 80/176 [02:00<02:26,  1.53s/it]                                                {'loss': '2.097', 'grad_norm': '1.435', 'learning_rate': '0.000247', 'epoch': '0.4545'}
+ 45%|████▌     | 80/176 [02:00<02:26,  1.53s/it] 46%|████▌     | 81/176 [02:02<02:23,  1.51s/it] 47%|████▋     | 82/176 [02:03<02:21,  1.50s/it] 47%|████▋     | 83/176 [02:05<02:19,  1.50s/it] 48%|████▊     | 84/176 [02:06<02:17,  1.49s/it] 48%|████▊     | 85/176 [02:07<02:15,  1.49s/it] 49%|████▉     | 86/176 [02:09<02:13,  1.48s/it] 49%|████▉     | 87/176 [02:10<02:12,  1.48s/it] 50%|█████     | 88/176 [02:12<02:10,  1.48s/it] 51%|█████     | 89/176 [02:14<02:12,  1.52s/it] 51%|█████     | 90/176 [02:15<02:09,  1.51s/it]                                                {'loss': '2.048', 'grad_norm': '1.342', 'learning_rate': '0.00021', 'epoch': '0.5114'}
+ 51%|█████     | 90/176 [02:15<02:09,  1.51s/it] 52%|█████▏    | 91/176 [02:16<02:07,  1.50s/it] 52%|█████▏    | 92/176 [02:18<02:07,  1.52s/it] 53%|█████▎    | 93/176 [02:20<02:05,  1.51s/it] 53%|█████▎    | 94/176 [02:21<02:03,  1.50s/it] 54%|█████▍    | 95/176 [02:23<02:01,  1.50s/it] 55%|█████▍    | 96/176 [02:24<01:59,  1.49s/it] 55%|█████▌    | 97/176 [02:25<01:57,  1.49s/it] 56%|█████▌    | 98/176 [02:27<01:55,  1.49s/it] 56%|█████▋    | 99/176 [02:28<01:54,  1.49s/it] 57%|█████▋    | 100/176 [02:30<01:52,  1.48s/it]                                                 {'loss': '2.083', 'grad_norm': '1.186', 'learning_rate': '0.0001727', 'epoch': '0.5682'}
+ 57%|█████▋    | 100/176 [02:30<01:52,  1.48s/it] 57%|█████▋    | 101/176 [02:32<01:54,  1.53s/it] 58%|█████▊    | 102/176 [02:33<01:52,  1.51s/it] 59%|█████▊    | 103/176 [02:35<01:51,  1.53s/it] 59%|█████▉    | 104/176 [02:36<01:49,  1.52s/it] 60%|█████▉    | 105/176 [02:38<01:46,  1.51s/it] 60%|██████    | 106/176 [02:39<01:44,  1.50s/it] 61%|██████    | 107/176 [02:41<01:43,  1.49s/it] 61%|██████▏   | 108/176 [02:42<01:41,  1.49s/it] 62%|██████▏   | 109/176 [02:43<01:39,  1.49s/it] 62%|██████▎   | 110/176 [02:45<01:38,  1.49s/it]                                                 {'loss': '2.03', 'grad_norm': '1.255', 'learning_rate': '0.0001364', 'epoch': '0.625'}
+ 62%|██████▎   | 110/176 [02:45<01:38,  1.49s/it] 63%|██████▎   | 111/176 [02:46<01:36,  1.49s/it] 64%|██████▎   | 112/176 [02:48<01:38,  1.54s/it] 64%|██████▍   | 113/176 [02:50<01:35,  1.52s/it] 65%|██████▍   | 114/176 [02:51<01:33,  1.51s/it] 65%|██████▌   | 115/176 [02:53<01:33,  1.54s/it] 66%|██████▌   | 116/176 [02:54<01:31,  1.52s/it] 66%|██████▋   | 117/176 [02:56<01:29,  1.51s/it] 67%|██████▋   | 118/176 [02:57<01:27,  1.50s/it] 68%|██████▊   | 119/176 [02:59<01:25,  1.50s/it] 68%|██████▊   | 120/176 [03:00<01:23,  1.49s/it]                                                 {'loss': '1.95', 'grad_norm': '1.115', 'learning_rate': '0.0001023', 'epoch': '0.6818'}
+ 68%|██████▊   | 120/176 [03:00<01:23,  1.49s/it] 69%|██████▉   | 121/176 [03:02<01:21,  1.49s/it] 69%|██████▉   | 122/176 [03:03<01:20,  1.49s/it] 70%|██████▉   | 123/176 [03:05<01:20,  1.52s/it] 70%|███████   | 124/176 [03:06<01:18,  1.51s/it] 71%|███████   | 125/176 [03:08<01:16,  1.50s/it] 72%|███████▏  | 126/176 [03:09<01:17,  1.54s/it] 72%|███████▏  | 127/176 [03:11<01:14,  1.52s/it] 73%|███████▎  | 128/176 [03:12<01:12,  1.51s/it] 73%|███████▎  | 129/176 [03:14<01:10,  1.50s/it] 74%|███████▍  | 130/176 [03:15<01:08,  1.50s/it]                                                 {'loss': '2.002', 'grad_norm': '1.177', 'learning_rate': '7.17e-05', 'epoch': '0.7386'}
+ 74%|███████▍  | 130/176 [03:15<01:08,  1.50s/it] 74%|███████▍  | 131/176 [03:17<01:07,  1.49s/it] 75%|███████▌  | 132/176 [03:18<01:05,  1.49s/it] 76%|███████▌  | 133/176 [03:20<01:03,  1.49s/it] 76%|███████▌  | 134/176 [03:21<01:03,  1.52s/it] 77%|███████▋  | 135/176 [03:23<01:01,  1.51s/it] 77%|███████▋  | 136/176 [03:24<01:00,  1.50s/it] 78%|███████▊  | 137/176 [03:26<00:59,  1.53s/it] 78%|███████▊  | 138/176 [03:27<00:57,  1.51s/it] 79%|███████▉  | 139/176 [03:29<00:55,  1.50s/it] 80%|███████▉  | 140/176 [03:30<00:53,  1.50s/it]                                                 {'loss': '1.966', 'grad_norm': '1.138', 'learning_rate': '4.552e-05', 'epoch': '0.7955'}
+ 80%|███████▉  | 140/176 [03:30<00:53,  1.50s/it] 80%|████████  | 141/176 [03:32<00:52,  1.49s/it] 81%|████████  | 142/176 [03:33<00:50,  1.49s/it] 81%|████████▏ | 143/176 [03:35<00:49,  1.49s/it] 82%|████████▏ | 144/176 [03:36<00:47,  1.49s/it] 82%|████████▏ | 145/176 [03:38<00:46,  1.48s/it] 83%|████████▎ | 146/176 [03:39<00:45,  1.53s/it] 84%|████████▎ | 147/176 [03:41<00:43,  1.51s/it] 84%|████████▍ | 148/176 [03:42<00:42,  1.53s/it] 85%|████████▍ | 149/176 [03:44<00:40,  1.52s/it] 85%|████████▌ | 150/176 [03:45<00:39,  1.51s/it]                                                 {'loss': '1.98', 'grad_norm': '1.255', 'learning_rate': '2.469e-05', 'epoch': '0.8523'}
+ 85%|████████▌ | 150/176 [03:45<00:39,  1.51s/it] 86%|████████▌ | 151/176 [03:47<00:37,  1.50s/it] 86%|████████▋ | 152/176 [03:48<00:35,  1.49s/it] 87%|████████▋ | 153/176 [03:50<00:34,  1.49s/it] 88%|████████▊ | 154/176 [03:51<00:32,  1.49s/it] 88%|████████▊ | 155/176 [03:53<00:31,  1.49s/it] 89%|████████▊ | 156/176 [03:54<00:29,  1.49s/it] 89%|████████▉ | 157/176 [03:56<00:29,  1.54s/it] 90%|████████▉ | 158/176 [03:57<00:27,  1.52s/it] 90%|█████████ | 159/176 [03:59<00:25,  1.51s/it] 91%|█████████ | 160/176 [04:00<00:24,  1.54s/it]                                                 {'loss': '1.955', 'grad_norm': '1.103', 'learning_rate': '9.911e-06', 'epoch': '0.9091'}
+ 91%|█████████ | 160/176 [04:00<00:24,  1.54s/it] 91%|█████████▏| 161/176 [04:02<00:22,  1.52s/it] 92%|█████████▏| 162/176 [04:03<00:21,  1.51s/it] 93%|█████████▎| 163/176 [04:05<00:19,  1.50s/it] 93%|█████████▎| 164/176 [04:06<00:17,  1.50s/it] 94%|█████████▍| 165/176 [04:08<00:16,  1.49s/it] 94%|█████████▍| 166/176 [04:09<00:14,  1.49s/it] 95%|█████████▍| 167/176 [04:11<00:13,  1.49s/it] 95%|█████████▌| 168/176 [04:12<00:12,  1.52s/it] 96%|█████████▌| 169/176 [04:14<00:10,  1.51s/it] 97%|█████████▋| 170/176 [04:15<00:09,  1.50s/it]                                                 {'loss': '1.958', 'grad_norm': '1.104', 'learning_rate': '1.692e-06', 'epoch': '0.9659'}
+ 97%|█████████▋| 170/176 [04:15<00:09,  1.50s/it] 97%|█████████▋| 171/176 [04:17<00:07,  1.53s/it] 98%|█████████▊| 172/176 [04:18<00:06,  1.51s/it] 98%|█████████▊| 173/176 [04:20<00:04,  1.50s/it] 99%|█████████▉| 174/176 [04:21<00:02,  1.50s/it] 99%|█████████▉| 175/176 [04:23<00:01,  1.49s/it]100%|██████████| 176/176 [04:24<00:00,  1.51s/it][SALT-Q] Saved 800 trainable tensors (526.8M params) to outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq/checkpoint-176
+                                                 {'train_runtime': '275.6', 'train_samples_per_second': '10.19', 'train_steps_per_second': '0.639', 'train_loss': '2.112', 'epoch': '1'}
+100%|██████████| 176/176 [04:33<00:00,  1.51s/it]100%|██████████| 176/176 [04:33<00:00,  1.56s/it]
+
+Final adapter saved to outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq/final
+
+Final adapter saved to outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq/final
+
+Final adapter saved to outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq/final
+[SALT-Q] Saved 800 trainable tensors (526.8M params) to outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq/final
+
+Final adapter saved to outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq/final
+
+[SALT-Q] Exporting deployed model (merge-free)...
+[SALT-Q] Verifying deploy == train equivalence ...
+  [SALT-Q deploy] model.layers.0.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.k_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.v_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.self_attn.o_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.gate_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.up_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.0.mlp.down_proj: max|Δ|=0.000e+00 [OK]
+  [SALT-Q deploy] model.layers.1.self_attn.q_proj: max|Δ|=0.000e+00 [OK]
+[SALT-Q] deploy equivalence verified on 8 layers (max|Δ| = 0, exact).
+[SALT-Q] Materializing dense deployed weights (torch.float16) ...
+[SALT-Q] dense-storage cast error: max|Δ|=9.511e-04 (the only lossy step; a packed INT-b export would not have it)
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:14<00:00, 14.74s/it]Writing model shards: 100%|██████████| 1/1 [00:14<00:00, 14.74s/it]
+[Export] Saved sqat_permute metadata to outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval/sqat_permute_meta.pt
+[SALT-Q] Exported deployed model to outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval
+
+Done!
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33mvocal-paper-238[0m at: [34mhttps://wandb.ai/kosmos0131-national-university-of-singapore/huggingface/runs/nm8xvk81[0m
+[1;34mwandb[0m: Find logs at: [1;35m../../../../../../scratch/users/nus/jingzege/cache/wandb/wandb/run-20260903_040226-nm8xvk81/logs[0m
+[rank0]:[W903 04:07:56.845714087 ProcessGroupNCCL.cpp:1575] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+>>> Training done. Checkpoint: outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq/final
+
+>>> Stage 3: Generative evaluation (vLLM)
+============================================================
+  Perplexity evaluation (wikitext-2-raw-v1 test, GPTQ protocol)
+  Model:     outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval
+  Output:    results/wikitext2_ppl/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval.json
+============================================================
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 8728.26it/s]
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[ppl] registered 1 boundary gather(s)
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 6.7134
+[ppl]   40/333 windows  running ppl 7.4509
+[ppl]   60/333 windows  running ppl 7.5660
+[ppl]   80/333 windows  running ppl 7.8255
+[ppl]   100/333 windows  running ppl 7.3758
+[ppl]   120/333 windows  running ppl 7.5079
+[ppl]   140/333 windows  running ppl 7.1965
+[ppl]   160/333 windows  running ppl 7.1946
+[ppl]   180/333 windows  running ppl 7.2004
+[ppl]   200/333 windows  running ppl 7.1863
+[ppl]   220/333 windows  running ppl 7.4196
+[ppl]   240/333 windows  running ppl 7.4676
+[ppl]   260/333 windows  running ppl 7.4635
+[ppl]   280/333 windows  running ppl 7.4707
+[ppl]   300/333 windows  running ppl 7.4042
+[ppl]   320/333 windows  running ppl 7.3497
+[ppl] seq_len=1024  PPL 7.4040  (exact-denominator 7.4040)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 6.9966
+[ppl]   40/166 windows  running ppl 7.3819
+[ppl]   60/166 windows  running ppl 7.0902
+[ppl]   80/166 windows  running ppl 6.8006
+[ppl]   100/166 windows  running ppl 6.7740
+[ppl]   120/166 windows  running ppl 7.0597
+[ppl]   140/166 windows  running ppl 7.0702
+[ppl]   160/166 windows  running ppl 6.9509
+[ppl] seq_len=2048  PPL 7.0015  (exact-denominator 7.0015)
+[ppl] wrote results/wikitext2_ppl/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval.json
+
+>>> Collecting results into results_saltq.csv
+[collect] appended 2 row(s) to results_saltq.csv
+    SALT-Q         wikitext2@1024       ppl                          7.4040
+    SALT-Q         wikitext2@2048       ppl                          7.0015
+
+============================================================
+  SALT-Q pipeline complete!
+============================================================
