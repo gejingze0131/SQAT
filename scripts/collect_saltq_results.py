@@ -292,8 +292,17 @@ def _rows_from_ppl_json(payload: dict, path: str, cfg: Optional[dict],
         # algebraically identical (both reduce to exp(mean per-window CE)) — see the assertion
         # note in scripts/eval_ppl.py. Emitting it would double every row of this table for
         # zero information.
+        # The SPLIT belongs in the task name. Without it an in-sample train-split diagnostic and
+        # the column's test metric are both "wikitext2@2048" on the same model_dir, separable
+        # only by reading the note — which is how a 1.504 in-sample number ends up being read as
+        # a result (2026-09-03). "test" stays unqualified so every row written before this keeps
+        # its identity, and so does the collector's (timestamp, model, task, metric) dedup key.
+        split = str(conf.get("split", "test") or "test")
+        qualifier = "" if split == "test" else f":{split}"
+        if metrics.get("truncated_from"):
+            qualifier += f"[first{metrics['n_windows']}of{metrics['truncated_from']}]"
         row = dict(ctx)
-        row["task"] = f"{conf.get('dataset', 'ppl')}@{seq_len}"
+        row["task"] = f"{conf.get('dataset', 'ppl')}{qualifier}@{seq_len}"
         row["metric"] = "ppl"
         row["value"] = metrics["ppl"]
         row["stderr"] = ""
