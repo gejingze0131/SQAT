@@ -49,8 +49,13 @@ bash runs/eval_vllm.sh --model_path "$DST" --dataset wikitext2 --gpus 0 \
     --tag "$(basename $DST)" > logs/wikitext2/qlora_wiki2_gptq_int2_ppl.log 2>&1
 echo "floor ppl rc=$?"
 
+# --filter is NOT optional here. results/wikitext2_ppl/ also holds the fp16 UPPER bound and the
+# NF4+RTN export from the upstream job, and --note is stamped on every row an invocation
+# ingests: without the filter this call labels the upper bound "floor" (it did, on 2026-09-03,
+# and the rows had to be relabelled by hand).
 python scripts/collect_saltq_results.py \
     --results_dir results/wikitext2_ppl --csv results_saltq.csv \
     --config configs/qlora_none_wiki2_int2_g32_ep3.yaml \
+    --filter "$(basename $DST)" \
     --note "T2 Wiki2 floor: QLoRA merged fp16 -> GPTQ INT2 g32, in-domain 0.5M-token calibration"
 echo "End time: $(date)"

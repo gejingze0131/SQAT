@@ -265,6 +265,11 @@ def _rows_from_ppl_json(payload: dict, path: str, cfg: Optional[dict],
     conf = payload.get("config", {}) or {}
     model_dir = conf.get("model_path", "")
     ctx = _run_context(model_dir, cfg)
+    # A note scripts/eval_ppl.py wrote INTO this artifact describes this artifact; the --note on
+    # the collecting invocation describes whatever that invocation happened to scan, which is a
+    # whole directory. When both exist the per-artifact one wins — the alternative mislabelled
+    # a fp16 upper bound as a floor because the floor job's collect step swept the shared dir.
+    note = str(conf.get("note") or "").strip() or note
     ctx.update(
         source="ppl",
         timestamp=payload.get("timestamp", ""),
