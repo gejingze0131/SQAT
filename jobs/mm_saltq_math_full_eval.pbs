@@ -1,0 +1,25 @@
+#!/bin/bash
+#PBS -N mm_saltq_math_full_eval
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=3:00:00
+#PBS -j oe
+# EVAL-ONLY rerun for the MetaMath SALT-Q run (GSM8K 56.33): the training job passed
+# --eval_tasks gsm8k, so the MATH-5000 half of datasets/metamath/test.json was never generated,
+# while every other arm of the cell has both (QLoRA 10.64 / QA-LoRA 11.04 / floor 2.16).
+# Full-test rerun on the existing deploy export (perm fold already cached in the -vllm dir);
+# re-scores GSM8K too, revalidating 56.33. No training.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/metamath
+echo "Start time: $(date)"
+MODEL=outputs/saltq_mm_int2_g32_ep1_span_bcal_sgptql_zp2x-2bit-saltq-deploy-eval
+bash runs/eval_vllm.sh --model_path "$MODEL" --dataset math --gpus 0,1,2,3 \
+    --tag "$(basename $MODEL)" \
+    > logs/metamath/saltq_mm_sgptql_zp2x_math_full_eval.log 2>&1
+echo "full math eval rc=$?"; echo "End time: $(date)"
