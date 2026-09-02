@@ -281,15 +281,18 @@ def _rows_from_ppl_json(payload: dict, path: str, cfg: Optional[dict],
         if not isinstance(metrics, dict) or not key.startswith("seq_len_"):
             continue
         seq_len = key[len("seq_len_"):]
-        for metric in ("ppl", "ppl_exact"):
-            if metric not in metrics:
-                continue
-            row = dict(ctx)
-            row["task"] = f"{conf.get('dataset', 'ppl')}@{seq_len}"
-            row["metric"] = metric
-            row["value"] = metrics[metric]
-            row["stderr"] = ""
-            rows.append(row)
+        if "ppl" not in metrics:
+            continue
+        # Only "ppl". The JSON also carries "ppl_exact", but with equal-length windows it is
+        # algebraically identical (both reduce to exp(mean per-window CE)) — see the assertion
+        # note in scripts/eval_ppl.py. Emitting it would double every row of this table for
+        # zero information.
+        row = dict(ctx)
+        row["task"] = f"{conf.get('dataset', 'ppl')}@{seq_len}"
+        row["metric"] = "ppl"
+        row["value"] = metrics["ppl"]
+        row["stderr"] = ""
+        rows.append(row)
     return rows
 
 
