@@ -1,0 +1,72 @@
+#!/bin/bash
+#PBS -N alpaca_ep1
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=16:00:00
+#PBS -j oe
+# =============================================================================
+# ALPACA column, 1-EPOCH CONTROL — SALT-Q and QEFT, one variable: epochs 3 -> 1.
+#
+# WHAT IT TESTS. In the 3-epoch cell SALT-Q reaches the LOWEST training loss of every arm
+# (0.656, below even the 16-bit QLoRA arm's 0.822) and lands SECOND on MMLU (32.77 vs QEFT's
+# 34.25). MMLU is a retention metric — Alpaca fine-tuning moves the fp16 model by -0.13 points,
+# so nothing in the training set teaches it — and the arm with the most trainable freedom is the
+# one that drifts furthest from the pretrained model. That is exactly the WikiText-2 T2e/T2f
+# pattern (SALT-Q best train PPL 1.50, worst test PPL 10.15; the 1-epoch cell halved the gap).
+# If drift is what costs the points, one epoch should RAISE SALT-Q's MMLU.
+#
+# ONE VARIABLE, applied to BOTH arms so the cell stays internally comparable: T = 647 instead of
+# 1941, every lr multiplied by sqrt(3) = 1.7321 so realized displacement is unchanged, and BOTH
+# BASES REUSED rather than rebuilt (same frozen codes, same permutation, same weak columns):
+#   SALT-Q  --permuted_base_dir / --saltq_base_dir point at the 3-epoch run's bases
+#   QEFT    qeft.base_dir is unchanged in the config, so Stage 0 skips
+#
+# QA-LoRA and the QLoRA bounds are NOT re-run here: they are only needed if this cell becomes the
+# headline table. Read these two numbers against the 3-epoch pair, not against the other arms.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+mkdir -p logs/alpaca
+echo "Start time: $(date)"
+
+EP3=outputs/saltq_alpaca_int2_g32_ep3_k256_c4cal_sgptql_zp2x
+for d in "$EP3/permuted_fp16_base" "$EP3/saltq_base_2bit_g32" \
+         outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_c4cal; do
+    [ -e "$d" ] || { echo "ERROR: expected reusable base missing: $d"; exit 1; }
+done
+echo ">>> all reusable bases present"
+
+echo -e "\n########## 1/2  SALT-Q, 1 epoch (same codes, same permutation) ##########"
+bash runs/saltq/run_saltq_alpaca.sh \
+    --config             configs/saltq_alpaca_int2_g32_ep1_k256_c4cal_sgptql_zp2x.yaml \
+    --bits 2 --num_gpus 4 \
+    --output_root        outputs/saltq_alpaca_int2_g32_ep1_k256_c4cal_sgptql_zp2x \
+    --permuted_base_dir  "$EP3/permuted_fp16_base" \
+    --saltq_base_dir     "$EP3/saltq_base_2bit_g32" \
+    --train_layernorms   false \
+    --note               "T-Alpaca 1-epoch control: SALT-Q, same frozen codes and permutation as the 3-epoch run, lrs x sqrt(3)" \
+    > logs/alpaca/40_saltq_ep1.log 2>&1
+echo "saltq rc=$?"
+
+echo -e "\n########## 2/2  QEFT, 1 epoch (same weak-column base) ##########"
+bash runs/qeft/run_qeft_alpaca.sh \
+    --config     baseline/QEFT/sqat/configs/qeft_alpaca_int2_g32_ep1_lr5e5.yaml \
+    --bits 2 --group_size 32 --num_gpus 4 \
+    --note       "T-Alpaca 1-epoch control: QEFT, same mixed-precision base as the 3-epoch run, lr x sqrt(3)" \
+    > logs/alpaca/41_qeft_ep1.log 2>&1
+echo "qeft rc=$?"
+
+echo -e "\n>>> Alpaca MMLU 5-shot, 1-epoch vs 3-epoch"
+python - <<'PY'
+import glob, json, os
+for p in sorted(glob.glob("results/alpaca_mmlu/*.json")):
+    r = json.load(open(p))
+    acc = r.get("results", {}).get("mmlu", {}).get("acc,none")
+    print(f"{os.path.basename(p)[:-5]:<66} {'' if acc is None else round(acc*100, 2)}")
+PY
+echo "End time: $(date)"
