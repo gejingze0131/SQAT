@@ -1,0 +1,328 @@
+# =============================================================================
+# SALT-Q — Commonsense-170k, INT3 g64, k=128 sal5e5, span, 1 epoch, bcal + salient_init=gptq_latent
+#
+# The INT3 replica of the INT2 cell's best definition (configs/saltq_cs170k_int2_g32_ep1_span_k256_bcal_sgptql_zp2x.yaml,
+# 74.76): the frozen-code sweep is ONE OBS problem over the whole matrix, the salient slice starts
+# at its fp16 value wherever RTN on the sweep's grid already equals the GPTQ code and at the GPTQ
+# cell centre elsewhere, so step 0 is exactly a GPTQ model and the sub-grid position is kept.
+# ONE VARIABLE vs configs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal.yaml (78.85, RTN start):
+# salient_init minmax -> gptq_latent. lrs untouched (INT3's zp_lr ladder has not been run; the
+# INT2 x2 finding is not carried over). Permuted base reused from the bcal run; the frozen-code
+# base is built fresh under this output_dir (no INT3 gptq base exists to derive from).
+#
+# THE ALPACA COLUMN, INT3 g64 CELL (Llama-2-7B, MMLU 5-shot). Derived from this method's own
+# commonsense-170k INT3 g64 cell; the METHOD is untouched and four column properties change:
+#   1. data.train_dataset  datasets/commonsense -> datasets/alpaca (alpaca-cleaned, 51,760)
+#   2. data.loss_span      instruction+response -> response (an Alpaca response is free-form text,
+#                          ~164 supervised tokens per record; it is what QLoRA reports for Alpaca)
+#   3. calibration         balanced in-domain 3500 -> generic C4 128 x 2048, identical for every
+#                          arm of this column, INT2 and INT3 cells alike
+#   4. num_epochs 1 -> 3, every lr x sqrt(T_ref / T_here) = sqrt(1845 / 1941) = 0.9750
+#                          (51,760 / 80 = 647 steps per epoch, x3 = T 1941)
+#
+# Read against the INT2 g32 cell of the same column, whose anchors are: fp16 45.97 untrained /
+# 45.84 after Alpaca SFT (i.e. Alpaca teaches MMLU nothing — this column measures RETENTION), and
+# at 2.00 bits an untrained GPTQ base of 26.76 against a random baseline of 25.00.
+# =============================================================================
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  # Overridden by `run_saltq.sh --bits N` / `--bits`. INT3 g64 ran first because that cell has a
+  # full external baseline (PSQAT+GPTQ 42.6, LR-QAT/fp16 45.2) — it came back at 44.8, so the
+  # machinery is sound. INT2 (where GPTQ-only non-salient collapses, and the method's actual
+  # target regime) runs with EVERY other field below unchanged, so it is single-variable.
+  quant_bits: 3
+  # double_quant / quant_type are NF4 knobs and are UNUSED by SALT-Q (there is no bitsandbytes in
+  # this path at all — the base is real INT-b GPTQ codes, so there is no double quantization).
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64                  # UNUSED by SALT-Q (no adapter). Kept so shared config readers/loggers
+  alpha: 16                 # and the r=64 parameter-budget comparison stay meaningful.
+  dropout: 0.0
+  # target_modules selects which linears become SALTQLinear.
+  #   q/k/v/gate/up_proj : residual-stream P_k permute  -> salient slice [0:layer_group_k)
+  #   down_proj          : block-internal P4_l permute  -> its own per-layer group_k
+  #   o_proj             : per-head Hadamard only, group_k = 0
+  #                        -> in SALT-Q it is NOT untrainable any more: it becomes pure
+  #                           frozen-codes + trainable (s, z) over ALL its columns.
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "saltq"
+  # MUST be asymmetric. The affine (q - z) * s convention is exactly what GPTQ/AWQ checkpoints
+  # store, so the trained (s, z) drop into the existing metadata slots with no format change.
+  # (At 2 bit it is doubly forced: the symmetric grid has 3 usable levels {-1,0,1} vs 4 affine.)
+  symmetric: false
+  # group_k is always a multiple of this, so the salient columns occupy COMPLETE quantization
+  # groups starting at column 0. group_size also sets the DENSITY of the non-salient segment's
+  # affine freedom: (s, z) count = 2 * weights / group_size, i.e. 202M at 64 vs 405M at 32.
+  group_size: 64          # INT3 cell: g64 (the INT2 cell keeps g32)
+
+  # NOTE: qat.lsq is the *sqat_permute / full* switch. SALT-Q's salient segment is ALWAYS LSQ
+  # (that is what makes its trained weights land on the grid), so this flag does not gate it.
+  #
+  # lsq.scales_lr is NOT a fourth independent knob in saltq mode: it is read only when
+  # qat.saltq.scales_lr is absent (src/trainer.py). Keep it EQUAL to qat.saltq.scales_lr — a
+  # different value here is dead config that silently becomes live the day someone deletes the
+  # saltq key. Same per-bit law: 2e-5 / 1e-5 / 5e-6 at INT2 / INT3 / INT4.
+  lsq:
+    enabled: true
+    scales_lr: 1.69e-5
+
+  # Calibration data for BOTH offline stages (E[x^2] for saliency, and the GPTQ Hessian).
+  # Read by src/data.load_calibration_data via cfg["qat"]["sqat"].
+  sqat:
+    # C4 128 x 2048 = 262,144 tokens, the GPTQ-paper budget, from datasets/c4_calib_1024.json.
+    # calibration_source switches src/data.load_calibration_data to the generic-text path (raw
+    # strings joined with EOS, cut into calibration_seq_len windows, no PROMPT and no masking);
+    # calibration_sampling is dead config there and is kept only to show which knob is NOT live.
+    # EVERY arm of the Alpaca column calibrates on these same 128 windows.
+    calibration_samples: 128
+    calibration_sampling: balanced
+    calibration_seq_len: 2048
+    calibration_source: "datasets/c4_calib_1024.json"
+
+  saltq:
+    # ---- how the salient slice starts: minmax (RTN pin) | gptq | gptq_latent (see header) ----
+    salient_init: gptq_latent
+    # ---- whether the salient slice gets full weight-space freedom at all --------------------
+    # true (default) = full SALT-Q. columns [0:group_k) are nn.Parameter weights trained with
+    #   LSQ fakequant; columns [group_k:) are frozen codes + trainable (s, z) (see train_scale
+    #   below for whether s is one of them).
+    # false = the "z-only everywhere" ablation (AGENTS.md §12 item 1 / §12's 段拆分消融 list:
+    #   full SALT-Q / only-salient / only-z / Permuted SQAT). The salient slice is NOT trained as
+    #   a weight at all: build_saltq_base folds its GPTQ-computed (codes, s, z) into the SAME
+    #   frozen-codes + trainable-(s,z) pool the non-salient segment uses, so every layer is
+    #   recorded with group_k=0 for training purposes. The offline PERMUTATION is unchanged
+    #   (single-variable vs. the default run) — salient channels still get moved to the front and
+    #   still get pinned to the canonical grid during GPTQ; only what gets left TRAINABLE differs.
+    #   Every trainable degree of freedom in the model is then a (row, group) zero-point.
+    train_salient: true
+
+    # ---- what the non-salient segment is allowed to train -----------------------------------
+    # false (default) = z-only. This is the configuration that makes SALT-Q cost the same as
+    #   PSQAT/QLoRA. dL/dz is a UNIFORM sum over each quant group, so it collapses into a pooled
+    #   input and costs 2N/g (~1.5% at g=64); and with s frozen, q*s is constant, so it is
+    #   precomputed once and the forward is a frozen GEMM plus a pooled correction — no [out, in]
+    #   weight is ever reconstructed in either direction.
+    # true = also train s. dL/ds carries a per-element (q-z) factor that folds into neither
+    #   operand, forcing the full [out, in] weight-gradient GEMM: +2N FLOPs, irreducible, and
+    #   independent of how few scale parameters there are. It also forces the slow
+    #   reconstruct-then-GEMM forward. Run this ONLY as the "is s worth it" ablation.
+    train_scale: false
+
+    # ---- how the zero-point is parameterized -------------------------------------------------
+    # true (default) = FRACTIONAL zero-point. An integer-constrained z cannot be trained: z is
+    #   measured in quantization LEVELS, so rounding puts a dead zone in front of it and the
+    #   effective weight does not move until z crosses half a level. Measured on the first INT3
+    #   g64 run, round(z) changed for 0 of 1.63M parameters and the non-salient segment
+    #   contributed exactly nothing (32.9 GSM8k vs a 28.7 starting point, all of it from the
+    #   salient segment). It is also what QA-LoRA actually deploys — its group-pooled delta folds
+    #   in as z - c/s, which is not an integer — so integer z is strictly WEAKER than the baseline
+    #   this segment is meant to generalize.
+    #   Cost: the zero-point ships as fp16 metadata instead of packed int4, +16 bits per group
+    #   (~0.25 bit/weight at g=64). The dense-dequant eval path is unaffected.
+    # false = integer z, for the ablation. Needs zp_lr around 5e-3 to move at all.
+    continuous_z: true
+
+    # =========================================================================================
+    # LEARNING RATES — derived, not guessed. Grouped by the UNITS each parameter lives in.
+    # =========================================================================================
+    # Under Adam the update is lr * m̂/(√v̂+ε), so a constant factor on the gradient CANCELS. That
+    # means LSQ's 1/√(N·Qp) gradient scaling does NOT set the step size — only lr does. So the
+    # only thing that matters is lr measured against the parameter's own natural unit. Mixing
+    # units in one optimizer group is exactly how run1 trained nothing outside the salient
+    # segment (round(z) changed for 0 of 1.63M params) and scored 32.9 instead of 44.8.
+    #
+    # ---- the two measured constants ---------------------------------------------------------
+    # (1) DISPLACEMENT. Over one MetaMath epoch (T = 6584 optimizer steps, cosine + 3% warmup,
+    #     max_grad_norm 0.3) the realized |Δparam| of the validated INT3 run was, in each group's
+    #     own unit, lr * c with
+    #             c ≈ 38   (median; p10 6, p90 100)   ≈ 0.47 * √T
+    #     and c came out the SAME for all three groups — 35.5 for the salient weights, 40.1 for
+    #     the LSQ scales, 38.8 for the zero-points — which is the empirical proof of the Adam
+    #     argument above. c grows as √T, so a 2-epoch run wants every lr below multiplied by
+    #     1/√2. (Measured off outputs/saltq-3bit-saltq/final vs the frozen base.)
+    #
+    # (2) GRID STEP. The min-max init makes the step exactly s(b) = range / (2^b − 1), so it is
+    #     an exact 1/(2^b − 1) law — measured s2/s3 = 2.333 = 7/3 to four significant figures,
+    #     for the salient and non-salient segments alike:
+    #             median s   INT2 2.84e-2   INT3 1.22e-2   INT4 5.68e-3 (= INT3 * 7/15)
+    #     |W_S| RMS is 1.9e-2, i.e. at INT2 one quantization step is larger than a typical weight.
+    #
+    # ---- what each group should move, and therefore its lr -----------------------------------
+    # salient_lr  [WEIGHT units].  Target: |ΔW_S| ≈ 0.5 * s(b). Below ~0.1 s the codes never flip
+    #   and the "full weight freedom" tier is fictitious (at 2e-5 the measured movement was
+    #   0.03-0.14 s — that was run1's second bug); much above 1 s and the salient columns stop
+    #   being a fine-tune of the pretrained weights. The validated run measured 0.58 s (p90 1.53).
+    #       salient_lr = 0.5 * s(b) / c   ->   PROPORTIONAL TO 1/(2^b − 1)
+    # scales_lr   [WEIGHT units].  The LSQ scale of the SALIENT segment only — with train_scale
+    #   false the non-salient s is a frozen buffer, so this group is 2.5M params, not 202M.
+    #   Target: a few percent of relative range movement (validated run: 3.3%, p90 9.6%).
+    #       scales_lr = 0.03 * s(b) / c   ->   also PROPORTIONAL TO 1/(2^b − 1), = salient_lr/20
+    # zp_lr       [QUANTIZATION-LEVEL units, where the meaningful step is 1.0, not 1e-2]. This is
+    #   the entire freedom of the non-salient 98%. It does two jobs that scale OPPOSITELY:
+    #     (a) re-centering the frozen grid against a quantization error of ±0.5 level — a
+    #         LEVEL-units target, so bit-INDEPENDENT;
+    #     (b) task adaptation of a fixed weight-units delta d, which needs |Δz| = d/s(b) levels,
+    #         so it GROWS as (2^b − 1): at INT4 each level is worth 2.1x less weight than at INT3.
+    #   Hence zp_lr = max(1e-3 floor from (a), 1e-3 * (2^b − 1)/7 from (b)) — flat at low bit,
+    #   rising at INT4. Useful band for |Δz| is ~0.1-0.3 levels; past ~0.5 the shift stops being
+    #   an error correction and just moves the group mean by half a step.
+    #
+    # ---- the resulting table (bold = measured, the rest is the law transported) ---------------
+    #     bits | salient_lr | scales_lr |  zp_lr  | realized |ΔW_S| / |Δz|
+    #     -----+------------+-----------+---------+---------------------------
+    #       2  |   5.0e-4   |  2.0e-5   | 1.0e-3  | predicted 0.5 s / 0.04 lvl
+    #       3  | **2.0e-4** | **1.0e-5**| **1e-3**| MEASURED 0.58 s / 0.039 lvl  -> 44.8 GSM8k
+    #       4  |   1.0e-4   |  5.0e-6   | 2.0e-3  | predicted 0.5 s / 0.08 lvl
+    #
+    # KNOWN HEADROOM: zp_lr is the one knob the derivation says is under-driven. 1e-3 realized
+    # only 0.039 levels, against a useful band of 0.1-0.3, i.e. z is currently correcting ~8% of
+    # the ±0.5-level code error. zp_lr = 3e-3 (-> ~0.11 levels) is the highest-value sweep,
+    # especially at INT2 where job (a) dominates. It is deliberately NOT applied to the first INT2
+    # run so that run differs from the 44.8 INT3 run by the bit width alone.
+    #
+    # The *_by_bits maps below are what the code actually reads (resolved against
+    # model.quant_bits); the scalar is the fallback and must stay equal to the INT3 entry. An
+    # explicit --salient_lr / --saltq_scales_lr / --zp_lr on the command line beats both.
+    salient_lr: 4.88e-5
+    # THE SINGLE VARIABLE. See the header for the curve this point brackets.
+    salient_lr_by_bits: {2: 1.22e-4, 3: 4.88e-5, 4: 2.44e-5}
+    scales_lr: 1.69e-5
+    scales_lr_by_bits: {2: 3.37e-5, 3: 1.69e-5, 4: 8.44e-6}    # x 0.9750 for T=1941
+    zp_lr: 1.69e-3
+    # THE ONE CHANGED LINE. INT2: 1.0e-3 -> 5.0e-3 (predicted |Δz| 0.032 -> ~0.16 levels).
+    # INT3/INT4 left alone so this file stays a drop-in for the other cells.
+    zp_lr_by_bits:      {2: 8.44e-3, 3: 1.69e-3, 4: 3.37e-3}   # x 0.9750 for T=1941
+    # RMSNorm weights stay fp16 at deploy, so training them is free extra freedom. Off = the
+    # clean "only the two segments are trained" ablation.
+    train_layernorms: false
+
+    # ---- permutation / saliency (identical semantics to qat.sqat_permute) -------------------
+    # Mode switch:
+    #   omit boundary_sizes and group_k  -> auto segments + auto per-segment group_k
+    #   boundary_sizes only              -> manual segments + auto group_k
+    #   group_k only                     -> auto segments + fixed group_k
+    #   boundary_sizes + group_k + top_k_ratio -> legacy manual/fixed mode (used here, so the
+    #                                             SALT-Q vs Permuted-SQAT comparison is
+    #                                             single-variable: same permutation, same slice)
+    # AUTO SEGMENTS + FIXED group_k — THE SINGLE VARIABLE OF THIS RUN.
+    # boundary_sizes is ABSENT while group_k is SET, which is the combination that dispatches to
+    # permute_common.auto_segment_with_fixed_group_k (see the resolution block: boundary_sizes is
+    # None and fixed_group_k is not None). The DP then chooses only WHERE to cut, with every
+    # segment forced to the same group_k, minimizing the outlier overflow that will not fit.
+    #
+    # This is the corrected version of the auto-segmentation experiment. The first attempt used
+    # auto_segment_by_outliers, whose DP minimizes sum(layers * group_k) subject to capturing every
+    # channel above a fixed z-score; it duly found a solution CHEAPER than legacy on the residual
+    # budget (3936 vs 4096) that protected far less energy through the middle of the network
+    # (per-segment energy coverage 82% / 51% / 35% / 24% with depth) and scored 36.69 against the
+    # legacy 40.90. Holding group_k at 128 removes the cost-minimizing degree of freedom entirely:
+    # the budget becomes exactly the legacy budget (32 * 128 = 4096), so this run answers the one
+    # question the earlier one confounded — is the hand-set [2, 30] cut actually the right place to
+    # cut, at equal cost?
+    # boundary_sizes:  <auto>
+    group_k: 128
+    max_segments: 4
+    top_k_ratio: 0.01
+
+    # Log-space z-score threshold for residual q/k/v/gate/up segment outlier detection.
+    outlier_log_sigma: 2.5
+    # Separate threshold for per-layer down_proj group_k selection.
+    down_outlier_log_sigma: 3
+
+    # ---- frozen-code initialization ---------------------------------------------------------
+    # GPTQ/OBS on the permuted fp16 base produces the integer codes that are then FROZEN FOREVER,
+    # plus the initial (s, z). Run once, sequentially per decoder layer, in the permuted basis
+    # with the boundary gathers active. Quality here matters more than in sqat_permute: (s, z)
+    # cannot repair a badly chosen code.
+    gptq:
+      nsamples: 128          # calibration sequences for the Hessian (= calibration_samples)
+      percdamp: 0.01         # Hessian diagonal damping (fraction of mean diag)
+      blocksize: 128         # GPTQ lazy-batch compute block (= 2 groups of 64). NOT the quant
+                             # group; only has to be a multiple of group_size (auto-aligned).
+      batch_size: 8          # calibration micro-batch
+
+    # --- offline stages (run automatically by scripts/train.py on rank 0) --------------------
+    #   1. <output_dir>/permuted_fp16_base   (~13 GB)  permute-before-quantize, shared with
+    #                                                  sqat_permute; keep it for export-only
+    #   2. <output_dir>/saltq_base           (~7 GB)   frozen int8 codes + (s0, z0) + salient init
+    # BOTH must be reused on resume and on export: the codes are a discrete one-shot choice, so a
+    # regenerated base makes every trained (s, z) and salient weight meaningless.
+
+data:
+  # Local pissa-dataset JSON: datasets/commonsense/{train,test}.json, records of
+  # instruction / input / output / type covering BoolQ, PIQA, SIQA, ARC-e/c, HellaSwag,
+  # WinoGrande and OBQA. Rendered through src/data.PROMPT with the loss on the RESPONSE
+  # ONLY, which is what makes the trained model's output parseable by scripts/test_acc.py.
+  train_dataset: "datasets/alpaca"
+  train_split: "train"
+  # No in-loop eval: the test split is scored GENERATIVELY (vLLM + exact-match) by
+  # run_eval_vllm.sh, and a teacher-forced loss on it would not predict that score.
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null            # Alpaca is one undifferentiated task (`type: alpaca`)
+  shuffle_dataset: true
+  # DERIVED FROM saltq_cs170k_int3_g64_ep1_sal5e5.yaml BY THIS ONE KEY plus output_dir: the INT3 g64 replica of
+  # the INT2 instruction+response cell. SALT-Q INT3 g64 anchor (sal5e5, 81.48 response-only). Under INT2 the cell removed every plateau
+  # pathology and put SALT-Q 67.29 / QA-LoRA 67.64 between QLoRA's 77.69 (fp16) and 38.08
+  # (GPTQ) bounds, with the SALT-Q lr peak bracketed at its inherited values (0.5x 66.17 / 1x
+  # 67.29 / 2.5x 66.24). INT3 had no plateau even response-only, so the question here is what
+  # dense supervision does to the ceiling and to the SALT-Q-vs-QA-LoRA gap when optimisation
+  # was never the bottleneck. Compare ONLY against same-span points.
+  loss_span: response
+  num_proc: 32
+
+
+training:
+  output_dir: "outputs/saltq_alpaca_int3_g64_ep3_k128_c4cal_sgptql"
+  num_epochs: 3              # Alpaca convention; T = 647 x 3 = 1941, lrs carry x0.9750
+  # 4 x RTX 6000 Ada (46 GB). At group_size=64 / group_k=128 on Llama-2-7B the resident cost per
+  # GPU is roughly:
+  #   frozen int8 codes            6.3 GB   (buffers; DDP broadcast is disabled for them)
+  #   157M salient weights
+  #   + 202M (s, z)  = 360M fp32   5.8 GB   (params + grads + AdamW moments)
+  #   fp16 embed/norm/head         0.5 GB
+  #   -> ~12.6 GB before activations (group_size=32 would add ~3.2 GB).
+  # Each forward also rebuilds one [out, in] fp32 weight per projection; gradient checkpointing
+  # bounds that to one decoder layer at a time.
+  # 4 x 5 x 4 GPUs = effective batch 80. MUST stay 80 for this run: the comparison is against the
+  # 36.1 INT2 g32 baseline, which ran at 80 (it moved from 3 to 4 GPUs without re-deriving the
+  # batch). See the c-vs-eff_batch note in the lr block — eff_batch changes T, which changes c,
+  # which changes every realized displacement. One variable at a time.
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 5
+  # true -> false: THE single variable of this run. See the header.
+  group_by_length: false
+  # Base lr — only applies to the "other" param group (LayerNorms when train_layernorms=true).
+  # The two segments use qat.saltq.salient_lr / qat.saltq.scales_lr.
+  learning_rate: 1.95e-5
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true
