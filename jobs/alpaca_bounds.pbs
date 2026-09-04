@@ -1,0 +1,165 @@
+#!/bin/bash
+#PBS -N alpaca_bounds
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+# =============================================================================
+# ALPACA column (T2's fourth task): the two ANCHORS and the two BOUNDS, in one job.
+#
+# Llama-2-7B fine-tuned on alpaca-cleaned (51,760 records, 3 epochs, effective batch 80,
+# response-only loss) and scored on MMLU 5-shot through lm-eval-harness. Nothing here is a
+# method row; this job produces everything the method rows are read against:
+#
+#   1. fp16 anchor        the pretrained Llama-2-7B, no fine-tuning, no quantization. Says what
+#                         MMLU 5-shot is worth before anything in this table happens — and
+#                         whether Alpaca fine-tuning helps or hurts it at all.
+#   2. INT2 anchor        that same pretrained model put through GPTQ INT2 g32 on the column's
+#                         shared C4 128x2048 calibration, with NO fine-tuning. The pure
+#                         quantization damage, separated from the fine-tuning.
+#   3. fp16 UPPER bound   QLoRA (NF4 base + adapter), merged and NEVER re-quantized.
+#   4. INT2 FLOOR         that same merged checkpoint put through the same GPTQ INT2 g32 recipe:
+#                         what "fine-tune in fp16, quantize afterwards" actually deploys.
+#
+# CALIBRATION IS HELD FIXED ACROSS THE WHOLE COLUMN: 128 x 2048 = 262,144 tokens of generic C4
+# (datasets/c4_calib_1024.json), the GPTQ-paper recipe, for the anchors, the floor, SALT-Q's
+# frozen codes, QA-LoRA's base and QEFT's base alike. In-domain calibration is NOT used here:
+# MMLU is neither the training task nor its template, so there is no in-domain set to prefer,
+# and the C4 recipe is what makes the numbers externally comparable.
+#
+# The QLoRA pipeline's own RTN "dequant" export is deliberately NOT evaluated (--skip_eval, then
+# an explicit eval of the merged dir only): at INT2 plain round-to-nearest is a broken file, and
+# it would cost ~1.5 GPU-hours of MMLU to say so again.
+#
+# Companion jobs (each a method row, same column): alpaca_saltq.pbs, alpaca_qalora.pbs,
+# alpaca_qeft.pbs. They are independent of this one — g3 admits one job per user, so they queue.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+mkdir -p logs/alpaca results/alpaca_mmlu results/preflight
+echo "Start time: $(date)"
+
+CFG=configs/qlora_none_alpaca_int2_g32_ep3.yaml
+BASE_MODEL=meta-llama/Llama-2-7b-hf
+[ -f datasets/alpaca/train.json ] || { echo "ERROR: run scripts/build_alpaca_dataset.py on a LOGIN node first"; exit 1; }
+
+# --- Preflight: 2 minutes, before 12 hours ----------------------------------------------------
+# Every failure mode of the MMLU wiring that is invisible until eval time — the offline
+# cais/mmlu cache, the 5-shot dev split, accelerate's data parallelism, the summary writer — for
+# a handful of documents per subtask. It writes into results/preflight/, NEVER into
+# results/alpaca_mmlu/, so a --limit run can never be collected as if it were a result.
+#
+# --limit MUST BE >= --num_processes. lm-eval shards the limited doc list across ranks, so
+# --limit 2 under 4-way DP left ranks 2 and 3 with nothing and every rank died on
+# "task.build_requests() did not find any docs!" — which aborted this whole job on 2026-09-04
+# even though the wiring was fine (the SALT-Q / QA-LoRA / QEFT arms all evaluated cleanly on the
+# same code path hours later). 8 = 2 documents per rank.
+echo -e "\n########## 0/5  MMLU wiring preflight (--limit 8, NOT a result) ##########"
+accelerate launch --num_processes 4 --num_machines 1 --mixed_precision no \
+    scripts/eval_mmlu.py --model_path "$BASE_MODEL" --tasks mmlu --num_fewshot 5 \
+    --batch_size 8 --limit 8 --tag alpaca_mmlu_preflight --output_dir results/preflight \
+    > logs/alpaca/00_preflight_mmlu.log 2>&1
+rc=$?
+if [ $rc -ne 0 ]; then
+    echo "PREFLIGHT FAILED (rc=$rc) — see logs/alpaca/00_preflight_mmlu.log; nothing else runs."
+    tail -30 logs/alpaca/00_preflight_mmlu.log
+    exit $rc
+fi
+python - <<'PY'
+import json; r = json.load(open("results/preflight/alpaca_mmlu_preflight.json"))
+print(f"[preflight] mmlu acc on 8 docs/subtask = {r['results']['mmlu']['acc,none']:.4f} "
+      f"({len(r['results'])} task entries) — wiring OK")
+PY
+
+# --- 1/5  fp16 anchor: the pretrained model, untouched ----------------------------------------
+echo -e "\n########## 1/5  MMLU 5-shot, fp16 Llama-2-7B (no fine-tuning, no quantization) ##########"
+accelerate launch --num_processes 4 --num_machines 1 --mixed_precision no \
+    scripts/eval_mmlu.py --model_path "$BASE_MODEL" --tasks mmlu --num_fewshot 5 \
+    --batch_size 8 --tag llama2_7b_fp16_anchor --output_dir results/alpaca_mmlu \
+    --note "T-Alpaca anchor: pretrained Llama-2-7B fp16, no fine-tuning" \
+    > logs/alpaca/01_anchor_fp16.log 2>&1
+echo "fp16 anchor rc=$?"
+
+# --- 2/5  INT2 anchor: GPTQ on the PRETRAINED model, no fine-tuning ---------------------------
+# --model_path is the hub id: export_gptq_dequant.py loads it like any dense fp16 checkpoint
+# (there is no sqat_permute_meta.pt to refuse), and the bits/group_size/targets come from $CFG.
+GPTQBASE=outputs/gptqbase_llama2_int2_g32_c4cal
+echo -e "\n########## 2/5  GPTQ INT2 g32 (C4 128x2048) of the pretrained model + MMLU ##########"
+if [ ! -f "$GPTQBASE/config.json" ]; then
+    python scripts/export_gptq_dequant.py --model_path "$BASE_MODEL" --output_dir "$GPTQBASE" \
+        --config "$CFG" --bits 2 --group_size 32 --nsamples 128 --batch_size 2 \
+        > logs/alpaca/02_gptqbase_export.log 2>&1
+    echo "gptq base export rc=$?"
+else
+    echo "  $GPTQBASE already exists — skipping export"
+fi
+bash runs/eval_vllm.sh --model_path "$GPTQBASE" --dataset alpaca --gpus 0,1,2,3 \
+    --tag "$(basename $GPTQBASE)" > logs/alpaca/02_gptqbase_mmlu.log 2>&1
+echo "int2 anchor rc=$?"
+
+# --- 3/5  QLoRA training + merged fp16 export (the upper bound, and the floor's parent) -------
+echo -e "\n########## 3/5  QLoRA training (3 epochs) + merged fp16 export ##########"
+bash runs/qlora/run_qlora_alpaca.sh \
+    --bits 2 --num_gpus 4 \
+    --output_dir outputs/qlora_none_alpaca_int2_g32_ep3 \
+    --skip_eval \
+    > logs/alpaca/03_qlora_train.log 2>&1
+echo "qlora train rc=$?"
+
+MERGED=outputs/qlora_none_alpaca_int2_g32_ep3-2bit-none-merged-eval
+[ -f "$MERGED/config.json" ] || { echo "ERROR: no merged export at $MERGED"; exit 1; }
+
+# --- 4/5  MMLU of the fp16 upper bound --------------------------------------------------------
+echo -e "\n########## 4/5  MMLU 5-shot, QLoRA merged fp16 (UPPER bound) ##########"
+bash runs/eval_vllm.sh --model_path "$MERGED" --dataset alpaca --gpus 0,1,2,3 \
+    --tag "$(basename $MERGED)" > logs/alpaca/04_qlora_upper_mmlu.log 2>&1
+echo "upper rc=$?"
+
+# --- 5/5  The floor: that same checkpoint through GPTQ INT2 g32 -------------------------------
+echo -e "\n########## 5/5  QLoRA merged -> GPTQ INT2 g32 (FLOOR) + MMLU ##########"
+FLOOR=outputs/qlora_none_alpaca_int2_g32_ep3-2bit-none-gptq-eval
+if [ ! -f "$FLOOR/config.json" ]; then
+    python scripts/export_gptq_dequant.py --model_path "$MERGED" --output_dir "$FLOOR" \
+        --config "$CFG" --bits 2 --group_size 32 --nsamples 128 --batch_size 2 \
+        > logs/alpaca/05_floor_export.log 2>&1
+    echo "floor export rc=$?"
+fi
+bash runs/eval_vllm.sh --model_path "$FLOOR" --dataset alpaca --gpus 0,1,2,3 \
+    --tag "$(basename $FLOOR)" > logs/alpaca/05_floor_mmlu.log 2>&1
+echo "floor rc=$?"
+
+# --- Collect ----------------------------------------------------------------------------------
+# One invocation per artifact, each with its own --filter and --note: the shared results dir now
+# holds four models, and a directory-wide --note would stamp "floor" on the upper bound (which is
+# how a fp16 row got mislabelled on 2026-09-03).
+collect_one() {   # <model_dir substring> <config or ""> <note>
+    python scripts/collect_saltq_results.py \
+        --results_dir results/alpaca_mmlu --csv results_saltq.csv \
+        --config "$2" --filter "$1" --note "$3"
+}
+# The two anchors were never TRAINED, so they get no --config: the lr / epochs / eff_batch
+# columns are recovered from it, and filling them in for an untrained model would describe a run
+# that did not happen.
+collect_one "llama-2-7b-hf" "" \
+    "T-Alpaca anchor: pretrained Llama-2-7B fp16, no fine-tuning"
+collect_one "gptqbase_llama2_int2_g32_c4cal" "" \
+    "T-Alpaca anchor: GPTQ INT2 g32 (C4 128x2048) of the pretrained model, no fine-tuning"
+collect_one "$(basename $MERGED)" "$CFG" \
+    "T-Alpaca UPPER: QLoRA adapter merged into fp16, never re-quantized"
+collect_one "$(basename $FLOOR)" "$CFG" \
+    "T-Alpaca FLOOR: QLoRA merged fp16 -> GPTQ INT2 g32, C4 128x2048"
+
+echo -e "\n>>> Alpaca column, MMLU 5-shot (acc)"
+python - <<'PY'
+import glob, json, os
+for p in sorted(glob.glob("results/alpaca_mmlu/*.json")):
+    r = json.load(open(p))
+    acc = r.get("results", {}).get("mmlu", {}).get("acc,none")
+    print(f"{os.path.basename(p)[:-5]:<62} mmlu 5-shot acc: {acc if acc is None else round(acc*100, 2)}")
+PY
+echo "End time: $(date)"

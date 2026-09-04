@@ -1,0 +1,49 @@
+#!/bin/bash
+#PBS -N alpaca_qeft
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+# =============================================================================
+# ALPACA column, arm QEFT (EMNLP 2024 Findings, arXiv:2410.08661).
+#
+# One global weak-column set (k=256) picked from lambda = diag(2 X^T X) on the column's shared
+# C4 128 x 2048 calibration, its permutation folded offline into the whole network; those columns
+# stay FP16 and are the ONLY thing fine-tuning trains, everything else is frozen INT2 g32 GPTQ.
+# The deployed artifact is 2.75 effective bits, so this row is "2 + fp16", never a pure 2-bit row.
+#
+# --with_base also exports and scores the bare mixed-precision base (no tuning at all) — this
+# method builds its own base, so that is its own floor, and at INT2 on the commonsense column it
+# came back at 10.10 MEAN(8), i.e. the row is meaningless without it.
+#
+# lr 5e-5 (x0.9750 = 4.88e-5), not the paper's k-law 3.5e-6: on INT3 commonsense the paper lr
+# under-trained by ten points (66.73 -> 77.68). See the config header.
+#
+# Stage 0 builds outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_c4cal (~1 GPU-hour) and is
+# skipped automatically if that base already exists with a matching configuration.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+mkdir -p logs/alpaca
+echo "Start time: $(date)"
+[ -f datasets/alpaca/train.json ] || { echo "ERROR: run scripts/build_alpaca_dataset.py on a LOGIN node first"; exit 1; }
+
+bash runs/qeft/run_qeft_alpaca.sh \
+    --bits 2 --group_size 32 --num_gpus 4 --with_base \
+    --note "T-Alpaca QEFT: alpaca-cleaned 3ep, INT2 g32 + k=256 fp16 weak columns (2.75 bits), C4 128x2048 calibration, MMLU 5-shot" \
+    > logs/alpaca/30_qeft.log 2>&1
+echo "rc=$?"
+
+python - <<'PY'
+import glob, json, os
+for p in sorted(glob.glob("results/alpaca_mmlu/*qeft*.json")):
+    r = json.load(open(p))
+    acc = r.get("results", {}).get("mmlu", {}).get("acc,none")
+    print(f"{os.path.basename(p)[:-5]:<62} mmlu 5-shot acc: {acc if acc is None else round(acc*100, 2)}")
+PY
+echo "End time: $(date)"

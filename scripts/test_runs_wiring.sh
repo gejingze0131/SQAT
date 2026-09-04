@@ -23,6 +23,25 @@ FAIL=0
 note() { printf "  %-56s %s\n" "$1" "$2"; }
 fail() { note "$1" "FAIL: $2"; FAIL=1; }
 
+# Every per-task entry script under runs/<method>/: a run_*.sh that hands a --dataset to an
+# engine. The pattern used to name the two tasks that existed when this file was written (math,
+# commonsense), so run_*_wikitext2.sh and run_*_alpaca.sh were silently unchecked -- exactly the
+# class of break section [3] exists to catch. Selecting on `--dataset` instead of on the task
+# name keeps the next task covered for free, and leaves runs/analysis/ (which drives no
+# training task and names no config) out, rather than failing it for lacking one.
+entry_scripts() { grep -lF 'exec bash "$(dirname' $(find runs -mindepth 2 -name 'run_*.sh') | sort; }
+
+# The same mapping runs/lib/common.sh:dataset_dir_for enforces at launch.
+dataset_dir_for_test() {
+    case "$1" in
+        math)        echo datasets/metamath ;;
+        commonsense) echo datasets/commonsense ;;
+        wikitext2)   echo datasets/wikitext2 ;;
+        alpaca)      echo datasets/alpaca ;;
+        *)           echo "" ;;
+    esac
+}
+
 echo "[1] source paths"
 for f in $(find runs -name '*.sh' | sort); do
     rel=$(grep -oE 'source "\$\(dirname "\$\{BASH_SOURCE\[0\]\}"\)/[^"]*"' "$f" \
@@ -32,7 +51,7 @@ for f in $(find runs -name '*.sh' | sort); do
 done
 
 echo "[2] entry -> engine"
-for f in $(find runs -name 'run_*_math.sh' -o -name 'run_*_commonsense.sh' | sort); do
+for f in $(entry_scripts); do
     eng=$(grep -oE 'exec bash "\$\(dirname "\$\{BASH_SOURCE\[0\]\}"\)/[^"]*"' "$f" \
           | sed -E 's|.*\)/([^"]*)"|\1|') || true
     if [ -z "$eng" ]; then fail "$f" "no engine line"; continue; fi
@@ -40,11 +59,12 @@ for f in $(find runs -name 'run_*_math.sh' -o -name 'run_*_commonsense.sh' | sor
 done
 
 echo "[3] entry --config agrees with --dataset"
-for f in $(find runs -name 'run_*_math.sh' -o -name 'run_*_commonsense.sh' | sort); do
+for f in $(entry_scripts); do
     cfg=$(grep -oE '^\s+--config\s+\S+'  "$f" | awk '{print $2}')
     task=$(grep -oE '^\s+--dataset\s+\S+' "$f" | awk '{print $2}')
     if [ ! -f "$cfg" ]; then fail "$f" "missing config $cfg"; continue; fi
-    want=$([ "$task" = math ] && echo datasets/metamath || echo datasets/commonsense)
+    want=$(dataset_dir_for_test "$task")
+    if [ -z "$want" ]; then fail "$f" "unknown --dataset '$task'"; continue; fi
     have=$(python -c "import yaml;print(yaml.safe_load(open('$cfg'))['data']['train_dataset'])" 2>/dev/null)
     if [ "$have" = "$want" ]; then note "$f" "$task <- $cfg"
     else fail "$f" "$cfg trains on '$have', entry scores '$want'"; fi
@@ -56,7 +76,7 @@ done
 # exited 1. That costs a queue slot and a job submission to discover, and `bash -n` cannot see it
 # because the string is only ever compared at runtime.
 echo "[4] flags documented in an entry are accepted by its engine"
-for f in $(find runs -name 'run_*_math.sh' -o -name 'run_*_commonsense.sh' | sort); do
+for f in $(entry_scripts); do
     eng=$(grep -oE 'exec bash "\$\(dirname "\$\{BASH_SOURCE\[0\]\}"\)/[^"]*"' "$f" \
           | sed -E 's|.*\)/([^"]*)"|\1|') || true
     [ -n "$eng" ] && [ -f "$(dirname "$f")/$eng" ] || continue

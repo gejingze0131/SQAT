@@ -103,6 +103,15 @@ def _infer_method(model_dir: str) -> str:
         # labelling it as the method would read as the method having done nothing.
         ("qeftbase", "QEFT base (bcal GPTQ + fp16 weak)"),
         ("qeft", "QEFT"),
+        # A bare GPTQ quantization of the PRETRAINED model, with no fine-tuning of any kind —
+        # the Alpaca column's untrained INT2 anchor. It is not the QLoRA->GPTQ floor (that one
+        # quantizes a fine-tuned checkpoint and keeps the "-none-" tag below), and labelling it
+        # as a method would read as that method having destroyed the model.
+        ("gptqbase", "GPTQ base (no fine-tuning)"),
+        # The pretrained checkpoint evaluated bare, straight from the hub id — the fp16 anchor a
+        # whole column is read against. It has no output dir of its own to name it, so the model
+        # id is the only thing there is to match on.
+        ("llama-2-7b-hf", "fp16 base (no fine-tuning)"),
         ("qalora", "QA-LoRA"),
         ("-full-", "LR-QAT"),
         ("-none-", "QLoRA"),
@@ -322,6 +331,9 @@ def _rows_from_json(path: str, cfg: Optional[dict], note: str) -> List[Dict[str,
     conf = payload.get("config", {})
     model_dir = conf.get("model_path", "")
     ctx = _run_context(model_dir, cfg)
+    # Same rule as the ppl branch: a note the evaluator wrote INTO this artifact describes this
+    # artifact, while the --note of the collecting invocation describes a whole directory.
+    note = str(conf.get("note") or "").strip() or note
     ctx.update(
         source="lm-eval",
         timestamp=payload.get("timestamp", ""),

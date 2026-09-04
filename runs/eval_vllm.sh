@@ -76,7 +76,8 @@ case "$DATASET_NAME" in
     commonsense) DATA_PATH="datasets/commonsense" ;;
     math)        DATA_PATH="datasets/metamath" ;;
     wikitext2)   DATA_PATH="datasets/wikitext2" ;;
-    *) echo "ERROR: --dataset must be 'commonsense', 'math' or 'wikitext2' (got '$DATASET_NAME')"; exit 1 ;;
+    alpaca)      DATA_PATH="datasets/alpaca" ;;
+    *) echo "ERROR: --dataset must be 'commonsense', 'math', 'wikitext2' or 'alpaca' (got '$DATASET_NAME')"; exit 1 ;;
 esac
 [ -d "$DATA_PATH" ] || { echo "ERROR: missing dataset dir $DATA_PATH"; exit 1; }
 
@@ -160,6 +161,77 @@ if [ "$DATASET_NAME" = "wikitext2" ]; then
         --also_seq_len ${PPL_ALSO_SEQ_LEN:-2048} \
         --tag        "$TAG" \
         --output_dir "$OUTPUT_DIR"
+    rc=$?
+    set -e
+    deactivate_env
+    exit $rc
+fi
+
+# ---------------------------------------------------------------------------
+# MMLU BRANCH — alpaca
+#
+# The Alpaca column fine-tunes on general instruction following and is scored on MMLU, a
+# benchmark that shares nothing with the training set. So there is no test split to generate
+# against and no answer extractor: the metric is lm-eval-harness's multiple-choice accuracy
+# (rank the four option letters under teacher forcing), 5-shot from MMLU's own dev split.
+#
+# Like the perplexity branch this runs in the TRAIN env and needs NO fold: scripts/eval_mmlu.py
+# goes through src.permute_common.lm_eval_model_kwargs, which builds an HFLM with the boundary
+# gathers registered whenever the checkpoint carries sqat_permute_meta.pt (SALT-Q / SQAT-Permute
+# exports) and falls back to the plain `pretrained=` string otherwise (QLoRA / QA-LoRA / QEFT
+# exports, whose permutation — when they have one — is fully folded).
+#
+# MMLU is ~14k questions x 4 continuations of ~1k tokens each, which is hours on one card, so
+# with more than one GPU visible this uses lm-eval's data parallelism through accelerate
+# (simple_evaluate aggregates onto the main process and returns None elsewhere; eval_mmlu.py
+# handles that). Knobs: MMLU_FEWSHOT (default 5), MMLU_BATCH_SIZE (default 8), MMLU_TASKS.
+# ---------------------------------------------------------------------------
+if [ "$DATASET_NAME" = "alpaca" ]; then
+    if [ -n "$SUB_TASK" ]; then
+        echo "ERROR: --sub_task has no meaning for alpaca (it is scored on MMLU, not on a test split)" >&2
+        exit 1
+    fi
+    OUTPUT_DIR="${OUTPUT_DIR/_vllm/_mmlu}"
+    mkdir -p "$OUTPUT_DIR"
+    MMLU_FEWSHOT="${MMLU_FEWSHOT:-5}"
+    MMLU_BATCH_SIZE="${MMLU_BATCH_SIZE:-8}"
+    MMLU_TASKS="${MMLU_TASKS:-mmlu}"
+    # One process per visible GPU. CUDA_VISIBLE_DEVICES is what --gpus set above; when it is
+    # unset the job inherits whatever the scheduler gave it, and one process is the safe read.
+    if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
+        NUM_EVAL_PROC="$(awk -F, '{print NF}' <<< "$CUDA_VISIBLE_DEVICES")"
+    else
+        NUM_EVAL_PROC=1
+    fi
+    echo "============================================================"
+    echo "  MMLU evaluation (lm-eval-harness, ${MMLU_FEWSHOT}-shot)"
+    echo "  Model:     $MODEL_PATH"
+    echo "  Processes: $NUM_EVAL_PROC (data-parallel)   batch_size: $MMLU_BATCH_SIZE"
+    echo "  Output:    ${OUTPUT_DIR}/${TAG}.json"
+    echo "============================================================"
+    activate_env "$TRAIN_ENV"
+    set +e
+    if [ "$NUM_EVAL_PROC" -gt 1 ]; then
+        # No --config_file: accelerate_config.yaml pins gpu_ids/num_processes for TRAINING and
+        # would override the eval's own process count.
+        accelerate launch --num_processes "$NUM_EVAL_PROC" --num_machines 1 \
+            --mixed_precision no \
+            scripts/eval_mmlu.py \
+            --model_path "$MODEL_PATH" \
+            --tasks      $MMLU_TASKS \
+            --num_fewshot "$MMLU_FEWSHOT" \
+            --batch_size "$MMLU_BATCH_SIZE" \
+            --tag        "$TAG" \
+            --output_dir "$OUTPUT_DIR"
+    else
+        python scripts/eval_mmlu.py \
+            --model_path "$MODEL_PATH" \
+            --tasks      $MMLU_TASKS \
+            --num_fewshot "$MMLU_FEWSHOT" \
+            --batch_size "$MMLU_BATCH_SIZE" \
+            --tag        "$TAG" \
+            --output_dir "$OUTPUT_DIR"
+    fi
     rc=$?
     set -e
     deactivate_env
