@@ -1,0 +1,34 @@
+#!/bin/bash
+#PBS -N wiki2_int3_floor
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=3:00:00
+#PBS -j oe
+# T2 Wiki2 INT3 g64 1-epoch cell, FLOOR arm: the 1-epoch QLoRA merged fp16 checkpoint -> GPTQ
+# INT3 g64, on the same 524,288 in-domain WikiText-2 train tokens every other arm calibrates on.
+# Chain after jobs/wiki2_int3_ep1_all_arms.pbs, which produces the merged export this quantizes.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+SRC=outputs/qlora_none_wiki2_int3_g64_ep1-3bit-none-merged-eval
+DST=outputs/qlora_none_wiki2_int3_g64_ep1-3bit-none-gptq-eval
+[ -f "$SRC/config.json" ] || { echo "ERROR: $SRC not found — run jobs/wiki2_int3_ep1_all_arms.pbs first."; exit 1; }
+python scripts/export_gptq_dequant.py --model_path "$SRC" --output_dir "$DST" \
+    --config configs/qlora_none_wiki2_int3_g64_ep1.yaml --bits 3 --group_size 64 \
+    --nsamples 256 --calibration_samples 256 --calibration_seq_len 2048 --batch_size 2 \
+    2>&1 | tee logs/wikitext2/qlora_wiki2_int3_ep1_gptq_export.log
+bash runs/eval_vllm.sh --model_path "$DST" --dataset wikitext2 --gpus 0 \
+    --tag "$(basename $DST)" > logs/wikitext2/qlora_wiki2_int3_ep1_gptq_ppl.log 2>&1
+echo "floor ppl rc=$?"
+# --filter: the shared results dir also holds the fp16 upper bound; without it --note labels that
+# row "floor" too (that happened on 2026-09-03).
+python scripts/collect_saltq_results.py \
+    --results_dir results/wikitext2_ppl --csv results_saltq.csv \
+    --config configs/qlora_none_wiki2_int3_g64_ep1.yaml \
+    --filter "$(basename $DST)" \
+    --note "T2 Wiki2 INT3 g64 1-epoch FLOOR: QLoRA merged fp16 -> GPTQ INT3 g64"
+echo "End time: $(date)"

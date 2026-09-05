@@ -1,0 +1,96 @@
+#!/bin/bash
+#PBS -N wiki2_int3_diag
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=3:00:00
+#PBS -j oe
+# =============================================================================
+# The INT3 g64 1-epoch cell's companions. Two things the T2 table cannot be read without, both
+# learned the hard way on the INT2 cell:
+#
+#   1. train / validation PPL per arm. The INT2 cell's ordering turned out to be overfitting, and
+#      the only thing that could show it was in-sample perplexity on the FINAL artifact (HF's
+#      train_loss cannot: it is a run average, warmup-dominated at 176 steps). At INT2 the ratios
+#      were 1.68x / 1.30x / 1.25x / 1.05x at 1 epoch, with the residue on SALT-Q. Same protocol,
+#      same 166 train windows, so the two cells' ratios are directly comparable.
+#
+#   2. THE UNTRAINED ANCHORS. At INT2, QEFT's never-fine-tuned mixed-precision base (7.538)
+#      already beat both pure-INT2 arms' fine-tuned results, and the pure INT2 base was 13.438 —
+#      i.e. 0.75 extra bits was worth 5.90 PPL, more than any arm's fine-tuning gain. Without
+#      these two rows the QEFT row reads as a fine-tuning win when most of it is bit budget.
+#      INT3's spread should be far smaller; measuring it is how we know that.
+#        pure INT3 g64   = QA-LoRA's frozen base (GPTQ INT3 of PRETRAINED Llama, same calibration)
+#        QEFT INT3 base  = the same with k=128 columns left fp16 (3.35 effective bits)
+#
+# NOT rows of the T2 table. results/wikitext2_ppl_diagnostic_int3/.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+echo "Start time: $(date)"
+OUT=results/wikitext2_ppl_diagnostic_int3
+
+run_arm () {   # run_arm <tag> <model_dir>
+    local tag="$1" dir="$2"
+    if [ ! -f "$dir/config.json" ]; then echo ">>> SKIP $tag: no config.json at $dir"; return; fi
+    echo -e "\n============ $tag :: TRAIN split (in-sample, first 166 windows) ============"
+    python scripts/eval_ppl.py --model_path "$dir" --data datasets/wikitext2 --split train \
+        --seq_len 2048 --max_windows 166 --tag "${tag}__train166" --output_dir "$OUT" \
+        --note "DIAGNOSTIC, not a T2 row: in-sample train-split PPL, first 166 windows (INT3 g64 1-epoch cell)"
+    echo -e "\n============ $tag :: VALIDATION split (held out) ============"
+    python scripts/eval_ppl.py --model_path "$dir" --data datasets/wikitext2 --split validation \
+        --seq_len 2048 --tag "${tag}__validation" --output_dir "$OUT" \
+        --note "DIAGNOSTIC, not a T2 row: second held-out split (INT3 g64 1-epoch cell)"
+}
+
+run_arm saltq_int3            outputs/saltq_wiki2_int3_g64_ep1_bcal_sgptql-3bit-saltq-deploy-eval
+run_arm qalora_int3           outputs/qalora_wiki2_int3_g64_ep1-3bit-qalora-dequant-eval
+run_arm qeft_int3             outputs/qeft_wiki2_int3_g64_ep1_lr16e5-3bit-qeft-dense-eval
+run_arm qlora_upper_fp16_int3 outputs/qlora_none_wiki2_int3_g64_ep1-3bit-none-merged-eval
+run_arm gptq_floor_int3       outputs/qlora_none_wiki2_int3_g64_ep1-3bit-none-gptq-eval
+
+# The untrained pure-INT3 anchor: QA-LoRA's frozen GPTQ base is exactly GPTQ INT3 g64 of the
+# PRETRAINED model on this task's own calibration, so it needs no extra build.
+INT3_BASE=outputs/qalora_wiki2_int3_g64_ep1-3bit-qalora/qalora_intb_base
+if [ -f "$INT3_BASE/config.json" ]; then
+  for sp in test validation; do
+    python scripts/eval_ppl.py --model_path "$INT3_BASE" --data datasets/wikitext2 --split "$sp" \
+        --seq_len 1024 --also_seq_len 2048 --tag "int3_g64_base_untrained__${sp}" --output_dir "$OUT" \
+        --note "ANCHOR: pure INT3 g64 GPTQ of PRETRAINED Llama-2-7B, wikitext-2 calibration, NEVER fine-tuned"
+  done
+fi
+
+echo -e "\n>>> INT3 g64, 1 epoch: train / validation / test, and the ratio"
+python - <<'PY'
+import glob, json, os
+TEST = {}
+for p in glob.glob("results/wikitext2_ppl/*.json"):
+    r = json.load(open(p))
+    if "seq_len_2048" in r["results"]:
+        TEST[os.path.basename(r["config"]["model_path"])] = r["results"]["seq_len_2048"]["ppl"]
+DIRS = {
+    "saltq_int3": "saltq_wiki2_int3_g64_ep1_bcal_sgptql-3bit-saltq-deploy-eval",
+    "qalora_int3": "qalora_wiki2_int3_g64_ep1-3bit-qalora-dequant-eval",
+    "qeft_int3": "qeft_wiki2_int3_g64_ep1_lr16e5-3bit-qeft-dense-eval",
+    "qlora_upper_fp16_int3": "qlora_none_wiki2_int3_g64_ep1-3bit-none-merged-eval",
+    "gptq_floor_int3": "qlora_none_wiki2_int3_g64_ep1-3bit-none-gptq-eval",
+}
+def g(tag, sfx):
+    p = f"results/wikitext2_ppl_diagnostic_int3/{tag}__{sfx}.json"
+    return json.load(open(p))["results"]["seq_len_2048"]["ppl"] if os.path.exists(p) else None
+print(f"{'arm':<24}{'train166':>10}{'valid':>10}{'test':>10}{'test/train':>12}")
+for tag, d in DIRS.items():
+    tr, va, te = g(tag, "train166"), g(tag, "validation"), TEST.get(d)
+    f = lambda x: f"{x:10.4f}" if x is not None else "         -"
+    print(f"{tag:<24}{f(tr)}{f(va)}{f(te)}" + (f"{te/tr:12.2f}" if (tr and te) else "           -"))
+print("\n  untrained anchors (test @2048)")
+p = "results/wikitext2_ppl_diagnostic_int3/int3_g64_base_untrained__test.json"
+if os.path.exists(p):
+    print(f"    pure INT3 g64 GPTQ (3.00 bit)   {json.load(open(p))['results']['seq_len_2048']['ppl']:10.4f}")
+q = TEST.get("Llama-2-7B_int3_g64_k128_asym_wiki2-3bit-qeftbase-eval")
+if q: print(f"    QEFT base, k=128 fp16 (3.35 bit){q:10.4f}")
+print(f"    fp16 Llama-2-7B                     5.4721")
+PY
+echo "End time: $(date)"

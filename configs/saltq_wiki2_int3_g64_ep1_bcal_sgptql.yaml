@@ -1,0 +1,240 @@
+# =============================================================================
+# SALT-Q — INT3 g64, 1 EPOCH (the WikiText-2 column's second quantization cell)
+#
+# DERIVED MECHANICALLY from
+#     configs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x.yaml
+# with the parsed diff asserted to touch ONLY the quantization cell (quant_bits, group_size,
+# the salient/weak budget), the lr scalars that must track the bit width, and output paths.
+# Read the source config for the method, the data protocol and the recipe.
+#
+# WHAT MOVES: bits 2 -> 3, group_size 32 -> 64, and the salient/weak column budget 256 -> 128,
+# which is the validated INT3 setting in T1 (SALT-Q k=128 -> 78.85 MEAN(8); QEFT k=128 is its
+# paper main-table setting). group_k stays a multiple of group_size, as it must.
+#
+# WHAT DOES NOT MOVE: the dataset, the 1-epoch recipe, effective batch 16, T = 176, and the
+# 524,288-token in-domain calibration. So this cell is comparable to the INT2 g32 1-epoch cell
+# arm-for-arm, and the only thing separating the two tables is the bit width.
+#
+# LEARNING RATES NEED NO TRANSPORT HERE. T is unchanged, so AGENTS.md's displacement law asks for
+# no rescale. The three baselines use the same lr at both bit widths in this repo (QA-LoRA 5e-3,
+# QLoRA 2e-4, QEFT 5e-5 at T=1845). SALT-Q's do depend on bit width, and its *_by_bits maps
+# already carry the validated INT3 row -- flipping quant_bits to 3 selects it. The scalar
+# fallbacks below are moved to agree with that row so the file cannot contradict itself.
+#
+# BASES MUST BE REBUILT, NOT REUSED. The frozen codes are bit- and group-size-specific, and the
+# permutation itself depends on group_k and group_size, so neither the INT2 permuted base nor the
+# INT2 codes are valid here. scripts/train.py's _permuted_base_reusable() checks exactly these
+# fields and will refuse the INT2 base on its own.
+# =============================================================================
+
+# =============================================================================
+# SALT-Q — 1 EPOCH (the capacity / regularization control for the T2 Wiki2 column)
+#
+# DERIVED MECHANICALLY from
+#     configs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x.yaml
+# by a script that asserts the PARSED configs differ in nothing but training.num_epochs,
+# training.output_dir and the learning rates, and that every lr moved by exactly sqrt(3).
+# Read the source config for the method, the data protocol and the recipe; only the delta is
+# documented here.
+#
+# WHY THIS CELL EXISTS. At 3 epochs the Wiki2 column ranked the arms by REGULARIZATION rather
+# than by quantization quality (diagnostic job 16076252). In-sample and held-out perplexity came
+# out perfectly anti-correlated across all four trained arms:
+#
+#     arm             trainable   train(166w)   test    test/train
+#     SALT-Q               527M         1.504  10.154        6.75x
+#     QA-LoRA             ~160M         2.243   8.817        3.93x
+#     QEFT                 348M             -   6.683            -
+#     QLoRA fp16       LoRA r=64        3.921   5.087        1.30x
+#
+# The arm that fit the training text best generalized worst, monotonically in trainable degrees
+# of freedom. The cause is corpus size: WikiText-2 is 2.87M tokens — 12x smaller than
+# Commonsense-170k, 50x smaller than MetaMath — and the recipe passes over it three times.
+#
+# ONE VARIABLE: epochs 3 -> 1, applied to EVERY arm of the column at once. Each block is seen
+# ONCE instead of three times.
+#
+# THE LRs MOVE BECAUSE T MOVES — THAT IS NOT A SECOND VARIABLE. AGENTS.md's displacement law is
+# lr * c with c ~ 0.47*sqrt(T). T = ceil(2807/16) * 1 = 176 against 528, so every lr is
+# multiplied by sqrt(528/176) = sqrt(3) = 1.7321 to hold realized displacement fixed. That is
+# what makes the change "epochs" rather than "epochs AND step size".
+#
+# CAVEAT, STATED UP FRONT. Holding displacement fixed means the parameters still travel just as
+# far; only the number of passes over the data drops. If this cell still shows the same
+# anti-correlation, the next lever is displacement itself — i.e. deliberately do NOT transport
+# the lr — and that is a SECOND, separate cell. Do not conflate the two.
+# =============================================================================
+
+# =============================================================================
+# SALT-Q — WikiText-2 (T2's Wiki2 column), INT2 g32, k=256, salient_init=gptq_latent, zp_lr x2
+#
+# The third fine-tuning task. Transported VERBATIM from the cell that defines SALT-Q's current
+# INT2 setting — configs/saltq_cs170k_int2_g32_ep1_span_k256_bcal_sgptql_zp2x.yaml (CS MEAN(8)
+# 74.76) and its MetaMath replica configs/saltq_mm_int2_g32_ep1_span_bcal_sgptql_zp2x.yaml
+# (GSM8K 56.33 / MATH 13.68) — with exactly three families of change, each forced by the task:
+#
+#   1. data.*         raw-text causal LM instead of instruction/response (see the data block).
+#   2. training.*      3 epochs at effective batch 16 instead of 1 epoch at 80 (see below).
+#   3. the three lrs   x sqrt(T_ref / T_here), the repo's own transport law (see below).
+#
+# Everything the method itself is made of — group_size 32, group_k 256, auto segments,
+# salient_init gptq_latent, continuous z, z-only (train_scale false), the asymmetric affine
+# grid, the GPTQ code freezing — is byte-identical to the two cells above. This row is
+# "SALT-Q on a third task", not "a retuned SALT-Q".
+#
+# ---- WHAT IS SCORED -------------------------------------------------------------------------
+# The DEPLOYED artifact: the exported unified low-bit checkpoint after the merge-free export
+# (identity merge), which src/qat_saltq.export_saltq asserts is bit-identical to the trained
+# model. Perplexity on the wikitext-2-raw-v1 TEST split, scored by scripts/eval_ppl.py in the
+# GPTQ lineage's protocol (concatenate, non-overlapping windows, every token counted).
+# See that script's header; the protocol is fixed for every arm of this column.
+#
+# ---- WHY 3 EPOCHS AT EFFECTIVE BATCH 16 -----------------------------------------------------
+# WikiText-2 raw is 2,874,559 Llama-2 tokens = 2807 blocks of 1024, i.e. ~12x smaller than
+# Commonsense-170k in tokens. One epoch at the CS effective batch of 80 would be 36 optimizer
+# steps, which is not a fine-tune.
+#   * 3 epochs is LoftQ's and ApiQ's own number for WikiText-2 (ApiQ scripts/train_clm.sh).
+#   * effective batch 16 blocks x 1024 tokens = 16.4k tokens per optimizer step, which is the
+#     SAME token throughput per step as the CS recipe (80 records x ~250 supervised tokens
+#     = 20k). "Similar recipe" is held in tokens/step, not in records/step — records are not
+#     commensurable across the two tasks.
+#   -> T = ceil(2807 / 16) * 3 = 176 * 3 = 528 optimizer steps.
+#
+# ---- WHY EVERY LR IS MULTIPLIED BY 1.869 ----------------------------------------------------
+# AGENTS.md section 'lr must follow the bit width' / run4: under Adam the realized displacement
+# of a parameter group is lr * c with c ~ 0.47 * sqrt(T), measured to hold across all three
+# groups and both bit widths. So a change of T is a change of every lr:
+#       lr_new = lr_ref * sqrt(T_ref / T_new)
+# The reference lrs below are the ones validated at T_ref = 1845 (Commonsense-170k: 147580
+# records / effective batch 80 = 1845 steps; the '*_by_bits' values in the CS config are
+# already the sqrt(3) transport of the original MetaMath T=5535 numbers).
+#       sqrt(1845 / 528) = 1.8693
+# Applied UNIFORMLY to every arm of this column (SALT-Q, QA-LoRA, QLoRA, QEFT), so no arm is
+# retuned relative to another. This is transport of a measured law, not a hyper-parameter
+# search: nothing here was chosen by looking at a WikiText-2 score.
+#
+#       group        T=1845 (validated)   x1.8693 -> here
+#       salient_lr        1.25e-4              2.34e-4
+#       scales_lr         1.73e-5              3.23e-5
+#       zp_lr             3.46e-3              6.47e-3
+#
+# VERIFY BEFORE TRUSTING THE ROW: scripts/measure_saltq_displacement.py against the frozen base
+# should still put |dW_S| near 0.5 grid steps and |dz| in the 0.1-0.3 level band. If it does
+# not, the transport is what is wrong, not the method.
+# =============================================================================
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 3
+  double_quant: true          # NF4 knobs, UNUSED by SALT-Q (no bitsandbytes in this path)
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048           # tokenizer cap / calibration window; the training block is 1024
+
+lora:
+  rank: 64                    # UNUSED by SALT-Q; kept for the r=64 budget comparison
+  alpha: 16
+  dropout: 0.0
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "saltq"
+  symmetric: false
+  group_size: 64
+
+  lsq:
+    enabled: true
+    scales_lr: 5.59e-05        # must stay EQUAL to qat.saltq.scales_lr (src/trainer.py fallback)
+
+  # ---- CALIBRATION: the task's own text, ~0.5M tokens ---------------------------------------
+  # data.task_type=lm routes src/data.load_calibration_data to the SAME non-overlapping cut the
+  # training blocks come from (seeded draw, no overlap with itself), so the Hessian and the
+  # saliency statistics see wikitext-2-raw-v1 train and nothing else.
+  #   256 windows x 2048 tokens = 524,288 tokens, matching the 471k-token balanced budget the
+  #   `bcal` commonsense bases are defined by. calibration_sampling is IGNORED under task_type
+  #   lm (there is no `type` column to balance over); it is left here only so a reader of the
+  #   shared config schema does not have to wonder.
+  sqat:
+    calibration_samples: 256
+    calibration_sampling: balanced      # ignored under data.task_type=lm
+    calibration_seq_len: 2048
+
+  saltq:
+    salient_init: gptq_latent
+    train_salient: true
+    train_scale: false
+    continuous_z: true
+
+    # See the header: reference values x sqrt(1845/528) = 1.8693.
+    salient_lr: 1.62e-04
+    salient_lr_by_bits: {2: 0.000405, 3: 0.000162, 4: 8.09e-05}
+    scales_lr: 5.59e-05
+    scales_lr_by_bits: {2: 5.59e-05, 3: 5.59e-05, 4: 2.81e-05}
+    zp_lr: 5.59e-03
+    zp_lr_by_bits: {2: 0.0112, 3: 0.00559, 4: 0.0112}
+    train_layernorms: false
+
+    # Auto segments + fixed group_k, identical to the CS/MetaMath cells. The permutation is
+    # rebuilt on THIS task's calibration (saliency is an activation statistic, so it must be),
+    # which is why this run gets its own permuted_fp16_base and its own frozen codes.
+    group_k: 128
+    max_segments: 4
+    top_k_ratio: 0.01
+    outlier_log_sigma: 2.5
+    down_outlier_log_sigma: 3
+
+    gptq:
+      nsamples: 256           # MUST equal calibration_samples
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 4           # 2048-token windows: half the instruction-data micro-batch
+
+data:
+  # ---- RAW-TEXT CAUSAL LM (src/data.py, the `task_type: lm` branch) --------------------------
+  # wikitext-2-raw-v1, NOT wikitext-2-v1: the processed variant replaces rare words with <unk>
+  # and its perplexities are lower by a wide margin and not comparable. datasets/wikitext2 was
+  # written from the raw config.
+  # Rows are joined with "\n\n", tokenized ONCE, and cut into non-overlapping 1024-token blocks
+  # with labels == input_ids: every token carries loss. There is no PROMPT and no mask here, so
+  # data.loss_span does not apply and is deliberately absent.
+  task_type: lm
+  train_dataset: "datasets/wikitext2"
+  train_split: "train"
+  text_field: "text"
+  block_size: 1024            # LoftQ / ApiQ train_clm block_size; also the eval window
+  val_split: null             # PPL is scored after export by scripts/eval_ppl.py, not in-loop
+  shuffle_dataset: true
+  num_proc: 32
+
+training:
+  output_dir: "outputs/saltq_wiki2_int3_g64_ep1_bcal_sgptql"
+  num_epochs: 1
+  # 4 x 4 GPUs x 1 = effective batch 16 blocks = 16.4k tokens/step. See the header.
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 1
+  group_by_length: false      # every block is exactly block_size long; nothing to group
+  learning_rate: 3.46e-05       # only the "other" group (LayerNorms), which is off here
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true

@@ -1,0 +1,193 @@
+# =============================================================================
+# QLoRA (fp16 upper + floor parent) — INT3 g64, 1 EPOCH (the WikiText-2 column's second quantization cell)
+#
+# DERIVED MECHANICALLY from
+#     configs/qlora_none_wiki2_int2_g32_ep1.yaml
+# with the parsed diff asserted to touch ONLY the quantization cell (quant_bits, group_size,
+# the salient/weak budget), the lr scalars that must track the bit width, and output paths.
+# Read the source config for the method, the data protocol and the recipe.
+#
+# WHAT MOVES: bits 2 -> 3, group_size 32 -> 64, and the salient/weak column budget 256 -> 128,
+# which is the validated INT3 setting in T1 (SALT-Q k=128 -> 78.85 MEAN(8); QEFT k=128 is its
+# paper main-table setting). group_k stays a multiple of group_size, as it must.
+#
+# WHAT DOES NOT MOVE: the dataset, the 1-epoch recipe, effective batch 16, T = 176, and the
+# 524,288-token in-domain calibration. So this cell is comparable to the INT2 g32 1-epoch cell
+# arm-for-arm, and the only thing separating the two tables is the bit width.
+#
+# LEARNING RATES NEED NO TRANSPORT HERE. T is unchanged, so AGENTS.md's displacement law asks for
+# no rescale. The three baselines use the same lr at both bit widths in this repo (QA-LoRA 5e-3,
+# QLoRA 2e-4, QEFT 5e-5 at T=1845). SALT-Q's do depend on bit width, and its *_by_bits maps
+# already carry the validated INT3 row -- flipping quant_bits to 3 selects it. The scalar
+# fallbacks below are moved to agree with that row so the file cannot contradict itself.
+#
+# BASES MUST BE REBUILT, NOT REUSED. The frozen codes are bit- and group-size-specific, and the
+# permutation itself depends on group_k and group_size, so neither the INT2 permuted base nor the
+# INT2 codes are valid here. scripts/train.py's _permuted_base_reusable() checks exactly these
+# fields and will refuse the INT2 base on its own.
+# =============================================================================
+
+# =============================================================================
+# QLoRA (fp16 upper + floor parent) — 1 EPOCH (the capacity / regularization control for the T2 Wiki2 column)
+#
+# DERIVED MECHANICALLY from
+#     configs/qlora_none_wiki2_int2_g32_ep3.yaml
+# by a script that asserts the PARSED configs differ in nothing but training.num_epochs,
+# training.output_dir and the learning rates, and that every lr moved by exactly sqrt(3).
+# Read the source config for the method, the data protocol and the recipe; only the delta is
+# documented here.
+#
+# WHY THIS CELL EXISTS. At 3 epochs the Wiki2 column ranked the arms by REGULARIZATION rather
+# than by quantization quality (diagnostic job 16076252). In-sample and held-out perplexity came
+# out perfectly anti-correlated across all four trained arms:
+#
+#     arm             trainable   train(166w)   test    test/train
+#     SALT-Q               527M         1.504  10.154        6.75x
+#     QA-LoRA             ~160M         2.243   8.817        3.93x
+#     QEFT                 348M             -   6.683            -
+#     QLoRA fp16       LoRA r=64        3.921   5.087        1.30x
+#
+# The arm that fit the training text best generalized worst, monotonically in trainable degrees
+# of freedom. The cause is corpus size: WikiText-2 is 2.87M tokens — 12x smaller than
+# Commonsense-170k, 50x smaller than MetaMath — and the recipe passes over it three times.
+#
+# ONE VARIABLE: epochs 3 -> 1, applied to EVERY arm of the column at once. Each block is seen
+# ONCE instead of three times.
+#
+# THE LRs MOVE BECAUSE T MOVES — THAT IS NOT A SECOND VARIABLE. AGENTS.md's displacement law is
+# lr * c with c ~ 0.47*sqrt(T). T = ceil(2807/16) * 1 = 176 against 528, so every lr is
+# multiplied by sqrt(528/176) = sqrt(3) = 1.7321 to hold realized displacement fixed. That is
+# what makes the change "epochs" rather than "epochs AND step size".
+#
+# CAVEAT, STATED UP FRONT. Holding displacement fixed means the parameters still travel just as
+# far; only the number of passes over the data drops. If this cell still shows the same
+# anti-correlation, the next lever is displacement itself — i.e. deliberately do NOT transport
+# the lr — and that is a SECOND, separate cell. Do not conflate the two.
+# =============================================================================
+
+# =============================================================================
+# QLoRA — WikiText-2 (T2's Wiki2 column): the FP16 UPPER BOUND and, via merged->GPTQ, the FLOOR
+#
+# Transported from configs/qlora_none_mm_int2_g32_ep1_span.yaml (MetaMath GSM8K 58.07 upper /
+# 22.06 floor) with only the three task-forced families of change described in the SALT-Q
+# WikiText-2 config header: the data block, 3 epochs at effective batch 16, and every lr
+# multiplied by sqrt(T_ref / T_here) = sqrt(1845 / 528) = 1.8693.
+#
+#       learning_rate   2.0e-4 (T=1845, validated)  ->  3.74e-4
+#
+# (For scale: ApiQ's own published WikiText-2 LoRA lr is 3e-4 at block_size 1024 and 3 epochs.
+# That is corroboration of the transport, not its source — nothing here was tuned on a
+# WikiText-2 score.)
+#
+# ---- THE TWO ROWS THIS CONFIG PRODUCES ------------------------------------------------------
+#   UPPER  <output_dir>-2bit-none-merged-eval
+#          NF4 base dequantized + the LoRA adapter merged, dense fp16. This is the
+#          ADAPTER-MOUNTED deployed state written as one tensor set: no re-quantization has
+#          happened, so it is the best this checkpoint can do and it is not a 2-bit artifact.
+#          The row is labelled fp16 in the table for exactly that reason.
+#   FLOOR  <output_dir>-2bit-none-gptq-eval
+#          that same merged checkpoint put through GPTQ INT2 g32, calibrated on the SAME ~0.5M
+#          in-domain WikiText-2 tokens every other arm of this column calibrates on
+#          (scripts/export_gptq_dequant.py, see jobs/wiki2_qlora_int2_floor.pbs). This is the
+#          "fine-tune in fp16, then PTQ" bound — merge damage with nothing to absorb it — and
+#          it is the construction that gave the CS cell its floor and the MetaMath cell its
+#          22.06.
+#
+# qat.mode is "sqat_permute" only because that is this config family's shared schema; the
+# pipeline launches scripts/train.py with --qat_mode none, so NO permutation, NO QAT and no
+# GPTQ happen during training. The qat.* block below is read by exactly two things: the
+# calibration keys, by the floor's GPTQ export; and lora.target_modules / qat.group_size, by
+# the same. Nothing else in it is live.
+# =============================================================================
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 3
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "sqat_permute"        # schema only — the pipeline passes --qat_mode none
+  symmetric: false
+  group_size: 64
+  lsq:
+    enabled: false
+    scales_lr: 1.73e-05
+
+  # Read by the FLOOR export (scripts/export_gptq_dequant.py), not by training.
+  # 256 windows x 2048 tokens = 524,288 in-domain WikiText-2 train tokens, the same budget
+  # SALT-Q / QA-LoRA / QEFT calibrate their bases on in this column.
+  sqat:
+    calibration_samples: 256
+    calibration_sampling: balanced      # ignored under data.task_type=lm
+    calibration_seq_len: 2048
+
+  sqat_permute:
+    boundary_sizes: [2, 30]
+    group_k: 128
+    top_k_ratio: 0.01
+    outlier_log_sigma: 3.0
+    down_outlier_log_sigma: 3.0
+    stage: 2
+    gptq:
+      enabled: true
+      nsamples: 256
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 4
+    awq_scale:
+      enabled: true
+      alpha: 0.5
+      max: 2.0
+
+data:
+  # wikitext-2-raw-v1, joined with "\n\n", tokenized once, cut into non-overlapping 1024-token
+  # blocks, every token supervised. See src/data.py's `task_type: lm` section.
+  task_type: lm
+  train_dataset: "datasets/wikitext2"
+  train_split: "train"
+  text_field: "text"
+  block_size: 1024
+  val_split: null
+  shuffle_dataset: true
+  num_proc: 32
+
+training:
+  output_dir: "outputs/qlora_none_wiki2_int3_g64_ep1"
+  num_epochs: 1
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 1        # x 4 GPUs = effective batch 16 blocks = 16.4k tok/step
+  group_by_length: false
+  learning_rate: 0.000648                # 2.0e-4 x sqrt(1845/528); see the header
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true
