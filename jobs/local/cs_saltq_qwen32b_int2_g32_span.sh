@@ -25,8 +25,12 @@
 #   3. training             — packed 2-bit codes rebuilt per forward (packed_wq) + 8-bit Adam
 #                             moments: ~34 GiB/GPU instead of 92
 # All three are placement/storage-only and each has a bit-equivalence test:
-#   scripts/test_permute_sharded.py, scripts/test_gptq_stream.py, scripts/test_saltq_packed_wq.py,
+#   scripts/test_gptq_stream.py, scripts/test_saltq_packed_wq.py,
 #   plus scripts/test_saltq_e2e.py --packed_wq over the whole chain.
+# EXCEPT step 1: scripts/test_permute_sharded.py fails ~50% of the time and the failure is
+# real — the sharded calibration picks a slightly different salient set in the segment
+# device_map splits. This run is still self-consistent (the base is built once and read
+# back by every later stage); it just cannot be rebuilt byte-identically. See that file.
 #
 # DISK: permuted base ~65 GB + frozen-code base ~40 GB, both under the run's output_dir.
 #

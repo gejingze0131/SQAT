@@ -60,8 +60,19 @@
 #   qat.saltq.shard_across_gpus The permuted-base step calibrates with a real forward pass through
 #                               the whole model, so unlike the GPTQ sweep there is nothing to
 #                               stream: accelerate's device_map spreads the 65 GB fp16 base over
-#                               the three cards. scripts/test_permute_sharded.py holds that to a
-#                               bit-identical permuted base and an identical salient selection.
+#                               the three cards. WARNING — this step is
+#                               NOT bit-reproducible, and the header of
+#                               scripts/test_permute_sharded.py carries the measurement: the
+#                               salient selection agrees with the single-GPU path only about half
+#                               the time, and when it differs it differs ONLY in the segment that
+#                               device_map splits across cards (measured on a 4-layer probe:
+#                               the segment kept on one card agreed, the segment device_map split
+#                               came out union_topk 7 vs 6 / energy_cov 34.0% vs 31.7%, and 3 to 12
+#                               of the 32 salient channels were swapped depending on the run).
+#                               This does NOT invalidate this run: the base is built once, saved,
+#                               and the frozen codes / training / export all read that one file,
+#                               so the run is internally consistent. What it costs is the ability
+#                               to REBUILD the identical base later.
 #
 #   training.optim              adamw_bnb_8bit. DEVIATION IN NUMERICS, not placement — the same
 #                               one the INT2 32B row records. 1.04 B trainable parameters here

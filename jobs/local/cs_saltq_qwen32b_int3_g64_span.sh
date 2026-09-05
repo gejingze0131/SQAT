@@ -22,7 +22,12 @@
 # WHAT IS DIFFERENT FROM THE INT2 32B JOB, mechanically: only --bits and the config. The three
 # offline/32B fixes are the same and each has its own bit-equivalence test —
 #   1. permuted fp16 base   — device_map spreads the 65 GB base over the 3 cards for the
-#                             calibration forward (scripts/test_permute_sharded.py)
+#                             calibration forward. NOT bit-reproducible: the salient selection
+#                             agrees with a single-GPU build only ~half the time, and only in the
+#                             segment device_map splits. The base is built once and everything
+#                             downstream reads that file, so this run is self-consistent; what is
+#                             lost is rebuilding it identically. scripts/test_permute_sharded.py
+#                             carries the measurement and is left FAILING on purpose.
 #   2. frozen-code base     — GPTQ streams decoder layers and absorbs each module as it lands
 #                             (scripts/test_gptq_stream.py)
 #   3. training             — packed 3-bit codes rebuilt per forward, 8-bit Adam moments
