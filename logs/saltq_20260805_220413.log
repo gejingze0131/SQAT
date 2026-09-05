@@ -1,0 +1,8 @@
+[2026-08-05 22:04:13] ==========================================================
+[2026-08-05 22:04:13] SALT-Q unattended launcher
+[2026-08-05 22:04:13]   repo:        /home/dong/kosmos/SQAT
+[2026-08-05 22:04:13]   python:      /home/dong/anaconda3/envs/sqat/bin/python
+[2026-08-05 22:04:13]   pass-through args: --note first SALT-Q run, INT2 metamath, salient_lr=2e-5
+[2026-08-05 22:04:13]   poll every 300s, confirm-free gap 60s, max wait 72h
+[2026-08-05 22:04:13] ==========================================================
+[2026-08-05 22:04:13] Still busy: 9 compute process(es) — 0, 15638 MiB, 96 %;1, 15486 MiB, 100 %;2, 15366 MiB, 100 %;
