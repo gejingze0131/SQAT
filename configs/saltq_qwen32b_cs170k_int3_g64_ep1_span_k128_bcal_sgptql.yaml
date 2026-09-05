@@ -1,0 +1,194 @@
+# =============================================================================
+# SALT-Q — Qwen2.5-32B, Commonsense-170k, INT3 g64, k=128, bcal, sgptq-latent.
+#
+# The scale port of configs/saltq_cs170k_int3_g64_ep1_sal5e5_span_bcal_sgptql.yaml (Llama-2-7B,
+# 78.67), built the same way the INT2 g32 port was built: the 7B cell's definition is copied
+# verbatim and ONLY the things a 32B model forces are changed — every one of them
+# placement/storage-only with a bit-equivalence test, plus the two numerics deviations the INT2
+# run already took and recorded.
+#
+# READ THE CELL BEFORE READING THE RESULT. Its control arms are already measured, both off the
+# SAME fp16 QLoRA merge and the SAME 3500 balanced-record calibration:
+#
+#     fp16 merged upper bound                  90.59
+#     INT3 g64 GPTQ floor, bcal                89.96      <- what this run has to beat
+#     (INT2 g32 GPTQ floor, for scale          85.20, and SALT-Q reached 89.02 there)
+#
+# The quantization gap in THIS cell is 0.63 points. At INT2 g32 on the same model it is 5.39, and
+# at 7B INT3 g64 it is 1.70 (77.75 fp16 / 76.05 bcal floor, where SALT-Q scored 78.67 — i.e. it
+# finished ABOVE the fp16 bound, so the ceiling is not what limits it). A 32B INT3 run therefore
+# has almost no floor-to-ceiling room to recover: the interesting question is not "how much of
+# the gap does it close" but whether it lands above the fp16 bound the way the 7B run did.
+# Anything inside +-0.6 of 89.96 is inside the width of the cell and should not be read as either
+# a win or a failure.
+#
+# WHAT IS HELD IDENTICAL to the 7B INT3 cell: bits, group_size 64, group_k 128, max_segments 4,
+# top_k_ratio, both outlier sigmas, salient_init gptq_latent, train_salient/train_scale/
+# continuous_z, calibration (3500 records, BALANCED — the same records the frozen codes are
+# GPTQ'd on), every learning rate INCLUDING its sqrt(3) T-compensation, loss span, seed.
+# zp_lr stays 1.73e-3: the INT2 cell's 2x zp finding was never transported to INT3 at 7B, so
+# transporting it here would confound the model change with an untested lr change.
+#
+# WHAT CHANGED, AND WHY:
+#
+#   model.name                  Llama-2-7b-hf -> Qwen2.5-32B.
+#
+#   model.max_seq_len 2048->512 Not a preference — the INT2 32B run died twice at the same step
+#                               on ONE 1135-token record. Full-dataset lengths (Qwen tokenizer,
+#                               all 147580): mean 132, p99 335, p99.9 366, max 1135. 512
+#                               truncates 18 records (0.012%) and is still 1.4x p99.9.
+#                               Calibration is unaffected (load_calibration_data caps its own).
+#                               Held at 512 here so this run and the INT2 32B run see the same
+#                               data, even though INT3 has more headroom than INT2 did.
+#
+#   per_device 4x5x4 -> 3x9x3   effective batch 80 -> 81, so the lr schedule carries over
+#                               (T=1822 vs 1845, same as the INT2 32B port). This is the QLoRA
+#                               control's batch SHAPE, not the INT2 SALT-Q run's 1x27x3: see
+#                               the budget below for why INT3 g64 can afford it and INT2 g32
+#                               could not. Same effective batch either way, so 1x27 is a valid
+#                               fallback on an OOM with no schedule change at all.
+#
+#   qat.saltq.packed_wq: true   SALTQLinear normally precomputes wq = q*s as a DENSE bf16 buffer.
+#                               At 32B that is 58.1 GiB against a 46 GiB card, whatever the bit
+#                               width — the buffer is bf16 per RANK, so INT3 does not make it any
+#                               cheaper. Packed, the 3-bit codes are 14.5 GiB (8//3 = 2 codes per
+#                               byte; the 25% waste is why INT3 codes cost DOUBLE INT2's 7.3 GiB)
+#                               and wq is rebuilt per forward in row chunks.
+#                               scripts/test_saltq_packed_wq.py holds it to bit-identical
+#                               forward, gradients and export.
+#
+#   qat.saltq.shard_across_gpus The permuted-base step calibrates with a real forward pass through
+#                               the whole model, so unlike the GPTQ sweep there is nothing to
+#                               stream: accelerate's device_map spreads the 65 GB fp16 base over
+#                               the three cards. scripts/test_permute_sharded.py holds that to a
+#                               bit-identical permuted base and an identical salient selection.
+#
+#   training.optim              adamw_bnb_8bit. DEVIATION IN NUMERICS, not placement — the same
+#                               one the INT2 32B row records. 1.04 B trainable parameters here
+#                               (z 0.49 B + salient 0.55 B) would want 8.3 GiB of fp32 Adam
+#                               moments; 8-bit gives ~6 GiB back. NOT paged: paged state lives in
+#                               cudaMallocManaged memory and a checkpoint reloads as ordinary CUDA
+#                               tensors, which kills the update kernel on the first step().
+#
+#   training.save_strategy      steps/150, limit 1. A SALT-Q checkpoint holds only the trainable
+#                               tensors, and a run this long must be resumable.
+#
+# BUDGET (per GPU, 46 GiB usable), INT3 g64 k=128 against the INT2 g32 k=256 run in brackets:
+#     packed codes           14.5  [ 7.3]   3 bits at 2 codes/byte vs 2 bits at 4
+#     frozen scales s         1.8  [ 3.5]   g64 halves the group count
+#     z params+grads+moments  4.6  [ 8.9]   0.49 B vs 0.94 B
+#     salient p+g+moments     5.2  [10.4]   0.55 B vs 1.11 B  (k=128 vs k=256)
+#     embed/head bf16         2.9  [ 2.9]   NOT quantized, in either run
+#     ------------------------------------
+#     persistent            ~29.0  [33.0]   -> ~17 GiB for activations, vs ~13
+# The QLoRA control measured 6.7 GiB of activations at 3x9x3 with gradient checkpointing on, so
+# per_device 3 has ~10 GiB of margin here. If it OOMs anyway, drop to 1x27x3 and resume: same 81.
+#
+# OPEN QUESTION THIS RUN DOES NOT SETTLE: every learning rate here was tuned on Llama-2-7B. They
+# are carried over unchanged so the model is the only variable, which is the right first
+# experiment — but a null result at 32B is as likely to be an lr-transfer failure as a method
+# failure, and in a cell only 0.63 points wide it is also as likely to be noise.
+# =============================================================================
+
+model:
+  name: Qwen/Qwen2.5-32B
+  quant_bits: 3
+  double_quant: true
+  quant_type: nf4
+  dtype: bfloat16
+  max_seq_len: 512
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+  bias: none
+qat:
+  mode: saltq
+  symmetric: false
+  group_size: 64
+  lsq:
+    enabled: true
+    scales_lr: 1.73e-05
+  sqat:
+    calibration_samples: 3500
+    calibration_sampling: balanced
+    calibration_seq_len: 2048
+  saltq:
+    salient_init: gptq_latent
+    train_salient: true
+    train_scale: false
+    continuous_z: true
+    salient_lr: 5.0e-05
+    salient_lr_by_bits:
+      2: 0.000125
+      3: 5.0e-05
+      4: 2.5e-05
+    scales_lr: 1.73e-05
+    scales_lr_by_bits:
+      2: 3.46e-05
+      3: 1.73e-05
+      4: 8.66e-06
+    zp_lr: 0.00173
+    zp_lr_by_bits:
+      2: 0.00866
+      3: 0.00173
+      4: 0.00346
+    train_layernorms: false
+    group_k: 128
+    max_segments: 4
+    top_k_ratio: 0.01
+    outlier_log_sigma: 2.5
+    down_outlier_log_sigma: 3
+    gptq:
+      nsamples: 3500
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 8
+    packed_wq: true
+    shard_across_gpus: true
+data:
+  train_dataset: datasets/commonsense
+  train_split: train
+  val_split: null
+  dataset_field:
+  - instruction
+  - output
+  sub_task: null
+  shuffle_dataset: true
+  num_proc: 32
+  loss_span: instruction+response
+training:
+  output_dir: outputs/saltq_qwen32b_cs170k_int3_g64_ep1_span_k128_bcal_sgptql
+  num_epochs: 1
+  per_device_train_batch_size: 3
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 9
+  # DDP's all-reduce buckets normally sit alongside param.grad; as a view they are the same
+  # memory. No numerical change at all.
+  ddp_gradient_as_bucket_view: true
+  group_by_length: false
+  learning_rate: 2.0e-05
+  weight_decay: 0.01
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 150
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: wandb
+  seed: 42
+  optim: adamw_bnb_8bit
+  save_strategy: steps
+export:
+  merge_and_save: true

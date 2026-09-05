@@ -1,0 +1,138 @@
+# =============================================================================
+# QA-LoRA baseline — Qwen2.5-32B, Commonsense-170k, INT2 g32, bcal. Same cell as
+# configs/saltq_qwen32b_cs170k_int2_g32_ep1_span_k256_bcal_sgptql_zp2x.yaml.
+#
+# The scale port of configs/qalora_cs170k_int2_g32_ep1_span_bcal.yaml (7B: 72.96, against SALT-Q's
+# 74.76 and the GPTQ floor's 66.22). On Qwen2.5-32B the same three-way comparison is
+#   fp16 upper bound 90.59 / INT2 bcal-GPTQ floor 85.20 / SALT-Q 89.02
+# and this run is the method-level control SALT-Q most needs: at 7B the two differ by 1.80 points.
+#
+# HELD IDENTICAL to the 7B cell: data, span, bits, group_size 32, LoRA r=64/alpha=16, lr 5e-3,
+# 1 epoch, calibration (3500 records, BALANCED — same bcal as SALT-Q's frozen codes), seed.
+#
+# CHANGED, and why:
+#
+#   model.name                  Llama-2-7b-hf -> Qwen2.5-32B.
+#
+#   per_device 5x4x4 -> 3x9x3   effective batch 80 -> 81, matching the QLoRA control and SALT-Q.
+#
+#   max_seq_len 2048 -> 512     Not a free choice: at 32B the loss and its backward scale with
+#                               sequence length against a few hundred MiB of spare VRAM, and one
+#                               1135-token record OOMed the SALT-Q run twice. Full-dataset lengths
+#                               (Qwen tokenizer): mean 132, p99 335, p99.9 366, max 1135; 512
+#                               truncates 18 of 147580 records (0.012%). SALT-Q's last 18% of
+#                               steps ran under this same cap, so the two are consistent.
+#
+#   training.optim              adamw_bnb_8bit — memory; the one numerics change, same as SALT-Q.
+#   ddp_gradient_as_bucket_view DDP keeps its all-reduce buckets as a view of param.grad instead
+#                               of a second copy. No numerical change.
+#   save_strategy: steps        An OOM at 32B must not cost the whole run; SALT-Q lost only 106
+#                               steps to one because of this.
+#
+# THE PACKED BASE. QA-LoRA trains on the real GPTQ INT-b grid, and build_qalora_intb_base ships it
+# as a DENSE fp16 checkpoint: 61 GiB here, per DDP rank, against 44.4 GiB usable. Unlike SALT-Q
+# there was no low-bit path in src/qalora.py at all, so one was added — QALoRAPackedLinear keeps
+# the codes packed (7.3 GiB at INT2) and rebuilds the weight per forward with the SAME
+# group_dequantize that produced the dense file. scripts/test_qalora_packed.py holds it to a
+# bit-identical weight and a bit-identical forward. The dense checkpoint is still written, because
+# that is what the export path reloads.
+# =============================================================================
+
+model:
+  name: Qwen/Qwen2.5-32B
+  quant_bits: 2
+  double_quant: true
+  quant_type: nf4
+  dtype: bfloat16
+  max_seq_len: 512
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+  bias: none
+qat:
+  mode: sqat_permute
+  symmetric: false
+  group_size: 32
+  lsq:
+    enabled: false
+    scales_lr: 1.0e-05
+  sqat:
+    calibration_samples: 3500
+    calibration_sampling: balanced
+    calibration_seq_len: 2048
+  qalora:
+    gptq:
+      nsamples: 3500
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 8
+  sqat_permute:
+    boundary_sizes:
+    - 2
+    - 30
+    group_k: 128
+    top_k_ratio: 0.01
+    outlier_log_sigma: 3.0
+    down_outlier_log_sigma: 3.0
+    stage: 2
+    gptq:
+      enabled: true
+      nsamples: 128
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 2
+    awq_scale:
+      enabled: true
+      alpha: 0.5
+      max: 2.0
+data:
+  train_dataset: datasets/commonsense
+  train_split: train
+  val_split: null
+  dataset_field:
+  - instruction
+  - output
+  sub_task: null
+  shuffle_dataset: true
+  loss_span: instruction+response
+  num_proc: 32
+training:
+  output_dir: outputs/qalora_qwen32b_cs170k_int2_ep1_span_bcal
+  num_epochs: 1
+  per_device_train_batch_size: 3
+  per_device_eval_batch_size: 3
+  gradient_accumulation_steps: 9
+  group_by_length: false
+  learning_rate: 0.005
+  weight_decay: 0.01
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 150
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: wandb
+  seed: 42
+  optim: adamw_bnb_8bit
+  save_strategy: steps
+  ddp_gradient_as_bucket_view: true
+export:
+  # FALSE, where the 7B cell says true — plumbing, not experiment. true exports in-process
+  # the moment training ends, while the training model still holds 27 GiB on each of the
+  # three cards; device_map='auto' then cannot fit the 62 GB fp16 base, offloads part of it,
+  # and _merge_lora_into_dense dies on a meta tensor ('Cannot copy out of meta tensor').
+  # The QLoRA control config already carries this reasoning; this file inherited true from
+  # the 7B cell and paid for it. Export runs from PASS=2 instead, in a fresh process.
+  merge_and_save: false

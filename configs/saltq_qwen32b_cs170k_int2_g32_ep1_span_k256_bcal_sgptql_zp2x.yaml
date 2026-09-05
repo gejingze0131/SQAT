@@ -1,0 +1,187 @@
+# =============================================================================
+# SALT-Q — Qwen2.5-32B, Commonsense-170k, INT2 g32, k=256, bcal, sgptq-latent, zp 2x.
+#
+# The scale port of configs/saltq_cs170k_int2_g32_ep1_span_k256_bcal_sgptql_zp2x.yaml, whose
+# every row in results_saltq.csv is Llama-2-7B. Its QLoRA control on this model is
+# configs/qlora_none_cs170k_int2_g32_ep1_span_qwen32b.yaml — same data, same span, same batch
+# shape, same INT2 g32 cell — and the bcal GPTQ floor built from that control's merged export is
+# what this run has to beat.
+#
+# WHAT IS HELD IDENTICAL to the 7B cell: bits, group_size 32, group_k 256, max_segments 4,
+# salient_init gptq_latent, calibration (3500 records, BALANCED — the same records the frozen
+# codes are GPTQ'd on), every learning rate and its sqrt(3) T-compensation, loss span, seed.
+#
+# WHAT CHANGED, AND WHY:
+#
+#   model.name                  Llama-2-7b-hf -> Qwen2.5-32B.
+#
+#   per_device 4x5x4 -> 1x27x3  effective batch 80 -> 81, so the lr schedule carries over
+#                               (T=1822 vs 1845). The QLoRA control ran 3x9x3 for the same 81;
+#                               SALT-Q needs the smaller micro-batch because its persistent
+#                               state is 21.3 GiB before a single activation (packed codes 7.0
+#                               + s 3.5 + z 3.5 + salient 4.1 + embed/head 2.9), against
+#                               QLoRA's NF4 base at 17. Same effective batch, same schedule.
+#
+#   qat.saltq.packed_wq: true   SALTQLinear normally precomputes wq = q*s as a DENSE bf16 buffer
+#                               so the frozen forward is one GEMM. At 7B that is 12 GiB and
+#                               plainly worth it; at 32B it is 58.1 GiB against a 46 GiB usable
+#                               card — 16 bits per rank holding a 2-bit value, and MORE than
+#                               QLoRA's entire NF4 base for the same model. Packed, the codes are
+#                               7.3 GiB and wq is rebuilt per forward. scripts/test_saltq_packed_wq.py
+#                               holds it to bit-identical forward, gradients and export; the
+#                               whole offline->train->export chain is covered by
+#                               scripts/test_saltq_e2e.py --packed_wq.
+#
+#   training.optim              paged_adamw_8bit. SALT-Q trains 2.05 B parameters here (z 0.94 B +
+#                               salient 1.11 B) against QLoRA-r64's 537 M, so fp32 Adam moments
+#                               alone are 16.4 GiB. 8-bit moments give ~11 GiB back, which is what
+#                               keeps per_device 3 reachable. Both create_optimizer overrides in
+#                               src/trainer.py end at Trainer.get_optimizer_cls_and_kwargs, so the
+#                               per-tier groups (salient / scales / zero-points / LoRA) survive.
+#                               NOTE: unlike packed_wq this DOES change the numerics.
+#
+#   qat.saltq.shard_across_gpus   The permuted-base step calibrates with a real forward pass
+#                               through the whole model, so unlike the GPTQ sweep there is nothing
+#                               to stream: accelerate's device_map spreads the 65 GB fp16 base
+#                               over the three cards instead. scripts/test_permute_sharded.py
+#                               holds that to a bit-identical permuted base and an identical
+#                               salient selection.
+#
+#   training.save_strategy: no  537M+ of trainable state per checkpoint, and this box has no room
+#                               to hold two across a rotation. Same reasoning as the QLoRA control.
+#
+# BUDGET (per GPU, 46 GiB usable): packed codes 7.3 + scales 3.5 + z/salient params & grads 15.2
+# + 8-bit moments ~5.5 + embed/head bf16 2.9 = ~34 GiB, leaving ~12 for activations. The QLoRA
+# control measured 6.7 GiB of activations at the same batch shape.
+#
+# OPEN QUESTION THIS RUN DOES NOT SETTLE: every learning rate here was tuned on Llama-2-7B. They
+# are carried over unchanged so that the model is the only variable, which is the right first
+# experiment — but a null result at 32B is as likely to be an lr-transfer failure as a method
+# failure, and reading it as the latter would be a mistake.
+# =============================================================================
+
+model:
+  name: Qwen/Qwen2.5-32B
+  quant_bits: 2
+  double_quant: true
+  quant_type: nf4
+  dtype: bfloat16
+  # 2048 in the 7B cell, where it never bound. Here it is the single failure mode that has
+  # killed this run twice at the SAME step (1606): the loss and its backward scale with
+  # sequence length against ~400 MiB of spare VRAM, and one 1135-token example is enough.
+  # Full-dataset lengths (Qwen tokenizer, all 147580): mean 132, p99 335, p99.9 366,
+  # max 1135; 512 truncates 18 records (0.012%) and is still 1.4x p99.9. Batch size is NOT
+  # the lever — batch 1 OOMs at the same step, because it is one long RECORD, not a batch
+  # of three. Calibration is unaffected (load_calibration_data sets its own cap).
+  max_seq_len: 512
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+  bias: none
+qat:
+  mode: saltq
+  symmetric: false
+  group_size: 32
+  lsq:
+    enabled: true
+    scales_lr: 1.73e-05
+  sqat:
+    calibration_samples: 3500
+    calibration_sampling: balanced
+    calibration_seq_len: 2048
+  saltq:
+    salient_init: gptq_latent
+    train_salient: true
+    train_scale: false
+    continuous_z: true
+    salient_lr: 0.000125
+    salient_lr_by_bits:
+      2: 0.000125
+      3: 5.0e-05
+      4: 2.5e-05
+    scales_lr: 1.0e-05
+    scales_lr_by_bits:
+      2: 1.73e-05
+      3: 1.73e-05
+      4: 8.66e-06
+    zp_lr: 0.00173
+    zp_lr_by_bits:
+      2: 0.00346
+      3: 0.00173
+      4: 0.00346
+    train_layernorms: false
+    group_k: 256
+    max_segments: 4
+    top_k_ratio: 0.01
+    outlier_log_sigma: 2.5
+    down_outlier_log_sigma: 3
+    gptq:
+      nsamples: 3500
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 8
+    packed_wq: true
+    shard_across_gpus: true
+data:
+  train_dataset: datasets/commonsense
+  train_split: train
+  val_split: null
+  dataset_field:
+  - instruction
+  - output
+  sub_task: null
+  shuffle_dataset: true
+  num_proc: 32
+  loss_span: instruction+response
+training:
+  output_dir: outputs/saltq_qwen32b_cs170k_int2_g32_ep1_span_k256_bcal_sgptql_zp2x
+  num_epochs: 1
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 27
+  # DDP's all-reduce buckets normally sit alongside param.grad; as a view they are the same
+  # memory. 7.9 GiB back at 2117M trainable parameters, and no numerical change at all.
+  ddp_gradient_as_bucket_view: true
+  group_by_length: false
+  learning_rate: 2.0e-05
+  weight_decay: 0.01
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 150
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: wandb
+  seed: 42
+  # Same bitsandbytes AdamW, same optim_bits=8, same betas/eps as adamw_bnb_8bit — only
+  # is_paged differs, which moves the 3.94 GiB of moments out of VRAM into paged memory. The
+  # optimizer is touched once per 9 micro-steps, so the migration is free in wall-clock, and it
+  # is what buys back the headroom for per_device 3 (measured: batch 1->3 costs ~1.8 GiB and
+  # only ~1.2 GiB was spare). Placement-only relative to adamw_bnb_8bit.
+  # NOT paged_adamw_8bit on a resume. Paged state lives in cudaMallocManaged memory, and a
+  # state_dict loaded back from a checkpoint comes in as ordinary CUDA tensors — the update
+  # kernel then dies with 'Error invalid argument at line 580 in pythonInterface.cpp' on the
+  # first optimizer.step(). Paged was only ever needed to buy headroom for per_device 3;
+  # at per_device 1 the non-paged 8-bit optimizer fits (measured 44.8 of 46 GB), and the
+  # 8-bit state format is identical so the checkpoint loads.
+  optim: adamw_bnb_8bit
+  # WAS 'no', carried over from the QLoRA control's disk reasoning. Reinstated because this
+  # run has ~580 MiB of VRAM headroom and the padded batch length swings 3x (typical 603
+  # tokens at bs=3, worst case 3x626=1878), so a long batch can OOM at any point — and an
+  # 18-hour run that cannot resume would lose all of it. A SALT-Q checkpoint holds only the
+  # trainable tensors (saltq_trainable_state_dict), and 449 GB is free now.
+  save_strategy: steps
+export:
+  merge_and_save: true

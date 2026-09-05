@@ -1,0 +1,141 @@
+# =============================================================================
+# QLoRA baseline — Qwen2.5-32B, Commonsense-170k, INT2 g32, ONE epoch, span loss.
+#
+# THE SCALE PORT OF configs/qlora_none_cs170k_int2_g32_ep1_span.yaml. Every SALT-Q number in
+# results_saltq.csv was produced on Llama-2-7B; the open question this cell opens is whether the
+# INT2 g32 story survives a 4.6x larger, GQA, 152k-vocab model. This is the CONTROL for that:
+# plain QLoRA on an NF4 base, no quantization-aware training at all, exported twice —
+#   merged-eval    fp16 LoRA merge, no quantization  -> upper bound, is the pipeline sound on Qwen?
+#   dequant-eval   INT2 quantize->dequantize         -> the floor SALT-Q has to beat
+# It runs FIRST because a 32B pipeline has failure modes a 7B one does not (tokenizer, GQA head
+# counts, 152k-vocab logits, DDP over 537M LoRA params), and none of them should be discovered
+# for the first time inside a SALT-Q run.
+#
+# WHAT IS HELD IDENTICAL to the Llama-2-7B cell (so the two are the same experiment at two
+# scales): dataset, prompt + instruction+response masking + collator, bits (INT2), group_size 32,
+# LoRA r=64/alpha=16 on all seven projections, lr 2e-4 cosine, wd 0.01, clip 0.3, 1 epoch,
+# max_seq_len 2048, seed 42, group_by_length false.
+#
+# WHAT CHANGED, AND ONLY THIS:
+#
+#   model.name                     Llama-2-7b-hf -> Qwen2.5-32B.
+#
+#   per_device_train_batch_size    5 -> 3
+#   gradient_accumulation_steps    4 -> 9
+#                                  The 7B cell ran 5 x 4 x 4 GPUs = effective batch 80 (T=1845
+#                                  optimizer steps). The local box has THREE 48 GB cards, and a
+#                                  32B NF4 base + fp32-upcast embed/lm_head (152k x 5120, twice)
+#                                  + 537M fp32 LoRA params with Adam leaves ~10 GB per card for
+#                                  activations. 3 x 9 x 3 GPUs = 81 keeps the effective batch,
+#                                  and therefore the schedule (T=1822 vs 1845, 1.3% shorter) and
+#                                  every lr in this file, transferable. Gradient checkpointing is
+#                                  already on for every NF4 base (src/model_loader.py,
+#                                  prepare_model_for_kbit_training).
+#
+# NOT changed even though it is tempting: group_by_length stays false. Commonsense records
+# tokenize to a mean of 133 Qwen tokens (p90 294), so batch-3 dynamic padding wastes ~34% of the
+# compute and length-grouping would pay for itself. It also changes which records share a batch,
+# which is a different experimental cell from the one the 7B rows sit in.
+# =============================================================================
+
+model:
+  name: "Qwen/Qwen2.5-32B"
+  quant_bits: 2
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "sqat_permute"
+  symmetric: false          # asymmetric INT2 (same as QA-LoRA convention)
+  group_size: 32
+  lsq:
+    enabled: false
+    scales_lr: 1.0e-5
+  sqat:
+    calibration_samples: 512
+    calibration_seq_len: 2048
+  # Unused at qat_mode=none (this pipeline passes --qat_mode none); kept byte-for-byte from the
+  # 7B config so the two files diff to exactly the model + batch-shape lines above, and so the
+  # same file can seed the sqat_permute/SALT-Q port without a second round of transcription.
+  sqat_permute:
+    boundary_sizes: [2, 30]
+    group_k: 128
+    top_k_ratio: 0.01
+    outlier_log_sigma: 3.0
+    down_outlier_log_sigma: 3.0
+    stage: 2
+    gptq:
+      enabled: true
+      nsamples: 128
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 2
+    awq_scale:
+      enabled: true
+      alpha: 0.5
+      max: 2.0
+
+data:
+  train_dataset: "datasets/commonsense"
+  train_split: "train"
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null
+  shuffle_dataset: true
+  loss_span: instruction+response
+  num_proc: 32
+
+training:
+  output_dir: "outputs/qlora_none_qwen32b_cs170k_int2_ep1_span"
+  num_epochs: 1
+  # 3 x 9 x 3 GPUs = 81, against the 7B cell's 5 x 4 x 4 = 80. See the header.
+  per_device_train_batch_size: 3
+  per_device_eval_batch_size: 3
+  gradient_accumulation_steps: 9
+  group_by_length: false
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  # NO mid-run checkpoints. The 7B cell checkpoints every 200 steps, but its adapter is 160M
+  # parameters; this one is 537M, so a checkpoint is the adapter (2.1 GB) plus its Adam state
+  # (4.3 GB) and save_total_limit=1 keeps two of them alive across each rotation. That is ~14 GB
+  # of disk this run would have to hold free for eleven hours on a box that had 17 GB. Only the
+  # final adapter is written; the trade is that a run that dies partway restarts from zero.
+  save_strategy: "no"
+  save_steps: 200
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  # FALSE, where the 7B cell says true — a plumbing difference, not an experimental one.
+  # true makes scripts/train.py export in-process the moment the epoch ends, while the 32B
+  # training model, its Adam state and the DDP buckets are all still resident on the three
+  # cards (34 GB of 46 each) and the merged fp16 shell wants 65 GB of host RAM on top.
+  # src/export.py's own OOM message already prescribes the fix for exactly this situation —
+  # re-run export-only — so jobs/local/cs_qlora_qwen32b_int2_g32_span.sh just does that from
+  # the start: both exports run in fresh single-GPU processes after training has exited, and
+  # each one is independently re-runnable against the saved final/ checkpoint.
+  merge_and_save: false
