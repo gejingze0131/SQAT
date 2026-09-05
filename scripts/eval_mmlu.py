@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 """
-MMLU 0-shot evaluation via HuggingFace backend + lm-eval-harness.
+MMLU evaluation via HuggingFace backend + lm-eval-harness (--num_fewshot picks the protocol;
+0 is the default, 5 is what the Alpaca column reports and what QLoRA / QA-LoRA / QEFT publish).
+
+SQAT-Permute and SALT-Q exports are handled: when the checkpoint carries sqat_permute_meta.pt
+this builds the HFLM itself and registers the boundary gathers, because a permuted checkpoint
+evaluated without them is not the model that was exported. Under `accelerate launch
+--num_processes N` lm-eval runs data-parallel and aggregates onto rank 0.
 
 Usage:
   # Evaluate GPTQ quantized model
@@ -28,6 +34,9 @@ def eval_with_lm_eval_harness(
     batch_size: int = 8,
     output_dir: str = "results",
     adapter_path: str = None,
+    tag: str = None,
+    note: str = "",
+    limit: int = None,
 ):
     """
     Run evaluation using lm-eval-harness with HuggingFace backend.
@@ -67,6 +76,11 @@ def eval_with_lm_eval_harness(
         tasks=tasks,
         num_fewshot=num_fewshot,
         batch_size=batch_size,
+        # --limit caps the documents per subtask. It exists to PREFLIGHT the wiring (does the
+        # checkpoint load, do the boundary gathers register, does the offline MMLU cache
+        # resolve) in two minutes instead of discovering it after an hour of real eval. A
+        # limited run is NOT a result: the file it writes says so in its own config block.
+        limit=limit,
     )
 
     # Under data-parallel eval (accelerate launch --num_processes N), simple_evaluate
@@ -92,7 +106,12 @@ def eval_with_lm_eval_harness(
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_name = os.path.basename(model_path.rstrip("/"))
-    result_file = os.path.join(output_dir, f"{model_name}_{timestamp}.json")
+    # --tag names the file after the RUN, the way scripts/eval_ppl.py and scripts/test_acc.py do,
+    # so a pipeline can point at a known path and a re-eval overwrites in place. Without it the
+    # legacy <model>_<timestamp>.json is kept — scripts/collect_commonsense_results.py and the
+    # ablation pipelines under runs/permute_sqat/ still glob for that shape.
+    stem = tag if tag else f"{model_name}_{timestamp}"
+    result_file = os.path.join(output_dir, f"{stem}.json")
 
     with open(result_file, "w") as f:
         serializable = {
@@ -102,6 +121,9 @@ def eval_with_lm_eval_harness(
                 "tasks": tasks,
                 "num_fewshot": num_fewshot,
                 "batch_size": batch_size,
+                "note": (note if limit is None
+                         else f"PREFLIGHT ONLY (--limit {limit}, not a result). {note}".strip()),
+                "limit": limit,
             },
             "results": results.get("results", {}),
             "versions": results.get("versions", {}),
@@ -124,6 +146,14 @@ def main():
     parser.add_argument("--num_fewshot", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--output_dir", type=str, default="results")
+    parser.add_argument("--tag", type=str, default=None,
+                        help="output file stem (default: <model>_<timestamp>)")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="documents per subtask; a preflight knob, NOT a way to produce a "
+                             "cheaper result (the summary marks itself PREFLIGHT ONLY)")
+    parser.add_argument("--note", type=str, default="",
+                        help="stored in the summary's config; scripts/collect_saltq_results.py "
+                             "prefers it over the note of the invocation that swept the dir")
 
     args = parser.parse_args()
 
@@ -134,6 +164,9 @@ def main():
         batch_size=args.batch_size,
         output_dir=args.output_dir,
         adapter_path=args.adapter_path,
+        tag=args.tag,
+        note=args.note,
+        limit=args.limit,
     )
 
 

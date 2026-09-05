@@ -1,0 +1,40 @@
+============================================================
+  Perplexity evaluation (wikitext-2-raw-v1 test, GPTQ protocol)
+  Model:     outputs/qlora_none_wiki2_int2_g32_ep1-2bit-none-gptq-eval
+  Output:    results/wikitext2_ppl/qlora_none_wiki2_int2_g32_ep1-2bit-none-gptq-eval.json
+============================================================
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_wiki2_int2_g32_ep1-2bit-none-gptq-eval
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   2%|▏         | 6/291 [00:00<00:05, 53.78it/s]Loading weights:   8%|▊         | 22/291 [00:00<00:02, 96.97it/s]Loading weights:  13%|█▎        | 38/291 [00:00<00:02, 121.32it/s]Loading weights:  18%|█▊        | 51/291 [00:00<00:02, 115.51it/s]Loading weights:  23%|██▎       | 67/291 [00:00<00:01, 118.54it/s]Loading weights:  28%|██▊       | 81/291 [00:00<00:01, 124.33it/s]Loading weights:  32%|███▏      | 94/291 [00:00<00:01, 123.48it/s]Loading weights:  38%|███▊      | 112/291 [00:00<00:01, 125.00it/s]Loading weights:  44%|████▍     | 128/291 [00:01<00:01, 133.46it/s]Loading weights:  49%|████▉     | 142/291 [00:01<00:01, 118.91it/s]Loading weights:  55%|█████▍    | 159/291 [00:01<00:01, 130.67it/s]Loading weights:  60%|██████    | 175/291 [00:01<00:00, 135.71it/s]Loading weights:  66%|██████▌   | 192/291 [00:01<00:00, 141.16it/s]Loading weights:  71%|███████   | 207/291 [00:01<00:00, 135.79it/s]Loading weights:  76%|███████▌  | 221/291 [00:01<00:00, 126.67it/s]Loading weights:  81%|████████  | 235/291 [00:01<00:00, 129.77it/s]Loading weights:  86%|████████▌ | 249/291 [00:01<00:00, 128.60it/s]Loading weights:  91%|█████████ | 265/291 [00:02<00:00, 128.75it/s]Loading weights:  96%|█████████▌| 278/291 [00:02<00:00, 127.87it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 128.38it/s]
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 8.4250
+[ppl]   40/333 windows  running ppl 9.1553
+[ppl]   60/333 windows  running ppl 9.1454
+[ppl]   80/333 windows  running ppl 9.4666
+[ppl]   100/333 windows  running ppl 8.9309
+[ppl]   120/333 windows  running ppl 9.0330
+[ppl]   140/333 windows  running ppl 8.7541
+[ppl]   160/333 windows  running ppl 8.7128
+[ppl]   180/333 windows  running ppl 8.7294
+[ppl]   200/333 windows  running ppl 8.6997
+[ppl]   220/333 windows  running ppl 8.9584
+[ppl]   240/333 windows  running ppl 9.0452
+[ppl]   260/333 windows  running ppl 9.1096
+[ppl]   280/333 windows  running ppl 9.0929
+[ppl]   300/333 windows  running ppl 9.0128
+[ppl]   320/333 windows  running ppl 8.9179
+[ppl] seq_len=1024  PPL 8.9748  (exact-denominator 8.9748)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 9.1779
+[ppl]   40/166 windows  running ppl 9.2096
+[ppl]   60/166 windows  running ppl 8.6608
+[ppl]   80/166 windows  running ppl 8.2457
+[ppl]   100/166 windows  running ppl 8.3809
+[ppl]   120/166 windows  running ppl 8.7681
+[ppl]   140/166 windows  running ppl 8.9081
+[ppl]   160/166 windows  running ppl 8.7610
+[ppl] seq_len=2048  PPL 8.8728  (exact-denominator 8.8728)
+[ppl] wrote results/wikitext2_ppl/qlora_none_wiki2_int2_g32_ep1-2bit-none-gptq-eval.json

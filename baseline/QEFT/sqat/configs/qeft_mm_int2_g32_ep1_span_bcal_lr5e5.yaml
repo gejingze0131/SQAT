@@ -1,0 +1,63 @@
+# =============================================================================
+# QEFT — MetaMath (395k), INT2 g32 k=256, span, bcal, weak lr 5e-5, NO zp — 1 epoch
+#
+# The MetaMath replica of the Commonsense QEFT row (73.71), i.e. the 2x2's "fp16 weak columns,
+# no zp" cell next to the SALT-Q MetaMath run (fp16-latent salient + zp). Three edits vs
+# qeft_cs170k_int2_g32_ep1_span_bcal_lr5e5.yaml: dataset -> metamath, calibration 3500 -> 1000
+# balanced records (~190-token records, 125 per augmentation type), output_dir. Scored on GSM8K.
+# =============================================================================
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 2
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+qeft:
+  k: 256                  # weak columns per linear; must be a multiple of group_size
+  group_size: 32
+  base_dir: "outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_bcal"
+  oproj_weak: true
+  targets: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+qat:
+  symmetric: false
+  sqat:
+    calibration_samples: 1000      # balanced, 125 per MetaMath augmentation type
+    calibration_sampling: balanced
+    calibration_seq_len: 2048
+  gptq:
+    nsamples: 1000                 # MUST equal calibration_samples
+    percdamp: 0.01
+    blocksize: 128
+    batch_size: 8
+
+data:
+  train_dataset: "datasets/metamath"
+  train_split: "train"
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null
+  shuffle_dataset: true
+  loss_span: instruction+response
+  num_proc: 32
+
+training:
+  output_dir: "outputs/qeft_mm_int2_g32_ep1_span_bcal_lr5e5"
+  num_epochs: 1
+  per_device_train_batch_size: 5
+  gradient_accumulation_steps: 8      # x per_device 5 x 2 GPUs = effective batch 80
+  group_by_length: false
+  learning_rate: 5.0e-5            # the INT3 finding transported: the paper-law lr under-trained INT3 by ten points (66.73 -> 77.68 at 5e-5); same absolute 5e-5 here
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "none"
+  seed: 42

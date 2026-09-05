@@ -1,0 +1,21 @@
+#!/bin/bash
+#PBS -N qeft_int3_base_eval
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=2
+#PBS -l walltime=2:00:00
+#PBS -j oe
+# Diagnostic for the QEFT INT3 eval crashes (jobs 15825005 / 15831682 both died in vLLM's sampler
+# with a CUDA illegal memory access at 22313-22316 of 22419 prompts): evaluate the UNTRAINED
+# QEFT base export alone through the same runs/eval_vllm.sh. If it crashes at the same point the
+# fault is in the export format / vLLM interaction; if it scores, the trained weak columns are
+# the cause. Also this row's own floor.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+nvidia-smi | head -12
+mkdir -p logs/commonsense_170k
+D=outputs/qeft_bases/Llama-2-7B_int3_g64_k128_asym_bcal-3bit-qeftbase-eval
+bash runs/eval_vllm.sh --model_path "$D" --dataset commonsense --gpus 0,1 --tag "$(basename $D)" \
+    > logs/commonsense_170k/qeft_int3_base_eval.log 2>&1
+echo "rc=$?"; echo "End time: $(date)"

@@ -1,0 +1,91 @@
+#!/bin/bash
+#PBS -N wiki2_t8_calib_ppl
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=3:00:00
+#PBS -j oe
+# =============================================================================
+# MEASUREMENT 2 (T8 verification (1)) — the calibration ablation's smoking gun, PLUS the
+# protocol anchor for the whole WikiText-2 column.
+#
+# THIS IS NOT THE T2 WIKI2 COLUMN. Different object, different purpose, different section of
+# the paper. Here the models are QUANTIZED BASES THAT WERE NEVER FINE-TUNED AFTER QUANTIZATION,
+# and the question is what the CALIBRATION SET did to them:
+#
+#   D  balanced in-domain (task) calibration, 3500 records / 471k tokens   CS MEAN(8) 66.22
+#   E  generic C4, 128 x 2048 = 262k tokens (the GPTQ-paper recipe)        CS MEAN(8) 30.67
+#
+# Same merged fp16 checkpoint, same GPTQ, same bits/group — only the calibration set differs,
+# and the downstream task score differs by 35.55 points. The prediction this job tests is that
+# E's PERPLEXITY is the BETTER of the two: GPTQ faithfully optimized the objective its
+# calibration set posed, and at INT2 that objective was the wrong question. One table, two
+# columns, opposite orderings.
+#
+# Table caption for this: "quantized base, no fine-tuning". The T2 caption is "after WikiText-2
+# fine-tuning (deployed artifacts)". The two must never be read as the same measurement.
+#
+# ---- ALSO: THE PROTOCOL ANCHOR --------------------------------------------------------------
+# Arm 0 is the untouched fp16 Llama-2-7B. Its WikiText-2 perplexity at seq_len 2048 under the
+# GPTQ lineage's protocol is a published constant (~5.47). If arm 0 does not land there,
+# scripts/eval_ppl.py is wrong and NO number in the Wiki2 column is trustworthy — check this
+# first, before reading anything else in this log.
+#
+# ---- C4 CONTROL -----------------------------------------------------------------------------
+# datasets/c4_val_ppl.json is the C4 en VALIDATION shard, disjoint by construction from
+# datasets/c4_calib_1024.json (the TRAIN shard arm E calibrates on). Same concat/window protocol
+# as WikiText-2, so it is an internal D-vs-E control, not a number to compare with published C4
+# perplexities (those select random per-document segments).
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+
+FP16_BASE="/scratch/users/nus/jingzege/cache/huggingface/hub/models--meta-llama--Llama-2-7b-hf/snapshots/01c7f73d771dfac7d292323805ebc428287df4f9/"
+
+run_arm () {   # run_arm <tag> <model_dir>
+    local tag="$1" dir="$2"
+    if [ ! -f "$dir/config.json" ]; then
+        echo ">>> SKIP $tag: no config.json at $dir"; return
+    fi
+    echo -e "\n============ $tag :: wikitext-2-raw-v1 test ============"
+    python scripts/eval_ppl.py --model_path "$dir" --data datasets/wikitext2 --split test \
+        --seq_len 1024 --also_seq_len 2048 --tag "$tag" \
+        --output_dir results/wikitext2_ppl_nofinetune \
+        --note "T8 calibration ablation: quantized base, NO fine-tuning"
+    echo -e "\n============ $tag :: C4 validation control ============"
+    python scripts/eval_ppl.py --model_path "$dir" --data datasets/c4_val_ppl.json \
+        --seq_len 2048 --tag "$tag" \
+        --output_dir results/c4_val_ppl_nofinetune \
+        --note "T8 calibration ablation: quantized base, NO fine-tuning"
+}
+
+# Arm 0 — protocol anchor. Expect wikitext2 seq_len 2048 PPL ~= 5.47.
+run_arm fp16_llama2_7b_base                "$FP16_BASE"
+# The fp16 parent D and E are both quantized FROM (QLoRA-merged, commonsense-170k fine-tuned).
+run_arm cs_int2_merged_fp16_parent         outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval
+# The ablation proper.
+run_arm cs_int2_g32_calD_task_balanced3500 outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calD
+run_arm cs_int2_g32_calE_c4_128x2048       outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calE
+run_arm cs_int3_g64_calD_task_balanced3500 outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval-calD
+run_arm cs_int3_g64_calE_c4_128x2048       outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval-calE
+
+echo -e "\n>>> Summary"
+python - <<'PY'
+import glob, json, os
+rows = []
+for d, ds in (("results/wikitext2_ppl_nofinetune", "wikitext2"),
+              ("results/c4_val_ppl_nofinetune", "c4_val")):
+    for p in sorted(glob.glob(os.path.join(d, "*.json"))):
+        r = json.load(open(p))
+        for k, v in r["results"].items():
+            rows.append((os.path.basename(p)[:-5], ds, k, v["ppl"]))
+w = max((len(r[0]) for r in rows), default=10)
+for tag, ds, k, ppl in rows:
+    print(f"{tag:<{w}}  {ds:<10} {k:<14} ppl {ppl:8.4f}")
+PY
+echo "End time: $(date)"

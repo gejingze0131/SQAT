@@ -1,0 +1,320 @@
+Sat Sep  5 00:54:02 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   42C    P0             51W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+Start time: Sat Sep  5 00:54:02 +08 2026
+
+########## 1/3  GPTQ INT3 g64 (C4 128x2048) of the pretrained model + MMLU ##########
+export rc=0
+int3 anchor rc=0
+
+########## 2/3  QLoRA merged fp16 -> GPTQ INT3 g64 (FLOOR) + MMLU ##########
+export rc=0
+int3 floor rc=0
+[collect] appended 124 row(s) to results_saltq.csv
+    GPTQ base (no fine-tuning) mmlu_abstract_algebra sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_abstract_algebra acc,none                     0.3000
+    GPTQ base (no fine-tuning) mmlu_anatomy         sample_len                   135
+    GPTQ base (no fine-tuning) mmlu_anatomy         acc,none                     0.4148
+    GPTQ base (no fine-tuning) mmlu_astronomy       sample_len                   152
+    GPTQ base (no fine-tuning) mmlu_astronomy       acc,none                     0.4342
+    GPTQ base (no fine-tuning) mmlu_college_biology sample_len                   144
+    GPTQ base (no fine-tuning) mmlu_college_biology acc,none                     0.3958
+    GPTQ base (no fine-tuning) mmlu_college_chemistry sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_college_chemistry acc,none                     0.2700
+    GPTQ base (no fine-tuning) mmlu_college_computer_science sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_college_computer_science acc,none                     0.3500
+    GPTQ base (no fine-tuning) mmlu_college_mathematics sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_college_mathematics acc,none                     0.3800
+    GPTQ base (no fine-tuning) mmlu_college_physics sample_len                   102
+    GPTQ base (no fine-tuning) mmlu_college_physics acc,none                     0.1961
+    GPTQ base (no fine-tuning) mmlu_computer_security sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_computer_security acc,none                     0.5100
+    GPTQ base (no fine-tuning) mmlu_conceptual_physics sample_len                   235
+    GPTQ base (no fine-tuning) mmlu_conceptual_physics acc,none                     0.3872
+    GPTQ base (no fine-tuning) mmlu_electrical_engineering sample_len                   145
+    GPTQ base (no fine-tuning) mmlu_electrical_engineering acc,none                     0.3655
+    GPTQ base (no fine-tuning) mmlu_elementary_mathematics sample_len                   378
+    GPTQ base (no fine-tuning) mmlu_elementary_mathematics acc,none                     0.2593
+    GPTQ base (no fine-tuning) mmlu_high_school_biology sample_len                   310
+    GPTQ base (no fine-tuning) mmlu_high_school_biology acc,none                     0.3839
+    GPTQ base (no fine-tuning) mmlu_high_school_chemistry sample_len                   203
+    GPTQ base (no fine-tuning) mmlu_high_school_chemistry acc,none                     0.3202
+    GPTQ base (no fine-tuning) mmlu_high_school_computer_science sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_high_school_computer_science acc,none                     0.3600
+    GPTQ base (no fine-tuning) mmlu_high_school_mathematics sample_len                   270
+    GPTQ base (no fine-tuning) mmlu_high_school_mathematics acc,none                     0.2778
+    GPTQ base (no fine-tuning) mmlu_high_school_physics sample_len                   151
+    GPTQ base (no fine-tuning) mmlu_high_school_physics acc,none                     0.3245
+    GPTQ base (no fine-tuning) mmlu_high_school_statistics sample_len                   216
+    GPTQ base (no fine-tuning) mmlu_high_school_statistics acc,none                     0.4028
+    GPTQ base (no fine-tuning) mmlu_machine_learning sample_len                   112
+    GPTQ base (no fine-tuning) mmlu_machine_learning acc,none                     0.3393
+    GPTQ base (no fine-tuning) mmlu_business_ethics sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_business_ethics acc,none                     0.4500
+    GPTQ base (no fine-tuning) mmlu_clinical_knowledge sample_len                   265
+    GPTQ base (no fine-tuning) mmlu_clinical_knowledge acc,none                     0.4377
+    GPTQ base (no fine-tuning) mmlu_college_medicine sample_len                   173
+    GPTQ base (no fine-tuning) mmlu_college_medicine acc,none                     0.3642
+    GPTQ base (no fine-tuning) mmlu_global_facts    sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_global_facts    acc,none                     0.3400
+    GPTQ base (no fine-tuning) mmlu_human_aging     sample_len                   223
+    GPTQ base (no fine-tuning) mmlu_human_aging     acc,none                     0.4843
+    GPTQ base (no fine-tuning) mmlu_management      sample_len                   103
+    GPTQ base (no fine-tuning) mmlu_management      acc,none                     0.4563
+    GPTQ base (no fine-tuning) mmlu_marketing       sample_len                   234
+    GPTQ base (no fine-tuning) mmlu_marketing       acc,none                     0.6111
+    GPTQ base (no fine-tuning) mmlu_medical_genetics sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_medical_genetics acc,none                     0.4800
+    GPTQ base (no fine-tuning) mmlu_miscellaneous   sample_len                   783
+    GPTQ base (no fine-tuning) mmlu_miscellaneous   acc,none                     0.5683
+    GPTQ base (no fine-tuning) mmlu_nutrition       sample_len                   306
+    GPTQ base (no fine-tuning) mmlu_nutrition       acc,none                     0.4444
+    GPTQ base (no fine-tuning) mmlu_professional_accounting sample_len                   282
+    GPTQ base (no fine-tuning) mmlu_professional_accounting acc,none                     0.3014
+    GPTQ base (no fine-tuning) mmlu_professional_medicine sample_len                   272
+    GPTQ base (no fine-tuning) mmlu_professional_medicine acc,none                     0.5221
+    GPTQ base (no fine-tuning) mmlu_virology        sample_len                   166
+    GPTQ base (no fine-tuning) mmlu_virology        acc,none                     0.3855
+    GPTQ base (no fine-tuning) mmlu_econometrics    sample_len                   114
+    GPTQ base (no fine-tuning) mmlu_econometrics    acc,none                     0.2982
+    GPTQ base (no fine-tuning) mmlu_high_school_geography sample_len                   198
+    GPTQ base (no fine-tuning) mmlu_high_school_geography acc,none                     0.5051
+    GPTQ base (no fine-tuning) mmlu_high_school_government_and_politics sample_len                   193
+    GPTQ base (no fine-tuning) mmlu_high_school_government_and_politics acc,none                     0.6321
+    GPTQ base (no fine-tuning) mmlu_high_school_macroeconomics sample_len                   390
+    GPTQ base (no fine-tuning) mmlu_high_school_macroeconomics acc,none                     0.3821
+    GPTQ base (no fine-tuning) mmlu_high_school_microeconomics sample_len                   238
+    GPTQ base (no fine-tuning) mmlu_high_school_microeconomics acc,none                     0.3739
+    GPTQ base (no fine-tuning) mmlu_high_school_psychology sample_len                   545
+    GPTQ base (no fine-tuning) mmlu_high_school_psychology acc,none                     0.5706
+    GPTQ base (no fine-tuning) mmlu_human_sexuality sample_len                   131
+    GPTQ base (no fine-tuning) mmlu_human_sexuality acc,none                     0.4351
+    GPTQ base (no fine-tuning) mmlu_professional_psychology sample_len                   612
+    GPTQ base (no fine-tuning) mmlu_professional_psychology acc,none                     0.3611
+    GPTQ base (no fine-tuning) mmlu_public_relations sample_len                   110
+    GPTQ base (no fine-tuning) mmlu_public_relations acc,none                     0.4364
+    GPTQ base (no fine-tuning) mmlu_security_studies sample_len                   245
+    GPTQ base (no fine-tuning) mmlu_security_studies acc,none                     0.4449
+    GPTQ base (no fine-tuning) mmlu_sociology       sample_len                   201
+    GPTQ base (no fine-tuning) mmlu_sociology       acc,none                     0.4925
+    GPTQ base (no fine-tuning) mmlu_us_foreign_policy sample_len                   100
+    GPTQ base (no fine-tuning) mmlu_us_foreign_policy acc,none                     0.6200
+    GPTQ base (no fine-tuning) mmlu_formal_logic    sample_len                   126
+    GPTQ base (no fine-tuning) mmlu_formal_logic    acc,none                     0.1984
+    GPTQ base (no fine-tuning) mmlu_high_school_european_history sample_len                   165
+    GPTQ base (no fine-tuning) mmlu_high_school_european_history acc,none                     0.5030
+    GPTQ base (no fine-tuning) mmlu_high_school_us_history sample_len                   204
+    GPTQ base (no fine-tuning) mmlu_high_school_us_history acc,none                     0.4706
+    GPTQ base (no fine-tuning) mmlu_high_school_world_history sample_len                   237
+    GPTQ base (no fine-tuning) mmlu_high_school_world_history acc,none                     0.4684
+    GPTQ base (no fine-tuning) mmlu_international_law sample_len                   121
+    GPTQ base (no fine-tuning) mmlu_international_law acc,none                     0.5868
+    GPTQ base (no fine-tuning) mmlu_jurisprudence   sample_len                   108
+    GPTQ base (no fine-tuning) mmlu_jurisprudence   acc,none                     0.4722
+    GPTQ base (no fine-tuning) mmlu_logical_fallacies sample_len                   163
+    GPTQ base (no fine-tuning) mmlu_logical_fallacies acc,none                     0.4479
+    GPTQ base (no fine-tuning) mmlu_moral_disputes  sample_len                   346
+    GPTQ base (no fine-tuning) mmlu_moral_disputes  acc,none                     0.4104
+    GPTQ base (no fine-tuning) mmlu_moral_scenarios sample_len                   895
+    GPTQ base (no fine-tuning) mmlu_moral_scenarios acc,none                     0.2760
+    GPTQ base (no fine-tuning) mmlu_philosophy      sample_len                   311
+    GPTQ base (no fine-tuning) mmlu_philosophy      acc,none                     0.4887
+    GPTQ base (no fine-tuning) mmlu_prehistory      sample_len                   324
+    GPTQ base (no fine-tuning) mmlu_prehistory      acc,none                     0.4506
+    GPTQ base (no fine-tuning) mmlu_professional_law sample_len                   1534
+    GPTQ base (no fine-tuning) mmlu_professional_law acc,none                     0.3175
+    GPTQ base (no fine-tuning) mmlu_world_religions sample_len                   171
+    GPTQ base (no fine-tuning) mmlu_world_religions acc,none                     0.5731
+    GPTQ base (no fine-tuning) mmlu_stem            sample_len                   3153
+    GPTQ base (no fine-tuning) mmlu_stem            acc,none                     0.3460
+    GPTQ base (no fine-tuning) mmlu_other           sample_len                   3107
+    GPTQ base (no fine-tuning) mmlu_other           acc,none                     0.4751
+    GPTQ base (no fine-tuning) mmlu_social_sciences sample_len                   3077
+    GPTQ base (no fine-tuning) mmlu_social_sciences acc,none                     0.4553
+    GPTQ base (no fine-tuning) mmlu_humanities      sample_len                   4705
+    GPTQ base (no fine-tuning) mmlu_humanities      acc,none                     0.3787
+    GPTQ base (no fine-tuning) mmlu                 sample_len                   14042
+    GPTQ base (no fine-tuning) mmlu                 acc,none                     0.4095
+[collect] appended 124 row(s) to results_saltq.csv
+    QLoRA          mmlu_abstract_algebra sample_len                   100
+    QLoRA          mmlu_abstract_algebra acc,none                     0.3000
+    QLoRA          mmlu_anatomy         sample_len                   135
+    QLoRA          mmlu_anatomy         acc,none                     0.4593
+    QLoRA          mmlu_astronomy       sample_len                   152
+    QLoRA          mmlu_astronomy       acc,none                     0.3487
+    QLoRA          mmlu_college_biology sample_len                   144
+    QLoRA          mmlu_college_biology acc,none                     0.3542
+    QLoRA          mmlu_college_chemistry sample_len                   100
+    QLoRA          mmlu_college_chemistry acc,none                     0.2600
+    QLoRA          mmlu_college_computer_science sample_len                   100
+    QLoRA          mmlu_college_computer_science acc,none                     0.3500
+    QLoRA          mmlu_college_mathematics sample_len                   100
+    QLoRA          mmlu_college_mathematics acc,none                     0.3700
+    QLoRA          mmlu_college_physics sample_len                   102
+    QLoRA          mmlu_college_physics acc,none                     0.2255
+    QLoRA          mmlu_computer_security sample_len                   100
+    QLoRA          mmlu_computer_security acc,none                     0.4900
+    QLoRA          mmlu_conceptual_physics sample_len                   235
+    QLoRA          mmlu_conceptual_physics acc,none                     0.3830
+    QLoRA          mmlu_electrical_engineering sample_len                   145
+    QLoRA          mmlu_electrical_engineering acc,none                     0.3517
+    QLoRA          mmlu_elementary_mathematics sample_len                   378
+    QLoRA          mmlu_elementary_mathematics acc,none                     0.2751
+    QLoRA          mmlu_high_school_biology sample_len                   310
+    QLoRA          mmlu_high_school_biology acc,none                     0.4323
+    QLoRA          mmlu_high_school_chemistry sample_len                   203
+    QLoRA          mmlu_high_school_chemistry acc,none                     0.3005
+    QLoRA          mmlu_high_school_computer_science sample_len                   100
+    QLoRA          mmlu_high_school_computer_science acc,none                     0.4200
+    QLoRA          mmlu_high_school_mathematics sample_len                   270
+    QLoRA          mmlu_high_school_mathematics acc,none                     0.2889
+    QLoRA          mmlu_high_school_physics sample_len                   151
+    QLoRA          mmlu_high_school_physics acc,none                     0.2848
+    QLoRA          mmlu_high_school_statistics sample_len                   216
+    QLoRA          mmlu_high_school_statistics acc,none                     0.3148
+    QLoRA          mmlu_machine_learning sample_len                   112
+    QLoRA          mmlu_machine_learning acc,none                     0.2857
+    QLoRA          mmlu_business_ethics sample_len                   100
+    QLoRA          mmlu_business_ethics acc,none                     0.4700
+    QLoRA          mmlu_clinical_knowledge sample_len                   265
+    QLoRA          mmlu_clinical_knowledge acc,none                     0.4415
+    QLoRA          mmlu_college_medicine sample_len                   173
+    QLoRA          mmlu_college_medicine acc,none                     0.3526
+    QLoRA          mmlu_global_facts    sample_len                   100
+    QLoRA          mmlu_global_facts    acc,none                     0.2900
+    QLoRA          mmlu_human_aging     sample_len                   223
+    QLoRA          mmlu_human_aging     acc,none                     0.4888
+    QLoRA          mmlu_management      sample_len                   103
+    QLoRA          mmlu_management      acc,none                     0.4466
+    QLoRA          mmlu_marketing       sample_len                   234
+    QLoRA          mmlu_marketing       acc,none                     0.6368
+    QLoRA          mmlu_medical_genetics sample_len                   100
+    QLoRA          mmlu_medical_genetics acc,none                     0.4600
+    QLoRA          mmlu_miscellaneous   sample_len                   783
+    QLoRA          mmlu_miscellaneous   acc,none                     0.5734
+    QLoRA          mmlu_nutrition       sample_len                   306
+    QLoRA          mmlu_nutrition       acc,none                     0.4412
+    QLoRA          mmlu_professional_accounting sample_len                   282
+    QLoRA          mmlu_professional_accounting acc,none                     0.3404
+    QLoRA          mmlu_professional_medicine sample_len                   272
+    QLoRA          mmlu_professional_medicine acc,none                     0.4632
+    QLoRA          mmlu_virology        sample_len                   166
+    QLoRA          mmlu_virology        acc,none                     0.4036
+    QLoRA          mmlu_econometrics    sample_len                   114
+    QLoRA          mmlu_econometrics    acc,none                     0.2105
+    QLoRA          mmlu_high_school_geography sample_len                   198
+    QLoRA          mmlu_high_school_geography acc,none                     0.5354
+    QLoRA          mmlu_high_school_government_and_politics sample_len                   193
+    QLoRA          mmlu_high_school_government_and_politics acc,none                     0.5544
+    QLoRA          mmlu_high_school_macroeconomics sample_len                   390
+    QLoRA          mmlu_high_school_macroeconomics acc,none                     0.3231
+    QLoRA          mmlu_high_school_microeconomics sample_len                   238
+    QLoRA          mmlu_high_school_microeconomics acc,none                     0.3697
+    QLoRA          mmlu_high_school_psychology sample_len                   545
+    QLoRA          mmlu_high_school_psychology acc,none                     0.5083
+    QLoRA          mmlu_human_sexuality sample_len                   131
+    QLoRA          mmlu_human_sexuality acc,none                     0.4351
+    QLoRA          mmlu_professional_psychology sample_len                   612
+    QLoRA          mmlu_professional_psychology acc,none                     0.4134
+    QLoRA          mmlu_public_relations sample_len                   110
+    QLoRA          mmlu_public_relations acc,none                     0.5000
+    QLoRA          mmlu_security_studies sample_len                   245
+    QLoRA          mmlu_security_studies acc,none                     0.4082
+    QLoRA          mmlu_sociology       sample_len                   201
+    QLoRA          mmlu_sociology       acc,none                     0.5423
+    QLoRA          mmlu_us_foreign_policy sample_len                   100
+    QLoRA          mmlu_us_foreign_policy acc,none                     0.5600
+    QLoRA          mmlu_formal_logic    sample_len                   126
+    QLoRA          mmlu_formal_logic    acc,none                     0.2302
+    QLoRA          mmlu_high_school_european_history sample_len                   165
+    QLoRA          mmlu_high_school_european_history acc,none                     0.5394
+    QLoRA          mmlu_high_school_us_history sample_len                   204
+    QLoRA          mmlu_high_school_us_history acc,none                     0.4265
+    QLoRA          mmlu_high_school_world_history sample_len                   237
+    QLoRA          mmlu_high_school_world_history acc,none                     0.5485
+    QLoRA          mmlu_international_law sample_len                   121
+    QLoRA          mmlu_international_law acc,none                     0.6529
+    QLoRA          mmlu_jurisprudence   sample_len                   108
+    QLoRA          mmlu_jurisprudence   acc,none                     0.4907
+    QLoRA          mmlu_logical_fallacies sample_len                   163
+    QLoRA          mmlu_logical_fallacies acc,none                     0.4540
+    QLoRA          mmlu_moral_disputes  sample_len                   346
+    QLoRA          mmlu_moral_disputes  acc,none                     0.4855
+    QLoRA          mmlu_moral_scenarios sample_len                   895
+    QLoRA          mmlu_moral_scenarios acc,none                     0.2682
+    QLoRA          mmlu_philosophy      sample_len                   311
+    QLoRA          mmlu_philosophy      acc,none                     0.4887
+    QLoRA          mmlu_prehistory      sample_len                   324
+    QLoRA          mmlu_prehistory      acc,none                     0.4414
+    QLoRA          mmlu_professional_law sample_len                   1534
+    QLoRA          mmlu_professional_law acc,none                     0.3299
+    QLoRA          mmlu_world_religions sample_len                   171
+    QLoRA          mmlu_world_religions acc,none                     0.5731
+    QLoRA          mmlu_stem            sample_len                   3153
+    QLoRA          mmlu_stem            acc,none                     0.3390
+    QLoRA          mmlu_other           sample_len                   3107
+    QLoRA          mmlu_other           acc,none                     0.4754
+    QLoRA          mmlu_social_sciences sample_len                   3077
+    QLoRA          mmlu_social_sciences acc,none                     0.4413
+    QLoRA          mmlu_humanities      sample_len                   4705
+    QLoRA          mmlu_humanities      acc,none                     0.3928
+    QLoRA          mmlu                 sample_len                   14042
+    QLoRA          mmlu                 acc,none                     0.4096
+
+########## 3/3  SALT-Q INT3 g64 k=128 (fresh bases) + MMLU ##########
+saltq rc=0
+freedom   : 157.3M full + 202.4M affine + 6318.7M frozen
+
+train_salient: True
+group_k structure: OK
+
+model.layers.0.self_attn.q_proj  group_k=128  non-salient=3968
+  codes 0..7   levels used 8/8   dist% [15, 8, 12, 15, 15, 12, 8, 15]
+  reconstruction: relative Frobenius error 122.82%  (no-compensation control: RTN on the same grid 23.28%)
+  ^ NOTE: 122.8% >= 100% while RTN on the same grid is fine (23.3%) — the signature of OBS compensation, not damage.
+
+model.layers.8.self_attn.q_proj  group_k=128  non-salient=3968
+  codes 0..7   levels used 8/8   dist% [3, 8, 16, 23, 23, 16, 8, 3]
+  reconstruction: relative Frobenius error 22.50%  (no-compensation control: RTN on the same grid 19.53%)
+
+model.layers.16.self_attn.q_proj  group_k=128  non-salient=3968
+  codes 0..7   levels used 8/8   dist% [3, 8, 16, 23, 23, 16, 8, 3]
+  reconstruction: relative Frobenius error 22.31%  (no-compensation control: RTN on the same grid 19.51%)
+
+model.layers.24.self_attn.q_proj  group_k=128  non-salient=3968
+  codes 0..7   levels used 8/8   dist% [3, 8, 16, 23, 23, 16, 8, 3]
+  reconstruction: relative Frobenius error 21.87%  (no-compensation control: RTN on the same grid 19.51%)
+
+1 of 4 sampled layers exceed 100% while their RTN control does not:
+  model.layers.0.self_attn.q_proj  122.8%  (RTN 23.3%)
+  ^ Expected on a salient_init=gptq* base: those codes target W_nonsalient PLUS the
+    correction that cancels the salient slice's error at the OUTPUT, so W_nonsalient is not
+    what they approximate. Confirm with scripts/diagnose_obs_compensation.py, which measures
+    the output error directly (Alpaca INT2: layer-0 q_proj 171.9% weight / 5.57% output, against
+    7.56% for the same weights with the compensation removed).
+RESULT: base looks sane
+
+>>> Alpaca MMLU 5-shot so far
+Llama-2-7B_int2_g32_k256_asym_c4cal-2bit-qeftbase-eval             30.27
+gptqbase_llama2_int2_g32_c4cal                                     26.76
+gptqbase_llama2_int3_g64_c4cal                                     40.95
+llama2_7b_fp16_anchor                                              45.97
+qalora_alpaca_int2_g32_ep3-2bit-qalora-dequant-eval                31.93
+qeft_alpaca_int2_g32_ep1_lr5e5-2bit-qeft-dense-eval                32.07
+qeft_alpaca_int2_g32_ep3_lr5e5-2bit-qeft-dense-eval                34.25
+qlora_none_alpaca_int2_g32_ep3-2bit-none-gptq-eval                 27.15
+qlora_none_alpaca_int2_g32_ep3-2bit-none-merged-eval               45.84
+qlora_none_alpaca_int3_g64_ep3-3bit-none-gptq-eval                 40.96
+saltq_alpaca_int2_g32_ep1_k256_c4cal_sgptql_zp2x-2bit-saltq-deploy-eval 28.98
+saltq_alpaca_int2_g32_ep3_k256_c4cal_sgptql_zp2x-2bit-saltq-deploy-eval 32.77
+saltq_alpaca_int3_g64_ep3_k128_c4cal_sgptql-3bit-saltq-deploy-eval 43.6
+End time: Sat Sep  5 03:49:16 +08 2026

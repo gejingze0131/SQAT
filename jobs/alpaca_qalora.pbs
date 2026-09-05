@@ -1,0 +1,46 @@
+#!/bin/bash
+#PBS -N alpaca_qalora
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=16:00:00
+#PBS -j oe
+# =============================================================================
+# ALPACA column, arm QA-LoRA. GPTQ INT2 g32 frozen base (calibrated on the column's shared C4
+# 128 x 2048 windows) + group-pooled adapter whose delta is constant within a quantization group
+# and therefore folds into the affine zero-point at merge time. The deployed artifact is a pure
+# INT2 checkpoint, which is why this is the baseline SALT-Q's non-salient segment generalizes.
+#
+# Scored: the MERGED INT2 export (*-2bit-qalora-dequant-eval), MMLU 5-shot. The pipeline would
+# also score its fp16 merge; that is skipped here (--skip_eval + one explicit eval) because the
+# column's fp16 upper bound is the QLoRA row in jobs/alpaca_bounds.pbs and a second fp16 number
+# costs ~1.5 GPU-hours of MMLU to say the same thing.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+mkdir -p logs/alpaca
+echo "Start time: $(date)"
+[ -f datasets/alpaca/train.json ] || { echo "ERROR: run scripts/build_alpaca_dataset.py on a LOGIN node first"; exit 1; }
+
+CFG=configs/qalora_alpaca_int2_g32_ep3.yaml
+OUT=outputs/qalora_alpaca_int2_g32_ep3
+bash runs/qalora/run_qalora_alpaca.sh \
+    --bits 2 --num_gpus 4 --output_dir "$OUT" --skip_eval \
+    > logs/alpaca/20_qalora_train.log 2>&1
+echo "train rc=$?"
+
+DEQ="${OUT}-2bit-qalora-dequant-eval"
+[ -f "$DEQ/config.json" ] || { echo "ERROR: no merged INT2 export at $DEQ"; exit 1; }
+bash runs/eval_vllm.sh --model_path "$DEQ" --dataset alpaca --gpus 0,1,2,3 \
+    --tag "$(basename $DEQ)" > logs/alpaca/21_qalora_mmlu.log 2>&1
+echo "mmlu rc=$?"
+
+python scripts/collect_saltq_results.py \
+    --results_dir results/alpaca_mmlu --csv results_saltq.csv --config "$CFG" \
+    --filter "$(basename $DEQ)" \
+    --note "T-Alpaca QA-LoRA: alpaca-cleaned 3ep, merged INT2 g32 artifact, C4 128x2048 calibration, MMLU 5-shot"
+echo "End time: $(date)"

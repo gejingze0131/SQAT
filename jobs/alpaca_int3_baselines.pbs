@@ -1,0 +1,69 @@
+#!/bin/bash
+#PBS -N alpaca_int3_b
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+# =============================================================================
+# ALPACA column, INT3 g64 cell — part B: QA-LoRA and QEFT.
+#
+# Both derived from their own commonsense INT3 g64 configs by the four column properties (alpaca,
+# response-only, C4 128x2048 calibration, 3 epochs with lrs x0.9750); both build their own base
+# on the same 128 C4 windows SALT-Q's frozen codes use. QEFT is k=128 here, matching the INT3
+# commonsense cell and SALT-Q's group_k, so the row reads "3 + fp16" = 3.35 effective bits.
+#
+# --with_base also scores QEFT's bare mixed-precision base, which is that row's own floor.
+#
+# Chain after jobs/alpaca_int3_bounds_and_saltq.pbs (part A) — g3 admits one job per user anyway.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+mkdir -p logs/alpaca
+echo "Start time: $(date)"
+[ -f datasets/alpaca/train.json ] || { echo "ERROR: datasets/alpaca/train.json missing"; exit 1; }
+
+echo -e "\n########## 1/2  QA-LoRA INT3 g64 ##########"
+CFG=configs/qalora_alpaca_int3_g64_ep3.yaml
+OUT=outputs/qalora_alpaca_int3_g64_ep3
+bash runs/qalora/run_qalora_alpaca.sh \
+    --config "$CFG" --bits 3 --num_gpus 4 --output_dir "$OUT" --skip_eval \
+    > logs/alpaca/60_qalora_int3_train.log 2>&1
+echo "train rc=$?"
+DEQ="${OUT}-3bit-qalora-dequant-eval"
+if [ -f "$DEQ/config.json" ]; then
+    bash runs/eval_vllm.sh --model_path "$DEQ" --dataset alpaca --gpus 0,1,2,3 \
+        --tag "$(basename $DEQ)" > logs/alpaca/61_qalora_int3_mmlu.log 2>&1
+    echo "mmlu rc=$?"
+    python scripts/collect_saltq_results.py \
+        --results_dir results/alpaca_mmlu --csv results_saltq.csv --config "$CFG" \
+        --filter "$(basename $DEQ)" \
+        --note "T-Alpaca QA-LoRA INT3 g64: alpaca-cleaned 3ep, merged INT3 artifact, C4 128x2048 calibration, MMLU 5-shot"
+else
+    echo "ERROR: no merged INT3 export at $DEQ"
+fi
+
+echo -e "\n########## 2/2  QEFT INT3 g64 k=128 (+ its own untrained base) ##########"
+bash runs/qeft/run_qeft_alpaca.sh \
+    --config baseline/QEFT/sqat/configs/qeft_alpaca_int3_g64_ep3_lr5e5.yaml \
+    --bits 3 --group_size 64 --num_gpus 4 --with_base \
+    --note "T-Alpaca QEFT INT3 g64 k=128 (3.35 bits): alpaca-cleaned 3ep, C4 128x2048 calibration, MMLU 5-shot" \
+    > logs/alpaca/62_qeft_int3.log 2>&1
+echo "qeft rc=$?"
+
+echo -e "\n>>> Alpaca MMLU 5-shot, full table"
+python - <<'PY'
+import glob, json, os
+rows=[]
+for p in sorted(glob.glob("results/alpaca_mmlu/*.json")):
+    r = json.load(open(p)); res = r.get("results", {})
+    if "mmlu" not in res: continue
+    rows.append((os.path.basename(p)[:-5], 100*res["mmlu"]["acc,none"]))
+for n, a in sorted(rows, key=lambda x: -x[1]):
+    print(f"{n:<70} {a:6.2f}")
+PY
+echo "End time: $(date)"

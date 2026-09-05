@@ -1,0 +1,126 @@
+# =============================================================================
+# QLoRA — WikiText-2 (T2's Wiki2 column): the FP16 UPPER BOUND and, via merged->GPTQ, the FLOOR
+#
+# Transported from configs/qlora_none_mm_int2_g32_ep1_span.yaml (MetaMath GSM8K 58.07 upper /
+# 22.06 floor) with only the three task-forced families of change described in the SALT-Q
+# WikiText-2 config header: the data block, 3 epochs at effective batch 16, and every lr
+# multiplied by sqrt(T_ref / T_here) = sqrt(1845 / 528) = 1.8693.
+#
+#       learning_rate   2.0e-4 (T=1845, validated)  ->  3.74e-4
+#
+# (For scale: ApiQ's own published WikiText-2 LoRA lr is 3e-4 at block_size 1024 and 3 epochs.
+# That is corroboration of the transport, not its source — nothing here was tuned on a
+# WikiText-2 score.)
+#
+# ---- THE TWO ROWS THIS CONFIG PRODUCES ------------------------------------------------------
+#   UPPER  <output_dir>-2bit-none-merged-eval
+#          NF4 base dequantized + the LoRA adapter merged, dense fp16. This is the
+#          ADAPTER-MOUNTED deployed state written as one tensor set: no re-quantization has
+#          happened, so it is the best this checkpoint can do and it is not a 2-bit artifact.
+#          The row is labelled fp16 in the table for exactly that reason.
+#   FLOOR  <output_dir>-2bit-none-gptq-eval
+#          that same merged checkpoint put through GPTQ INT2 g32, calibrated on the SAME ~0.5M
+#          in-domain WikiText-2 tokens every other arm of this column calibrates on
+#          (scripts/export_gptq_dequant.py, see jobs/wiki2_qlora_int2_floor.pbs). This is the
+#          "fine-tune in fp16, then PTQ" bound — merge damage with nothing to absorb it — and
+#          it is the construction that gave the CS cell its floor and the MetaMath cell its
+#          22.06.
+#
+# qat.mode is "sqat_permute" only because that is this config family's shared schema; the
+# pipeline launches scripts/train.py with --qat_mode none, so NO permutation, NO QAT and no
+# GPTQ happen during training. The qat.* block below is read by exactly two things: the
+# calibration keys, by the floor's GPTQ export; and lora.target_modules / qat.group_size, by
+# the same. Nothing else in it is live.
+# =============================================================================
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 2
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "sqat_permute"        # schema only — the pipeline passes --qat_mode none
+  symmetric: false
+  group_size: 32
+  lsq:
+    enabled: false
+    scales_lr: 1.0e-5
+
+  # Read by the FLOOR export (scripts/export_gptq_dequant.py), not by training.
+  # 256 windows x 2048 tokens = 524,288 in-domain WikiText-2 train tokens, the same budget
+  # SALT-Q / QA-LoRA / QEFT calibrate their bases on in this column.
+  sqat:
+    calibration_samples: 256
+    calibration_sampling: balanced      # ignored under data.task_type=lm
+    calibration_seq_len: 2048
+
+  sqat_permute:
+    boundary_sizes: [2, 30]
+    group_k: 128
+    top_k_ratio: 0.01
+    outlier_log_sigma: 3.0
+    down_outlier_log_sigma: 3.0
+    stage: 2
+    gptq:
+      enabled: true
+      nsamples: 256
+      percdamp: 0.01
+      blocksize: 128
+      batch_size: 4
+    awq_scale:
+      enabled: true
+      alpha: 0.5
+      max: 2.0
+
+data:
+  # wikitext-2-raw-v1, joined with "\n\n", tokenized once, cut into non-overlapping 1024-token
+  # blocks, every token supervised. See src/data.py's `task_type: lm` section.
+  task_type: lm
+  train_dataset: "datasets/wikitext2"
+  train_split: "train"
+  text_field: "text"
+  block_size: 1024
+  val_split: null
+  shuffle_dataset: true
+  num_proc: 32
+
+training:
+  output_dir: "outputs/qlora_none_wiki2_int2_g32_ep3"
+  num_epochs: 3
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 1        # x 4 GPUs = effective batch 16 blocks = 16.4k tok/step
+  group_by_length: false
+  learning_rate: 3.74e-4                # 2.0e-4 x sqrt(1845/528); see the header
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true

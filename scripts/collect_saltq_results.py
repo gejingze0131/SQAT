@@ -103,6 +103,15 @@ def _infer_method(model_dir: str) -> str:
         # labelling it as the method would read as the method having done nothing.
         ("qeftbase", "QEFT base (bcal GPTQ + fp16 weak)"),
         ("qeft", "QEFT"),
+        # A bare GPTQ quantization of the PRETRAINED model, with no fine-tuning of any kind —
+        # the Alpaca column's untrained INT2 anchor. It is not the QLoRA->GPTQ floor (that one
+        # quantizes a fine-tuned checkpoint and keeps the "-none-" tag below), and labelling it
+        # as a method would read as that method having destroyed the model.
+        ("gptqbase", "GPTQ base (no fine-tuning)"),
+        # The pretrained checkpoint evaluated bare, straight from the hub id — the fp16 anchor a
+        # whole column is read against. It has no output dir of its own to name it, so the model
+        # id is the only thing there is to match on.
+        ("llama-2-7b-hf", "fp16 base (no fine-tuning)"),
         ("qalora", "QA-LoRA"),
         ("-full-", "LR-QAT"),
         ("-none-", "QLoRA"),
@@ -262,16 +271,81 @@ def _rows_from_vllm_json(payload: dict, path: str, cfg: Optional[dict],
     return rows
 
 
+def _rows_from_ppl_json(payload: dict, path: str, cfg: Optional[dict],
+                        note: str) -> List[Dict[str, object]]:
+    """Ingest a scripts/eval_ppl.py summary (teacher-forced perplexity on raw text).
+
+    A THIRD source alongside "lm-eval" and "vllm-generative", and it has to stay a third: the
+    other two are accuracies where higher is better, this is a perplexity where lower is. A row
+    that did not name its source would invite a mean across the two.
+
+    One row per window length, with the length IN the task name ("wikitext2@1024") because
+    perplexity is not comparable across sequence lengths — that is the whole reason the length
+    is pinned and disclosed.
+    """
+    conf = payload.get("config", {}) or {}
+    model_dir = conf.get("model_path", "")
+    ctx = _run_context(model_dir, cfg)
+    # A note scripts/eval_ppl.py wrote INTO this artifact describes this artifact; the --note on
+    # the collecting invocation describes whatever that invocation happened to scan, which is a
+    # whole directory. When both exist the per-artifact one wins — the alternative mislabelled
+    # a fp16 upper bound as a floor because the floor job's collect step swept the shared dir.
+    note = str(conf.get("note") or "").strip() or note
+    ctx.update(
+        source="ppl",
+        timestamp=payload.get("timestamp", ""),
+        method=_infer_method(model_dir),
+        model_dir=model_dir,
+        dataset=conf.get("dataset", ""),
+        num_fewshot=0,
+        result_json=path,
+        note=note,
+    )
+
+    rows: List[Dict[str, object]] = []
+    for key, metrics in (payload.get("results", {}) or {}).items():
+        if not isinstance(metrics, dict) or not key.startswith("seq_len_"):
+            continue
+        seq_len = key[len("seq_len_"):]
+        if "ppl" not in metrics:
+            continue
+        # Only "ppl". The JSON also carries "ppl_exact", but with equal-length windows it is
+        # algebraically identical (both reduce to exp(mean per-window CE)) — see the assertion
+        # note in scripts/eval_ppl.py. Emitting it would double every row of this table for
+        # zero information.
+        # The SPLIT belongs in the task name. Without it an in-sample train-split diagnostic and
+        # the column's test metric are both "wikitext2@2048" on the same model_dir, separable
+        # only by reading the note — which is how a 1.504 in-sample number ends up being read as
+        # a result (2026-09-03). "test" stays unqualified so every row written before this keeps
+        # its identity, and so does the collector's (timestamp, model, task, metric) dedup key.
+        split = str(conf.get("split", "test") or "test")
+        qualifier = "" if split == "test" else f":{split}"
+        if metrics.get("truncated_from"):
+            qualifier += f"[first{metrics['n_windows']}of{metrics['truncated_from']}]"
+        row = dict(ctx)
+        row["task"] = f"{conf.get('dataset', 'ppl')}{qualifier}@{seq_len}"
+        row["metric"] = "ppl"
+        row["value"] = metrics["ppl"]
+        row["stderr"] = ""
+        rows.append(row)
+    return rows
+
+
 def _rows_from_json(path: str, cfg: Optional[dict], note: str) -> List[Dict[str, object]]:
     with open(path, encoding="utf-8") as f:
         payload = json.load(f)
 
     if payload.get("source") == "vllm-generative":
         return _rows_from_vllm_json(payload, path, cfg, note)
+    if payload.get("source") == "ppl":
+        return _rows_from_ppl_json(payload, path, cfg, note)
 
     conf = payload.get("config", {})
     model_dir = conf.get("model_path", "")
     ctx = _run_context(model_dir, cfg)
+    # Same rule as the ppl branch: a note the evaluator wrote INTO this artifact describes this
+    # artifact, while the --note of the collecting invocation describes a whole directory.
+    note = str(conf.get("note") or "").strip() or note
     ctx.update(
         source="lm-eval",
         timestamp=payload.get("timestamp", ""),

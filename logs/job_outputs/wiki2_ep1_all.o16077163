@@ -1,0 +1,34 @@
+Thu Sep  3 03:15:30 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   42C    P0             55W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+Start time: Thu Sep  3 03:15:30 +08 2026
+>>> all reusable bases present
+
+########## 1/4  QLoRA (fp16 upper + the floor's parent) ##########
+qlora rc=0
+
+########## 2/4  QA-LoRA (reusing the 3-epoch GPTQ base) ##########
+qalora rc=0
+
+########## 3/4  QEFT (Stage 0 skipped, base unchanged) ##########
+qeft rc=0
+
+########## 4/4  SALT-Q (reusing both offline bases) ##########
+saltq rc=0
+
+>>> 1-epoch cell, test-split PPL
+qalora_wiki2_int2_g32_ep1-2bit-qalora-dequant-eval             1024:   6.6520  2048:   6.2962
+qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval            1024:   6.3542  2048:   6.0242
+qlora_none_wiki2_int2_g32_ep1-2bit-none-dequant-eval           1024: 217464.0517  2048: 217446.7407
+qlora_none_wiki2_int2_g32_ep1-2bit-none-merged-eval            1024:   5.0758  2048:   4.8447
+saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval 1024:   7.4040  2048:   7.0015
+End time: Thu Sep  3 04:09:41 +08 2026

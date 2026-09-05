@@ -1,0 +1,213 @@
+Thu Sep  3 04:25:47 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:81:00.0 Off |                    0 |
+| N/A   42C    P0             56W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+Start time: Thu Sep  3 04:25:47 +08 2026
+
+============ saltq_ep1 :: TRAIN split (in-sample, first 166 windows) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval
+[ppl] data       datasets/wikitext2 split=train (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 2874559 tokens in the concatenated train stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   7%|▋         | 20/291 [00:00<00:02, 112.86it/s]Loading weights:  13%|█▎        | 38/291 [00:00<00:02, 116.91it/s]Loading weights:  17%|█▋        | 50/291 [00:00<00:02, 91.17it/s] Loading weights:  21%|██        | 60/291 [00:00<00:03, 75.19it/s]Loading weights:  23%|██▎       | 68/291 [00:00<00:02, 75.84it/s]Loading weights:  27%|██▋       | 80/291 [00:00<00:02, 81.77it/s]Loading weights:  34%|███▎      | 98/291 [00:01<00:02, 86.15it/s]Loading weights:  39%|███▉      | 114/291 [00:01<00:01, 94.18it/s]Loading weights:  43%|████▎     | 124/291 [00:01<00:02, 81.04it/s]Loading weights:  46%|████▋     | 135/291 [00:01<00:01, 85.23it/s]Loading weights:  50%|████▉     | 145/291 [00:01<00:01, 88.19it/s]Loading weights:  54%|█████▎    | 156/291 [00:01<00:01, 87.03it/s]Loading weights:  59%|█████▉    | 171/291 [00:01<00:01, 83.36it/s]Loading weights:  62%|██████▏   | 181/291 [00:02<00:01, 72.36it/s]Loading weights:  67%|██████▋   | 195/291 [00:02<00:01, 77.72it/s]Loading weights:  71%|███████   | 206/291 [00:02<00:01, 82.73it/s]Loading weights:  76%|███████▋  | 222/291 [00:02<00:00, 95.57it/s]Loading weights:  80%|███████▉  | 232/291 [00:02<00:00, 92.20it/s]Loading weights:  83%|████████▎ | 242/291 [00:02<00:00, 76.77it/s]Loading weights:  86%|████████▋ | 251/291 [00:02<00:00, 75.75it/s]Loading weights:  92%|█████████▏| 267/291 [00:03<00:00, 85.55it/s]Loading weights:  98%|█████████▊| 284/291 [00:03<00:00, 103.92it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 89.60it/s] 
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[ppl] registered 1 boundary gather(s)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored) — TRUNCATED from 1403
+[ppl]   20/166 windows  running ppl 4.1707
+[ppl]   40/166 windows  running ppl 4.3073
+[ppl]   60/166 windows  running ppl 4.2631
+[ppl]   80/166 windows  running ppl 4.2213
+[ppl]   100/166 windows  running ppl 4.2033
+[ppl]   120/166 windows  running ppl 4.2481
+[ppl]   140/166 windows  running ppl 4.2398
+[ppl]   160/166 windows  running ppl 4.2046
+[ppl] seq_len=2048  PPL 4.1658  (exact-denominator 4.1658)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/saltq_ep1__train166.json
+
+============ saltq_ep1 :: VALIDATION split (held out) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x-2bit-saltq-deploy-eval
+[ppl] data       datasets/wikitext2 split=validation (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 299964 tokens in the concatenated validation stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 8144.01it/s]
+[SegPerm] Boundary hook: seg 0→1 after layer 0
+[SegPerm] num_runtime_permutes=1
+[ppl] registered 1 boundary gather(s)
+[ppl] seq_len=2048: 146 non-overlapping windows (299008 tokens scored)
+[ppl]   20/146 windows  running ppl 6.1385
+[ppl]   40/146 windows  running ppl 6.3356
+[ppl]   60/146 windows  running ppl 6.6122
+[ppl]   80/146 windows  running ppl 6.7994
+[ppl]   100/146 windows  running ppl 6.9488
+[ppl]   120/146 windows  running ppl 6.9650
+[ppl]   140/146 windows  running ppl 7.0135
+[ppl] seq_len=2048  PPL 7.0585  (exact-denominator 7.0585)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/saltq_ep1__validation.json
+
+============ qalora_ep1 :: TRAIN split (in-sample, first 166 windows) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qalora_wiki2_int2_g32_ep1-2bit-qalora-dequant-eval
+[ppl] data       datasets/wikitext2 split=train (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 2874559 tokens in the concatenated train stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   3%|▎         | 10/291 [00:00<00:03, 77.31it/s]Loading weights:   9%|▊         | 25/291 [00:00<00:02, 109.16it/s]Loading weights:  13%|█▎        | 37/291 [00:00<00:03, 81.15it/s] Loading weights:  21%|██        | 61/291 [00:00<00:01, 120.22it/s]Loading weights:  26%|██▋       | 77/291 [00:00<00:01, 120.56it/s]Loading weights:  33%|███▎      | 95/291 [00:00<00:01, 127.33it/s]Loading weights:  37%|███▋      | 109/291 [00:00<00:01, 113.04it/s]Loading weights:  42%|████▏     | 121/291 [00:01<00:01, 108.57it/s]Loading weights:  46%|████▌     | 133/291 [00:01<00:02, 63.32it/s] Loading weights:  50%|████▉     | 145/291 [00:01<00:02, 72.62it/s]Loading weights:  53%|█████▎    | 155/291 [00:01<00:02, 67.01it/s]Loading weights:  56%|█████▋    | 164/291 [00:01<00:01, 69.35it/s]Loading weights:  59%|█████▉    | 173/291 [00:02<00:01, 69.59it/s]Loading weights:  65%|██████▌   | 190/291 [00:02<00:01, 87.25it/s]Loading weights:  69%|██████▊   | 200/291 [00:02<00:01, 73.73it/s]Loading weights:  75%|███████▌  | 219/291 [00:02<00:00, 93.98it/s]Loading weights:  79%|███████▉  | 230/291 [00:02<00:00, 89.48it/s]Loading weights:  84%|████████▍ | 244/291 [00:02<00:00, 100.87it/s]Loading weights:  88%|████████▊ | 257/291 [00:02<00:00, 101.40it/s]Loading weights:  93%|█████████▎| 271/291 [00:02<00:00, 109.74it/s]Loading weights:  97%|█████████▋| 283/291 [00:03<00:00, 107.93it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 94.89it/s] 
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored) — TRUNCATED from 1403
+[ppl]   20/166 windows  running ppl 4.6890
+[ppl]   40/166 windows  running ppl 5.0423
+[ppl]   60/166 windows  running ppl 5.0601
+[ppl]   80/166 windows  running ppl 4.9080
+[ppl]   100/166 windows  running ppl 4.8871
+[ppl]   120/166 windows  running ppl 4.9160
+[ppl]   140/166 windows  running ppl 4.9042
+[ppl]   160/166 windows  running ppl 4.8763
+[ppl] seq_len=2048  PPL 4.8380  (exact-denominator 4.8380)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/qalora_ep1__train166.json
+
+============ qalora_ep1 :: VALIDATION split (held out) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qalora_wiki2_int2_g32_ep1-2bit-qalora-dequant-eval
+[ppl] data       datasets/wikitext2 split=validation (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 299964 tokens in the concatenated validation stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 8545.60it/s]
+[ppl] seq_len=2048: 146 non-overlapping windows (299008 tokens scored)
+[ppl]   20/146 windows  running ppl 5.5855
+[ppl]   40/146 windows  running ppl 5.7383
+[ppl]   60/146 windows  running ppl 5.9709
+[ppl]   80/146 windows  running ppl 6.1379
+[ppl]   100/146 windows  running ppl 6.2711
+[ppl]   120/146 windows  running ppl 6.2758
+[ppl]   140/146 windows  running ppl 6.3160
+[ppl] seq_len=2048  PPL 6.3579  (exact-denominator 6.3579)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/qalora_ep1__validation.json
+
+============ qlora_upper_fp16_ep1 :: TRAIN split (in-sample, first 166 windows) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_wiki2_int2_g32_ep1-2bit-none-merged-eval
+[ppl] data       datasets/wikitext2 split=train (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 2874559 tokens in the concatenated train stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   2%|▏         | 5/291 [00:00<00:06, 41.97it/s]Loading weights:   7%|▋         | 19/291 [00:00<00:03, 68.13it/s]Loading weights:  10%|▉         | 28/291 [00:00<00:03, 71.25it/s]Loading weights:  14%|█▍        | 42/291 [00:00<00:03, 82.69it/s]Loading weights:  21%|██        | 60/291 [00:00<00:02, 107.87it/s]Loading weights:  25%|██▍       | 72/291 [00:00<00:02, 102.63it/s]Loading weights:  29%|██▊       | 83/291 [00:00<00:02, 103.31it/s]Loading weights:  32%|███▏      | 94/291 [00:01<00:02, 91.62it/s] Loading weights:  36%|███▌      | 104/291 [00:01<00:02, 92.77it/s]Loading weights:  39%|███▉      | 114/291 [00:01<00:02, 88.33it/s]Loading weights:  42%|████▏     | 123/291 [00:01<00:01, 87.83it/s]Loading weights:  46%|████▌     | 133/291 [00:01<00:02, 62.17it/s]Loading weights:  52%|█████▏    | 150/291 [00:01<00:01, 80.34it/s]Loading weights:  55%|█████▍    | 160/291 [00:01<00:01, 71.95it/s]Loading weights:  62%|██████▏   | 181/291 [00:02<00:01, 72.66it/s]Loading weights:  67%|██████▋   | 196/291 [00:02<00:01, 85.05it/s]Loading weights:  71%|███████   | 206/291 [00:02<00:01, 79.43it/s]Loading weights:  76%|███████▋  | 222/291 [00:02<00:00, 88.69it/s]Loading weights:  82%|████████▏ | 239/291 [00:02<00:00, 103.74it/s]Loading weights:  87%|████████▋ | 252/291 [00:02<00:00, 97.60it/s] Loading weights:  92%|█████████▏| 268/291 [00:03<00:00, 108.05it/s]Loading weights:  96%|█████████▌| 280/291 [00:03<00:00, 109.11it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 91.69it/s] 
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored) — TRUNCATED from 1403
+[ppl]   20/166 windows  running ppl 4.5191
+[ppl]   40/166 windows  running ppl 4.9147
+[ppl]   60/166 windows  running ppl 4.9437
+[ppl]   80/166 windows  running ppl 4.6934
+[ppl]   100/166 windows  running ppl 4.6831
+[ppl]   120/166 windows  running ppl 4.6725
+[ppl]   140/166 windows  running ppl 4.6691
+[ppl]   160/166 windows  running ppl 4.6690
+[ppl] seq_len=2048  PPL 4.6308  (exact-denominator 4.6308)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/qlora_upper_fp16_ep1__train166.json
+
+============ qlora_upper_fp16_ep1 :: VALIDATION split (held out) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_wiki2_int2_g32_ep1-2bit-none-merged-eval
+[ppl] data       datasets/wikitext2 split=validation (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 299964 tokens in the concatenated validation stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 9208.24it/s]
+[ppl] seq_len=2048: 146 non-overlapping windows (299008 tokens scored)
+[ppl]   20/146 windows  running ppl 4.3573
+[ppl]   40/146 windows  running ppl 4.4691
+[ppl]   60/146 windows  running ppl 4.6451
+[ppl]   80/146 windows  running ppl 4.8024
+[ppl]   100/146 windows  running ppl 4.9199
+[ppl]   120/146 windows  running ppl 4.9163
+[ppl]   140/146 windows  running ppl 4.9104
+[ppl] seq_len=2048  PPL 4.9347  (exact-denominator 4.9347)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/qlora_upper_fp16_ep1__validation.json
+
+============ gptq_floor_ep1 :: TRAIN split (in-sample, first 166 windows) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_wiki2_int2_g32_ep1-2bit-none-gptq-eval
+[ppl] data       datasets/wikitext2 split=train (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 2874559 tokens in the concatenated train stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<01:41,  2.85it/s]Loading weights:   1%|          | 2/291 [00:00<01:04,  4.50it/s]Loading weights:   1%|▏         | 4/291 [00:01<01:35,  3.02it/s]Loading weights:   3%|▎         | 9/291 [00:01<00:45,  6.13it/s]Loading weights:   4%|▍         | 13/291 [00:02<00:49,  5.66it/s]Loading weights:   7%|▋         | 19/291 [00:02<00:26, 10.09it/s]Loading weights:   8%|▊         | 22/291 [00:04<00:54,  4.97it/s]Loading weights:  10%|▉         | 28/291 [00:04<00:33,  7.77it/s]Loading weights:  11%|█         | 31/291 [00:05<00:49,  5.25it/s]Loading weights:  11%|█▏        | 33/291 [00:05<00:47,  5.47it/s]Loading weights:  14%|█▎        | 40/291 [00:06<00:42,  5.89it/s]Loading weights:  14%|█▍        | 42/291 [00:07<00:43,  5.77it/s]Loading weights:  17%|█▋        | 49/291 [00:08<00:36,  6.62it/s]Loading weights:  18%|█▊        | 51/291 [00:08<00:34,  6.91it/s]Loading weights:  20%|█▉        | 58/291 [00:09<00:38,  6.03it/s]Loading weights:  23%|██▎       | 67/291 [00:10<00:35,  6.35it/s]Loading weights:  26%|██▌       | 76/291 [00:11<00:29,  7.24it/s]Loading weights:  27%|██▋       | 78/291 [00:12<00:29,  7.23it/s]Loading weights:  29%|██▉       | 85/291 [00:13<00:30,  6.76it/s]Loading weights:  30%|██▉       | 87/291 [00:13<00:28,  7.08it/s]Loading weights:  32%|███▏      | 94/291 [00:14<00:29,  6.60it/s]Loading weights:  35%|███▍      | 101/291 [00:14<00:20,  9.09it/s]Loading weights:  35%|███▌      | 103/291 [00:15<00:27,  6.88it/s]Loading weights:  36%|███▌      | 105/291 [00:16<00:27,  6.73it/s]Loading weights:  37%|███▋      | 107/291 [00:16<00:25,  7.30it/s]Loading weights:  37%|███▋      | 109/291 [00:16<00:21,  8.36it/s]Loading weights:  38%|███▊      | 111/291 [00:16<00:21,  8.49it/s]Loading weights:  39%|███▉      | 113/291 [00:23<02:45,  1.07it/s]Loading weights:  40%|████      | 117/291 [00:23<01:39,  1.75it/s]Loading weights:  41%|████      | 119/291 [00:23<01:18,  2.19it/s]Loading weights:  42%|████▏     | 121/291 [00:24<01:19,  2.13it/s]Loading weights:  43%|████▎     | 126/291 [00:25<00:44,  3.72it/s]Loading weights:  45%|████▍     | 130/291 [00:26<00:50,  3.22it/s]Loading weights:  47%|████▋     | 136/291 [00:26<00:29,  5.27it/s]Loading weights:  48%|████▊     | 139/291 [00:28<00:44,  3.42it/s]Loading weights:  51%|█████     | 148/291 [00:30<00:34,  4.19it/s]Loading weights:  53%|█████▎    | 155/291 [00:30<00:22,  6.15it/s]Loading weights:  54%|█████▍    | 157/291 [00:31<00:30,  4.33it/s]Loading weights:  56%|█████▌    | 163/291 [00:32<00:20,  6.33it/s]Loading weights:  57%|█████▋    | 166/291 [00:33<00:26,  4.69it/s]Loading weights:  58%|█████▊    | 168/291 [00:33<00:24,  4.97it/s]Loading weights:  60%|██████    | 175/291 [00:34<00:21,  5.32it/s]Loading weights:  63%|██████▎   | 184/291 [00:37<00:24,  4.45it/s]Loading weights:  66%|██████▋   | 193/291 [00:38<00:17,  5.76it/s]Loading weights:  67%|██████▋   | 195/291 [00:38<00:17,  5.36it/s]Loading weights:  69%|██████▉   | 202/291 [00:39<00:16,  5.39it/s]Loading weights:  72%|███████▏  | 209/291 [00:40<00:10,  7.58it/s]Loading weights:  73%|███████▎  | 211/291 [00:41<00:14,  5.51it/s]Loading weights:  76%|███████▌  | 220/291 [00:42<00:10,  6.50it/s]Loading weights:  76%|███████▋  | 222/291 [00:42<00:10,  6.77it/s]Loading weights:  79%|███████▊  | 229/291 [00:43<00:08,  7.14it/s]Loading weights:  79%|███████▉  | 231/291 [00:43<00:08,  7.31it/s]Loading weights:  81%|████████  | 235/291 [00:43<00:06,  8.60it/s]Loading weights:  82%|████████▏ | 238/291 [00:45<00:09,  5.34it/s]Loading weights:  85%|████████▍ | 247/291 [00:46<00:06,  6.37it/s]Loading weights:  88%|████████▊ | 256/291 [00:47<00:04,  7.27it/s]Loading weights:  89%|████████▊ | 258/291 [00:47<00:04,  7.30it/s]Loading weights:  91%|█████████ | 265/291 [00:48<00:03,  7.67it/s]Loading weights:  92%|█████████▏| 267/291 [00:48<00:02,  8.21it/s]Loading weights:  93%|█████████▎| 272/291 [00:49<00:02,  8.79it/s]Loading weights:  94%|█████████▍| 274/291 [00:49<00:02,  6.81it/s]Loading weights:  95%|█████████▍| 276/291 [00:49<00:01,  7.51it/s]Loading weights:  97%|█████████▋| 283/291 [00:51<00:01,  6.42it/s]Loading weights: 100%|██████████| 291/291 [00:51<00:00,  5.70it/s]
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored) — TRUNCATED from 1403
+[ppl]   20/166 windows  running ppl 7.7326
+[ppl]   40/166 windows  running ppl 8.5514
+[ppl]   60/166 windows  running ppl 8.8667
+[ppl]   80/166 windows  running ppl 8.9683
+[ppl]   100/166 windows  running ppl 8.7526
+[ppl]   120/166 windows  running ppl 8.6656
+[ppl]   140/166 windows  running ppl 8.5241
+[ppl]   160/166 windows  running ppl 8.4616
+[ppl] seq_len=2048  PPL 8.4007  (exact-denominator 8.4007)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/gptq_floor_ep1__train166.json
+
+============ gptq_floor_ep1 :: VALIDATION split (held out) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_wiki2_int2_g32_ep1-2bit-none-gptq-eval
+[ppl] data       datasets/wikitext2 split=validation (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 299964 tokens in the concatenated validation stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   3%|▎         | 9/291 [00:00<00:03, 87.22it/s]Loading weights:   8%|▊         | 22/291 [00:00<00:02, 102.30it/s]Loading weights:  14%|█▎        | 40/291 [00:00<00:02, 115.82it/s]Loading weights:  19%|█▉        | 56/291 [00:00<00:01, 128.22it/s]Loading weights:  24%|██▎       | 69/291 [00:00<00:01, 122.54it/s]Loading weights:  29%|██▊       | 83/291 [00:00<00:01, 125.63it/s]Loading weights:  33%|███▎      | 96/291 [00:00<00:01, 121.58it/s]Loading weights:  38%|███▊      | 112/291 [00:00<00:01, 129.85it/s]Loading weights:  45%|████▍     | 130/291 [00:01<00:01, 130.14it/s]Loading weights:  50%|█████     | 146/291 [00:01<00:01, 131.25it/s]Loading weights:  56%|█████▌    | 162/291 [00:01<00:00, 135.93it/s]Loading weights:  60%|██████    | 176/291 [00:01<00:00, 128.13it/s]Loading weights:  66%|██████▌   | 192/291 [00:01<00:00, 132.38it/s]Loading weights:  71%|███████   | 206/291 [00:01<00:00, 134.42it/s]Loading weights:  76%|███████▌  | 220/291 [00:01<00:00, 123.27it/s]Loading weights:  81%|████████  | 236/291 [00:01<00:00, 129.88it/s]Loading weights:  86%|████████▌ | 250/291 [00:01<00:00, 128.63it/s]Loading weights:  91%|█████████ | 265/291 [00:02<00:00, 127.91it/s]Loading weights:  97%|█████████▋| 282/291 [00:02<00:00, 136.23it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 129.54it/s]
+[ppl] seq_len=2048: 146 non-overlapping windows (299008 tokens scored)
+[ppl]   20/146 windows  running ppl 7.1561
+[ppl]   40/146 windows  running ppl 7.4403
+[ppl]   60/146 windows  running ppl 7.7512
+[ppl]   80/146 windows  running ppl 8.0127
+[ppl]   100/146 windows  running ppl 8.1910
+[ppl]   120/146 windows  running ppl 8.1696
+[ppl]   140/146 windows  running ppl 8.6242
+[ppl] seq_len=2048  PPL 8.6647  (exact-denominator 8.6647)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/gptq_floor_ep1__validation.json
+
+============ qeft_ep1 :: TRAIN split (in-sample, first 166 windows) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval
+[ppl] data       datasets/wikitext2 split=train (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 2874559 tokens in the concatenated train stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:02<12:07,  2.51s/it]Loading weights:   1%|          | 2/291 [00:02<05:16,  1.09s/it]Loading weights:   4%|▍         | 13/291 [00:03<00:49,  5.66it/s]Loading weights:   5%|▍         | 14/291 [00:03<00:47,  5.87it/s]Loading weights:   8%|▊         | 22/291 [00:04<00:41,  6.55it/s]Loading weights:  11%|█         | 31/291 [00:05<00:36,  7.03it/s]Loading weights:  13%|█▎        | 38/291 [00:06<00:26,  9.38it/s]Loading weights:  14%|█▎        | 40/291 [00:07<00:37,  6.76it/s]Loading weights:  14%|█▍        | 42/291 [00:07<00:36,  6.88it/s]Loading weights:  17%|█▋        | 49/291 [00:08<00:35,  6.76it/s]Loading weights:  18%|█▊        | 51/291 [00:08<00:32,  7.49it/s]Loading weights:  20%|█▉        | 58/291 [00:10<00:41,  5.61it/s]Loading weights:  23%|██▎       | 67/291 [00:11<00:33,  6.66it/s]Loading weights:  24%|██▎       | 69/291 [00:11<00:33,  6.59it/s]Loading weights:  26%|██▌       | 76/291 [00:12<00:31,  6.84it/s]Loading weights:  27%|██▋       | 78/291 [00:12<00:28,  7.36it/s]Loading weights:  29%|██▉       | 85/291 [00:14<00:34,  5.98it/s]Loading weights:  30%|██▉       | 87/291 [00:14<00:36,  5.58it/s]Loading weights:  32%|███▏      | 94/291 [00:15<00:37,  5.30it/s]Loading weights:  33%|███▎      | 95/291 [00:16<00:36,  5.42it/s]Loading weights:  35%|███▌      | 103/291 [00:17<00:28,  6.52it/s]Loading weights:  37%|███▋      | 109/291 [00:17<00:20,  8.96it/s]Loading weights:  38%|███▊      | 112/291 [00:19<00:42,  4.26it/s]Loading weights:  42%|████▏     | 121/291 [00:20<00:30,  5.55it/s]Loading weights:  45%|████▍     | 130/291 [00:21<00:24,  6.51it/s]Loading weights:  45%|████▌     | 132/291 [00:21<00:24,  6.36it/s]Loading weights:  48%|████▊     | 139/291 [00:22<00:21,  6.91it/s]Loading weights:  50%|████▉     | 145/291 [00:23<00:16,  8.64it/s]Loading weights:  51%|█████     | 148/291 [00:24<00:22,  6.32it/s]Loading weights:  52%|█████▏    | 150/291 [00:24<00:22,  6.29it/s]Loading weights:  54%|█████▍    | 157/291 [00:25<00:18,  7.23it/s]Loading weights:  55%|█████▍    | 159/291 [00:25<00:18,  7.01it/s]Loading weights:  57%|█████▋    | 166/291 [00:27<00:23,  5.39it/s]Loading weights:  60%|██████    | 175/291 [00:28<00:17,  6.56it/s]Loading weights:  62%|██████▏   | 181/291 [00:28<00:13,  8.44it/s]Loading weights:  63%|██████▎   | 183/291 [00:28<00:12,  8.91it/s]Loading weights:  64%|██████▎   | 185/291 [00:29<00:18,  5.63it/s]Loading weights:  66%|██████▋   | 193/291 [00:30<00:16,  6.09it/s]Loading weights:  67%|██████▋   | 195/291 [00:31<00:15,  6.38it/s]Loading weights:  69%|██████▉   | 202/291 [00:32<00:14,  6.32it/s]Loading weights:  72%|███████▏  | 209/291 [00:32<00:08,  9.29it/s]Loading weights:  73%|███████▎  | 211/291 [00:33<00:12,  6.20it/s]Loading weights:  75%|███████▍  | 217/291 [00:33<00:08,  8.99it/s]Loading weights:  76%|███████▌  | 220/291 [00:34<00:13,  5.37it/s]Loading weights:  79%|███████▊  | 229/291 [00:36<00:09,  6.37it/s]Loading weights:  81%|████████  | 235/291 [00:36<00:06,  8.21it/s]Loading weights:  82%|████████▏ | 238/291 [00:37<00:10,  5.13it/s]Loading weights:  85%|████████▍ | 247/291 [00:38<00:06,  6.90it/s]Loading weights:  86%|████████▌ | 249/291 [00:38<00:05,  7.11it/s]Loading weights:  88%|████████▊ | 256/291 [00:39<00:05,  6.78it/s]Loading weights:  89%|████████▊ | 258/291 [00:40<00:04,  6.87it/s]Loading weights:  91%|█████████ | 265/291 [00:41<00:03,  7.48it/s]Loading weights:  92%|█████████▏| 267/291 [00:41<00:03,  7.24it/s]Loading weights:  94%|█████████▍| 274/291 [00:42<00:02,  6.95it/s]Loading weights:  95%|█████████▍| 276/291 [00:42<00:02,  6.69it/s]Loading weights:  97%|█████████▋| 283/291 [00:43<00:01,  6.35it/s]Loading weights: 100%|██████████| 291/291 [00:43<00:00,  6.61it/s]
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored) — TRUNCATED from 1403
+[ppl]   20/166 windows  running ppl 4.6625
+[ppl]   40/166 windows  running ppl 5.0000
+[ppl]   60/166 windows  running ppl 5.0387
+[ppl]   80/166 windows  running ppl 4.8428
+[ppl]   100/166 windows  running ppl 4.8319
+[ppl]   120/166 windows  running ppl 4.8757
+[ppl]   140/166 windows  running ppl 4.8579
+[ppl]   160/166 windows  running ppl 4.8427
+[ppl] seq_len=2048  PPL 4.8074  (exact-denominator 4.8074)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/qeft_ep1__train166.json
+
+============ qeft_ep1 :: VALIDATION split (held out) ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qeft_wiki2_int2_g32_ep1_lr16e5-2bit-qeft-dense-eval
+[ppl] data       datasets/wikitext2 split=validation (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 299964 tokens in the concatenated validation stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   1%|          | 2/291 [00:00<00:17, 16.12it/s]Loading weights:   7%|▋         | 21/291 [00:00<00:02, 105.07it/s]Loading weights:  12%|█▏        | 35/291 [00:00<00:02, 115.23it/s]Loading weights:  16%|█▋        | 48/291 [00:00<00:02, 119.91it/s]Loading weights:  21%|██        | 61/291 [00:00<00:01, 123.00it/s]Loading weights:  26%|██▌       | 76/291 [00:00<00:01, 120.51it/s]Loading weights:  32%|███▏      | 94/291 [00:00<00:01, 124.41it/s]Loading weights:  38%|███▊      | 110/291 [00:00<00:01, 129.12it/s]Loading weights:  42%|████▏     | 123/291 [00:01<00:01, 124.80it/s]Loading weights:  47%|████▋     | 138/291 [00:01<00:01, 128.69it/s]Loading weights:  53%|█████▎    | 153/291 [00:01<00:01, 133.02it/s]Loading weights:  57%|█████▋    | 167/291 [00:01<00:00, 129.30it/s]Loading weights:  63%|██████▎   | 182/291 [00:01<00:00, 133.00it/s]Loading weights:  67%|██████▋   | 196/291 [00:01<00:00, 130.93it/s]Loading weights:  73%|███████▎  | 211/291 [00:01<00:00, 124.64it/s]Loading weights:  78%|███████▊  | 227/291 [00:01<00:00, 130.63it/s]Loading weights:  83%|████████▎ | 241/291 [00:01<00:00, 131.89it/s]Loading weights:  88%|████████▊ | 256/291 [00:02<00:00, 125.87it/s]Loading weights:  93%|█████████▎| 271/291 [00:02<00:00, 126.18it/s]Loading weights:  98%|█████████▊| 284/291 [00:02<00:00, 124.86it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 127.16it/s]
+[ppl] seq_len=2048: 146 non-overlapping windows (299008 tokens scored)
+[ppl]   20/146 windows  running ppl 5.3190
+[ppl]   40/146 windows  running ppl 5.4835
+[ppl]   60/146 windows  running ppl 5.7060
+[ppl]   80/146 windows  running ppl 5.8691
+[ppl]   100/146 windows  running ppl 6.0032
+[ppl]   120/146 windows  running ppl 6.0053
+[ppl]   140/146 windows  running ppl 6.0389
+[ppl] seq_len=2048  PPL 6.0785  (exact-denominator 6.0785)
+[ppl] wrote results/wikitext2_ppl_diagnostic_ep1/qeft_ep1__validation.json
+
+>>> Summary: train / validation / test, and the train->test ratio
+arm                 train166     valid      test  test/train
+saltq_ep1             4.1658    7.0585    7.0015        1.68
+qalora_ep1            4.8380    6.3579    6.2962        1.30
+qlora_upper_fp16_ep1    4.6308    4.9347    4.8447        1.05
+gptq_floor_ep1        8.4007    8.6647    8.8728        1.06
+qeft_ep1              4.8074    6.0785    6.0242        1.25
+End time: Thu Sep  3 04:37:40 +08 2026

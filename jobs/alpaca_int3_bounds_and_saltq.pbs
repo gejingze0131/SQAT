@@ -1,0 +1,115 @@
+#!/bin/bash
+#PBS -N alpaca_int3_a
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+# =============================================================================
+# ALPACA column, INT3 g64 cell — part A: the two 3-bit anchors and the SALT-Q arm.
+#
+# Same four column properties as the INT2 g32 cell (alpaca-cleaned 51,760 records, response-only
+# loss, C4 128x2048 calibration for every arm, 3 epochs at effective batch 80 with the lrs
+# carrying sqrt(1845/1941) = 0.9750), scored on MMLU 5-shot. SALT-Q follows the commonsense INT3
+# recipe the user pointed at: k=128, group_size 64, salient_lr 5e-5, salient_init=gptq_latent.
+#
+#   1. INT3 anchor   the PRETRAINED model through GPTQ INT3 g64 on the same C4 windows, untrained
+#                    — the 3-bit analogue of the INT2 cell's 26.76, i.e. where every 3-bit arm
+#                    starts before a single optimizer step.
+#   2. INT3 floor    the EXISTING QLoRA-merged fp16 checkpoint (the INT2 cell's, see below) put
+#                    through the same GPTQ INT3 g64 recipe.
+#   3. SALT-Q        k=128 g64, bases built fresh.
+#
+# THE fp16 UPPER BOUND IS NOT RE-TRAINED, DELIBERATELY. With qat_mode=none the QLoRA base is NF4
+# whatever model.quant_bits says (src/model_loader._get_bnb_config prints a WARN to that effect)
+# and no fakequant runs, so an "INT3 cell" QLoRA run would produce bit-for-bit the same adapter
+# and the same merged fp16 export as the INT2 cell's. The INT3 row therefore REUSES that artifact
+# and its measured 45.84; only the FLOOR, which is a PTQ of it, is bit-dependent and is redone
+# here. Re-running the training to get an identical number would cost 4 GPU-hours and would still
+# be the same number.
+#
+# SALT-Q's OFFLINE BASES ARE BUILT FRESH, also deliberately: this cell changes group_k (256->128)
+# and group_size (32->64), and the permuted base is only reusable when the segmentation
+# configuration matches (scripts/train.py:_permuted_base_reusable). Reusing the INT2 one would
+# silently mix two salient-column choices.
+#
+# Part B (QA-LoRA + QEFT) is jobs/alpaca_int3_baselines.pbs.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+mkdir -p logs/alpaca
+echo "Start time: $(date)"
+
+CFG=configs/qlora_none_alpaca_int3_g64_ep3.yaml
+BASE_MODEL=meta-llama/Llama-2-7b-hf
+MERGED=outputs/qlora_none_alpaca_int2_g32_ep3-2bit-none-merged-eval
+[ -f datasets/alpaca/train.json ] || { echo "ERROR: datasets/alpaca/train.json missing"; exit 1; }
+[ -f "$MERGED/config.json" ] || { echo "ERROR: the INT2 cell's merged fp16 export is missing: $MERGED"; exit 1; }
+
+# --- 1/3  INT3 anchor: GPTQ on the PRETRAINED model, no fine-tuning ---------------------------
+GPTQBASE=outputs/gptqbase_llama2_int3_g64_c4cal
+echo -e "\n########## 1/3  GPTQ INT3 g64 (C4 128x2048) of the pretrained model + MMLU ##########"
+if [ ! -f "$GPTQBASE/config.json" ]; then
+    python scripts/export_gptq_dequant.py --model_path "$BASE_MODEL" --output_dir "$GPTQBASE" \
+        --config "$CFG" --bits 3 --group_size 64 --nsamples 128 --batch_size 2 \
+        > logs/alpaca/50_int3_gptqbase_export.log 2>&1
+    echo "export rc=$?"
+else
+    echo "  $GPTQBASE already exists — skipping export"
+fi
+bash runs/eval_vllm.sh --model_path "$GPTQBASE" --dataset alpaca --gpus 0,1,2,3 \
+    --tag "$(basename $GPTQBASE)" > logs/alpaca/50_int3_gptqbase_mmlu.log 2>&1
+echo "int3 anchor rc=$?"
+
+# --- 2/3  INT3 floor: the same merged fp16 checkpoint, quantized at 3 bits --------------------
+FLOOR=outputs/qlora_none_alpaca_int3_g64_ep3-3bit-none-gptq-eval
+echo -e "\n########## 2/3  QLoRA merged fp16 -> GPTQ INT3 g64 (FLOOR) + MMLU ##########"
+if [ ! -f "$FLOOR/config.json" ]; then
+    python scripts/export_gptq_dequant.py --model_path "$MERGED" --output_dir "$FLOOR" \
+        --config "$CFG" --bits 3 --group_size 64 --nsamples 128 --batch_size 2 \
+        > logs/alpaca/51_int3_floor_export.log 2>&1
+    echo "export rc=$?"
+fi
+bash runs/eval_vllm.sh --model_path "$FLOOR" --dataset alpaca --gpus 0,1,2,3 \
+    --tag "$(basename $FLOOR)" > logs/alpaca/51_int3_floor_mmlu.log 2>&1
+echo "int3 floor rc=$?"
+
+collect_one() {   # <model_dir substring> <config or ""> <note>
+    python scripts/collect_saltq_results.py \
+        --results_dir results/alpaca_mmlu --csv results_saltq.csv \
+        --config "$2" --filter "$1" --note "$3"
+}
+collect_one "gptqbase_llama2_int3_g64_c4cal" "" \
+    "T-Alpaca INT3 anchor: GPTQ INT3 g64 (C4 128x2048) of the pretrained model, no fine-tuning"
+collect_one "$(basename $FLOOR)" "$CFG" \
+    "T-Alpaca INT3 FLOOR: QLoRA merged fp16 -> GPTQ INT3 g64, C4 128x2048"
+
+# --- 3/3  SALT-Q INT3 g64, k=128 --------------------------------------------------------------
+echo -e "\n########## 3/3  SALT-Q INT3 g64 k=128 (fresh bases) + MMLU ##########"
+bash runs/saltq/run_saltq_alpaca.sh \
+    --config             configs/saltq_alpaca_int3_g64_ep3_k128_c4cal_sgptql.yaml \
+    --bits 3 --num_gpus 4 \
+    --output_root        outputs/saltq_alpaca_int3_g64_ep3_k128_c4cal_sgptql \
+    --train_layernorms   false \
+    --note               "T-Alpaca SALT-Q INT3 g64 k=128 (sal5e5, gptq_latent): alpaca-cleaned 3ep, deployed artifact, C4 128x2048 calibration, MMLU 5-shot" \
+    > logs/alpaca/52_saltq_int3.log 2>&1
+echo "saltq rc=$?"
+
+python scripts/check_saltq_base.py \
+    --base     outputs/saltq_alpaca_int3_g64_ep3_k128_c4cal_sgptql/saltq_base_3bit_g64 \
+    --permuted outputs/saltq_alpaca_int3_g64_ep3_k128_c4cal_sgptql/permuted_fp16_base \
+    2>&1 | tail -30 || true
+
+echo -e "\n>>> Alpaca MMLU 5-shot so far"
+python - <<'PY'
+import glob, json, os
+for p in sorted(glob.glob("results/alpaca_mmlu/*.json")):
+    r = json.load(open(p))
+    acc = r.get("results", {}).get("mmlu", {}).get("acc,none")
+    print(f"{os.path.basename(p)[:-5]:<66} {'' if acc is None else round(acc*100, 2)}")
+PY
+echo "End time: $(date)"

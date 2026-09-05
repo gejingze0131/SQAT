@@ -1,0 +1,30 @@
+#!/bin/bash
+#PBS -N wiki2_qalora_int2
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+# =============================================================================
+# T2 Wiki2 column, arm QA-LoRA. INT2 g32, frozen GPTQ base on the same 524,288 in-domain
+# WikiText-2 train tokens every arm of this column calibrates on; group-pooled adapter at
+# lr 9.35e-3 = 5.0e-3 x sqrt(1845/528).
+#
+# Scored: the MERGED INT2 checkpoint (the pooled adapter folded into the affine zero-points),
+# which is what QA-LoRA deploys. Perplexity by scripts/eval_ppl.py.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+bash runs/qalora/run_qalora_wikitext2.sh \
+    --bits       2 \
+    --num_gpus   4 \
+    --output_dir outputs/qalora_wiki2_int2_g32_ep3 \
+    --note       "T2 Wiki2: WikiText-2 fine-tuning, merged INT2 artifact, lr x sqrt(1845/528)" \
+    > logs/wikitext2/qalora_wiki2_int2_g32_ep3.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

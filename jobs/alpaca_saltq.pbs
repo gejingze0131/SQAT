@@ -1,0 +1,59 @@
+#!/bin/bash
+#PBS -N alpaca_saltq
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+# =============================================================================
+# ALPACA column, arm SALT-Q. INT2 g32, k=256, salient_init=gptq_latent, zp_lr x2 — the same
+# method configuration as the commonsense cell (MEAN(8) 74.76), the MetaMath cell (GSM8K 56.48)
+# and the Wiki2 cell, transported to alpaca-cleaned by the data block, 3 epochs at effective
+# batch 80, and the sqrt(T_ref/T_here) = sqrt(1845/1941) = 0.9750 lr law. See the config header.
+#
+# Offline stages (rank 0, automatic, both kept for resume/export):
+#   <output_dir>/permuted_fp16_base     ~13 GB   permute-before-quantize
+#   <output_dir>/saltq_base_2bit_g32    ~7 GB    frozen INT2 GPTQ codes + (s0, z0) + salient init
+# Both are calibrated on 128 x 2048 = 262,144 tokens of generic C4 (datasets/c4_calib_1024.json)
+# — the SAME calibration every other arm of this column uses, including the GPTQ floor. They are
+# NOT the commonsense/metamath/wiki2 bases: those were calibrated in-domain, and saliency is an
+# activation statistic, so reusing one would change two things at once.
+#
+# Scored: the exported unified low-bit checkpoint, MMLU 5-shot, lm-eval-harness
+# (runs/eval_vllm.sh --dataset alpaca -> scripts/eval_mmlu.py). No vLLM and no fold in this path:
+# eval_mmlu.py registers this export's boundary gathers itself.
+#
+# Read against jobs/alpaca_bounds.pbs (fp16 anchor / INT2 anchor / QLoRA upper / GPTQ floor).
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/alpaca
+echo "Start time: $(date)"
+[ -f datasets/alpaca/train.json ] || { echo "ERROR: run scripts/build_alpaca_dataset.py on a LOGIN node first"; exit 1; }
+
+bash runs/saltq/run_saltq_alpaca.sh \
+    --bits             2 \
+    --num_gpus         4 \
+    --output_root      outputs/saltq_alpaca_int2_g32_ep3_k256_c4cal_sgptql_zp2x \
+    --train_layernorms false \
+    --note             "T-Alpaca SALT-Q: alpaca-cleaned 3ep, deployed INT2 g32 k=256 artifact, C4 128x2048 calibration, MMLU 5-shot" \
+    > logs/alpaca/10_saltq.log 2>&1
+echo "rc=$?"
+
+echo -e "\n>>> frozen-code base sanity (code histogram / reconstruction error / group_k structure)"
+python scripts/check_saltq_base.py \
+    --base     outputs/saltq_alpaca_int2_g32_ep3_k256_c4cal_sgptql_zp2x/saltq_base_2bit_g32 \
+    --permuted outputs/saltq_alpaca_int2_g32_ep3_k256_c4cal_sgptql_zp2x/permuted_fp16_base \
+    2>&1 | tail -30 || true
+
+python - <<'PY'
+import glob, json, os
+for p in sorted(glob.glob("results/alpaca_mmlu/*saltq*.json")):
+    r = json.load(open(p))
+    acc = r.get("results", {}).get("mmlu", {}).get("acc,none")
+    print(f"{os.path.basename(p)[:-5]:<62} mmlu 5-shot acc: {acc if acc is None else round(acc*100, 2)}")
+PY
+echo "End time: $(date)"

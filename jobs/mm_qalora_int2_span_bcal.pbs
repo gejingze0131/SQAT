@@ -1,0 +1,27 @@
+#!/bin/bash
+#PBS -N mm_qalora_int2_span_bcal
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=16:00:00
+#PBS -j oe
+# QA-LoRA control of the MetaMath INT2 span bcal cell (see the config header). Builds its frozen
+# GPTQ INT2 base on the balanced 1000-record MetaMath calibration, trains the group-pooled
+# adapter at the tuned lr 5e-3, dequant-evals on GSM8K + MATH.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/metamath
+echo "Start time: $(date)"
+bash runs/qalora/run_qalora_math.sh \
+    --config     configs/qalora_mm_int2_g32_ep1_span_bcal.yaml \
+    --bits       2 \
+    --num_gpus   4 \
+    --output_dir outputs/qalora_mm_int2_ep1_span_bcal \
+    > logs/metamath/qalora_mm_int2_g32_ep1_span_bcal.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

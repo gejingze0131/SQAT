@@ -1,0 +1,33 @@
+Fri Sep  4 23:04:10 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   42C    P0             54W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+Start time: Fri Sep  4 23:04:10 +08 2026
+>>> all reusable bases present
+
+########## 1/2  SALT-Q, 1 epoch (same codes, same permutation) ##########
+saltq rc=0
+
+########## 2/2  QEFT, 1 epoch (same weak-column base) ##########
+qeft rc=0
+
+>>> Alpaca MMLU 5-shot, 1-epoch vs 3-epoch
+Llama-2-7B_int2_g32_k256_asym_c4cal-2bit-qeftbase-eval             30.27
+gptqbase_llama2_int2_g32_c4cal                                     26.76
+llama2_7b_fp16_anchor                                              45.97
+qalora_alpaca_int2_g32_ep3-2bit-qalora-dequant-eval                31.93
+qeft_alpaca_int2_g32_ep1_lr5e5-2bit-qeft-dense-eval                32.07
+qeft_alpaca_int2_g32_ep3_lr5e5-2bit-qeft-dense-eval                34.25
+qlora_none_alpaca_int2_g32_ep3-2bit-none-gptq-eval                 27.15
+qlora_none_alpaca_int2_g32_ep3-2bit-none-merged-eval               45.84
+saltq_alpaca_int2_g32_ep1_k256_c4cal_sgptql_zp2x-2bit-saltq-deploy-eval 28.98
+saltq_alpaca_int2_g32_ep3_k256_c4cal_sgptql_zp2x-2bit-saltq-deploy-eval 32.77
+End time: Sat Sep  5 00:53:53 +08 2026

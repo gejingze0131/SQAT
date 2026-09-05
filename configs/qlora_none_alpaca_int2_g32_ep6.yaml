@@ -1,0 +1,212 @@
+# =============================================================================
+# QLoRA (qat_mode=none) -- Alpaca column. Produces BOTH bounds of the column:
+#   *-2bit-none-merged-eval : NF4 base dequantized + adapter merged, never re-quantized
+#                             -> the fp16 UPPER bound.
+#   *-2bit-none-gptq-eval   : that same checkpoint put through GPTQ INT2 g32 on the C4
+#                             calibration below (scripts/export_gptq_dequant.py, run as
+#                             a separate job) -> the deployed-at-2-bit FLOOR: what
+#                             fine-tuning in fp16 and quantizing afterwards gets you.
+#                             The calibration block below is what that floor reads,
+#                             which is why it is set even though qat_mode=none
+#                             calibrates nothing during training.
+#
+# THE ALPACA COLUMN (Llama-2-7B, INT2 g32, MMLU 5-shot). Derived from the commonsense-170k INT2
+# cell of the same method; the METHOD is untouched and four column properties change:
+#   1. data.train_dataset  datasets/commonsense -> datasets/alpaca (alpaca-cleaned, 51,760
+#                          records; `input` folded into the instruction by
+#                          scripts/build_alpaca_dataset.py)
+#   2. data.loss_span      instruction+response -> response. The span switch existed because a
+#                          commonsense response is one of 15 fixed strings; an Alpaca response is
+#                          free-form text, and response-only is what QLoRA reports for Alpaca.
+#   3. calibration         balanced in-domain 3500 -> generic C4 128 x 2048, the GPTQ-paper
+#                          recipe, identical for every arm of this column.
+#   4. num_epochs 1 -> 3, and every lr x sqrt(T_ref / T_here) = sqrt(1845 / 1941) = 0.9750.
+#                          51,760 / 80 = 647 steps per epoch, x3 = T 1941 against the reference
+#                          cell's 1845. 3 epochs is the Alpaca convention (Stanford Alpaca,
+#                          QLoRA, QA-LoRA) and it is what puts T within 5% of the validated cell.
+#
+# Scored on MMLU 5-shot through lm-eval-harness: runs/eval_vllm.sh --dataset alpaca dispatches to
+# scripts/eval_mmlu.py (no vLLM, no test split -- MMLU shares nothing with the training set).
+#
+# 6-EPOCH INT2 g32 CELL. Derived from the 3-epoch config by exactly three things:
+# training.num_epochs, training.output_dir and the learning rates, each multiplied by
+# sqrt(T_3ep / T_6ep) = sqrt(1941 / 3882) = 0.7071, so realized displacement is unchanged and the
+# epoch count is the only variable.
+#
+# WHY THE WHOLE CELL MOVES TOGETHER. On MMLU every arm gains only what it REPAIRS of the
+# quantization damage (Alpaca fine-tuning of the fp16 model moves MMLU by -0.13), and repair is
+# training-limited: measured 1 -> 3 epochs, SALT-Q went 28.98 -> 32.77 and QEFT 32.07 -> 34.25, so
+# the gap between them closed 3.08 -> 1.48 without turning over. A 6-epoch table is only readable
+# if EVERY arm gets the same treatment, bounds included -- a 6-epoch method against a 3-epoch
+# bound would be two variables.
+# =============================================================================
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"
+  quant_bits: 2
+  double_quant: true
+  quant_type: "nf4"
+  dtype: "bfloat16"
+  max_seq_len: 2048
+
+lora:
+  rank: 64
+  alpha: 16
+  dropout: 0.0
+  # All 7 projections participate in LoRA fine-tuning.
+  # QAT fakequant coverage differs by projection type:
+  #   q/k/v/gate/up_proj : residual-stream P_k permute → QAT on salient cols [0:group_k]
+  #   down_proj          : block-internal P4_l permute (salient-first) → QAT on [0:group_k]
+  #                        (arbitrary intermediate-dim permutation, no multi-head constraint)
+  #   o_proj             : per-head Hadamard fold (H into v_proj + H^T into o_proj), NO QAT
+  #                        (within-head permutation can't produce contiguous [0:group_k] slice)
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+qat:
+  mode: "sqat_permute"
+  symmetric: false          # asymmetric INT4 (same as QA-LoRA convention)
+  group_size: 32
+                            # group_k=128 + group_size=64 → fakequant first 2 groups (cols 0–127)
+                            # group_k=128 + group_size=32 → fakequant first 4 groups (cols 0–127)
+                            # group_k=128 + group_size=128 → fakequant first 1 group  (cols 0–127)
+
+  # LSQ / LSQ+ learnable quantization scale (LR-QAT style). When enabled, the per-step min-max
+  # fakequant scale is replaced by a learnable nn.Parameter (asym → learn scale+zp, sym → learn
+  # scale only), initialized current_minmax so the initial grid matches the old min-max grid.
+  # Applies to full QAT and the sqat_permute salient slice. enabled=false → bit-identical to the
+  # original min-max path. scales_lr is a dedicated (small) optimizer lr for the scale/zp group.
+  lsq:
+    enabled: false
+    scales_lr: 1.0e-5
+
+  # Calibration params — read by load_calibration_data (uses cfg["qat"]["sqat"])
+  sqat:
+    # C4 128 x 2048 = 262,144 tokens, the GPTQ-paper budget, from datasets/c4_calib_1024.json.
+    # calibration_source switches src/data.load_calibration_data to the generic-text path (raw
+    # strings joined with EOS, cut into calibration_seq_len windows, no PROMPT and no masking);
+    # calibration_sampling is dead config there and is kept only to show which knob is NOT live.
+    # EVERY arm of the Alpaca column calibrates on these same 128 windows.
+    calibration_samples: 128
+    calibration_sampling: balanced
+    calibration_seq_len: 2048
+    calibration_source: "datasets/c4_calib_1024.json"
+
+  sqat_permute:
+    # Legacy comparison mode: manual residual segments + fixed residual/down_proj group_k.
+    # With top_k_ratio present, residual salient channels are selected by per-source
+    # top_k_ratio union-first (old pipeline). num_runtime_permutes = len(boundary_sizes) - 1.
+    boundary_sizes: [2, 30]
+
+    # Global manual override. Every residual segment and every down_proj layer uses
+    # exactly this group_k. Outlier overflow is reported as a warning.
+    group_k: 128
+
+    # Per-source top-k fraction for legacy residual-stream salient selection.
+    top_k_ratio: 0.01
+
+    # Log-space z-score threshold for residual-stream outlier detection.
+    outlier_log_sigma: 3.0
+    # Separate log-space z-score threshold for per-layer down_proj group_k selection.
+    down_outlier_log_sigma: 3.0
+
+    # Stage: 1 = permutation-only (verify equivalence, no QAT), 2 = full QAT.
+    stage: 2
+
+    # gptq (Improvement 1): at export, quantize the ~97% NON-salient columns [group_k:] with
+    # GPTQ/OBS instead of plain RTN. The salient slice [0:group_k] keeps the EXACT canonical
+    # (training-consistent) grid; the non-salient block is GPTQ'd INDEPENDENTLY (no salient-error
+    # leakage — the QAT/LoRA was trained to tolerate the salient quant error, so the non-salient
+    # cols must approximate their fp16 weights, not compensate for the salient slice). Uses the
+    # SAME group_size and asym/sym as QAT. Dense (--export_dequant) only; o_proj has no salient
+    # slice → fully GPTQ. Composes with awq_scale. Calibrated on the training data in the permuted
+    # basis (boundary gathers active), sequential per decoder layer (memory-bounded).
+    gptq:
+      enabled: true
+      nsamples: 128          # calibration sequences for the Hessian
+      percdamp: 0.01         # Hessian diagonal damping (fraction of mean diag)
+      # blocksize is GPTQ's lazy-batch COMPUTE block (how many columns are error-compensated
+      # before one batched Hessian update). It is NOT the quantization group: the quant grid is
+      # group_size (=64 above). blocksize only must be a multiple of group_size (auto-aligned in
+      # code). 128 is the standard GPTQ default (= 2 groups of 64); larger=faster, smaller=exacter.
+      blocksize: 128
+      batch_size: 2          # calibration micro-batch (keeps activation memory low)
+
+    # awq_scale (Improvement 2): AWQ-style per-input-channel scaling of the salient slice
+    # [0:group_k]. Within each block, q/k/v share one scale S1 (they read the same input), gate/up
+    # share S2, down_proj uses its own S3 (on its P4 intermediate slice); o_proj is untouched (it
+    # keeps its per-head Hadamard, NO QAT). S_j = (E[x²]_j)^alpha normalized so min=1, clamped to
+    # [1, max]. Training fakequants in the amplified space W*S; export bakes 1/S into the dense
+    # weight (deployed = quant(W*S)/S), so it is purely a better quant grid — bit-identical output,
+    # no runtime scaling. Dense (--export_dequant) only; composes with gptq. false = original scheme.
+    awq_scale:
+      enabled: true
+      alpha: 0.5             # exponent on E[x²]; larger = stronger amplification of salient channels
+      max: 2.0              # clamp on S (S in [1, max])
+
+    # --- Stage-2 flow (handled automatically by scripts/train.py) ---------------------
+    # To avoid a dequant->permute->requant round-trip (double quantization), the permute/fold
+    # is applied to a CLEAN fp16 base, which is saved to <output_dir>/permuted_fp16_base and
+    # then reloaded through the standard load_in_4bit path so NF4 quantizes the permuted
+    # weights exactly ONCE. That directory (~13GB) is kept so `--export_only` later can reload
+    # the correct (permuted) base; delete it manually once you no longer need export-only.
+    #
+    # The per-segment residual permutation needs a runtime boundary gather (one index_select
+    # per segment boundary; num_segments-1 total). It is re-registered for training in the
+    # handler and for inference by the eval scripts (which read sqat_permute_meta.pt). Do not
+    # evaluate a permuted export with a loader that ignores that metadata.
+
+data:
+  # Local pissa-dataset JSON: datasets/commonsense/{train,test}.json, records of
+  # instruction / input / output / type covering BoolQ, PIQA, SIQA, ARC-e/c, HellaSwag,
+  # WinoGrande and OBQA. Rendered through src/data.PROMPT with the loss on the RESPONSE
+  # ONLY, which is what makes the trained model's output parseable by scripts/test_acc.py.
+  train_dataset: "datasets/alpaca"
+  train_split: "train"
+  # No in-loop eval: the test split is scored GENERATIVELY (vLLM + exact-match) by
+  # run_eval_vllm.sh, and a teacher-forced loss on it would not predict that score.
+  val_split: null
+  dataset_field: ["instruction", "output"]
+  sub_task: null            # Alpaca is one undifferentiated task (`type: alpaca`)
+  shuffle_dataset: true
+  # DERIVED FROM configs/qlora_none_cs170k_int2_g32_ep1.yaml BY THIS ONE KEY plus output_dir.
+  # The instruction+response cell's BOUNDS: one QLoRA training run (NF4 base, qat_mode none, no
+  # fakequant) whose merged fp16 checkpoint is the cell's upper bound and whose GPTQ INT2 g32
+  # re-export of that same checkpoint is its floor -- the same construction that gave the
+  # response-only cell 82.42 / 50.35. The old merged checkpoint cannot be reused: it was trained
+  # response-only, and the span IS the cell's defining variable.
+  loss_span: response
+  num_proc: 32
+
+training:
+  # Overridden by runs/qlora/_pipeline.sh --output_dir; kept distinct anyway so a
+  # direct scripts/train.py invocation cannot land on the 3-epoch run.
+  output_dir: "outputs/qlora_none_alpaca_int2_g32_ep6"
+  num_epochs: 6              # 3 -> 6: THE single variable; T = 3882
+  per_device_train_batch_size: 5
+  per_device_eval_batch_size: 5
+  gradient_accumulation_steps: 4
+  group_by_length: false
+  learning_rate: 1.38e-4      # the 3-epoch cell's 1.95e-4 x 0.7071 for T=3882
+  weight_decay: 0.01
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  max_grad_norm: 0.3
+  fp16: false
+  bf16: true
+  logging_steps: 10
+  save_steps: 200
+  save_total_limit: 1
+  dataloader_num_workers: 4
+  report_to: "wandb"
+  seed: 42
+
+export:
+  merge_and_save: true

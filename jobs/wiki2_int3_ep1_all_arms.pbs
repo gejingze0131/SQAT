@@ -1,0 +1,90 @@
+#!/bin/bash
+#PBS -N wiki2_int3_ep1
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=16:00:00
+#PBS -j oe
+# =============================================================================
+# T2 Wiki2 column — INT3 g64, 1 EPOCH. The second quantization cell, all five arms.
+#
+# WHY 1 EPOCH ONLY. The INT2 g32 pair settled it: at 3 epochs this column ranked the arms by
+# REGULARIZATION, not by quantization quality (in-sample and held-out perplexity came out
+# perfectly anti-correlated across all four trained arms, test/train 6.75x / 3.93x / 1.90x /
+# 1.30x). At 1 epoch every ratio collapses into 1.05-1.68 and the column starts saying what it is
+# supposed to say — SALT-Q clears the post-hoc quantization floor by 1.87 instead of 0.12. So the
+# INT3 cell is run at 1 epoch from the start; a 3-epoch INT3 point would only re-measure the
+# overfitting that is already characterized at INT2.
+#
+# ONE VARIABLE vs THE INT2 g32 1-EPOCH CELL: the quantization cell itself.
+#   bits 2 -> 3, group_size 32 -> 64, salient/weak budget 256 -> 128 (the validated INT3 setting:
+#   SALT-Q k=128 gave T1's 78.85 MEAN(8); k=128 is QEFT's own paper main-table setting).
+# Everything else is byte-identical: the dataset, the 1-epoch recipe, effective batch 16,
+# T = 176, and the 524,288-token in-domain calibration. The configs were derived mechanically
+# with the parsed diff asserted to touch nothing else.
+#
+# LEARNING RATES ARE NOT RE-TUNED. T does not change, so AGENTS.md's displacement law asks for no
+# rescale; the three baselines use the same lr at both bit widths in this repo; and SALT-Q's
+# bit-dependent rates come from its *_by_bits maps, which resolve to the validated INT3 row
+# (salient 1.62e-4 / scales 5.59e-5 / zp 5.59e-3 = the T=1845 values 5.0e-5 / 1.73e-5 / 1.73e-3
+# times this column's sqrt(1845/176) = 3.238). Verified against src/trainer.saltq_lr().
+#
+# EVERY BASE IS REBUILT. Codes are bit- and group-size-specific, and the permutation itself
+# depends on group_k and group_size, so nothing from the INT2 cell is valid here.
+# scripts/train.py's _permuted_base_reusable() checks those fields and refuses on its own.
+#
+# --with_base on QEFT is deliberate: the INT2 cell showed QEFT's UNTRAINED mixed-precision base
+# already beat both pure-INT2 arms' fine-tuned results, so the row is unreadable without it.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+
+echo -e "\n########## 1/4  QLoRA INT3 (fp16 upper + the floor's parent) ##########"
+bash runs/qlora/run_qlora_wikitext2.sh \
+    --config     configs/qlora_none_wiki2_int3_g64_ep1.yaml \
+    --bits 3 --num_gpus 4 \
+    --output_dir outputs/qlora_none_wiki2_int3_g64_ep1 \
+    > logs/wikitext2/qlora_none_wiki2_int3_g64_ep1.log 2>&1
+echo "qlora rc=$?"
+
+echo -e "\n########## 2/4  QA-LoRA INT3 (fresh GPTQ INT3 g64 base) ##########"
+bash runs/qalora/run_qalora_wikitext2.sh \
+    --config     configs/qalora_wiki2_int3_g64_ep1.yaml \
+    --bits 3 --num_gpus 4 \
+    --output_dir outputs/qalora_wiki2_int3_g64_ep1 \
+    --note       "T2 Wiki2 INT3 g64 1-epoch cell: merged INT3 artifact" \
+    > logs/wikitext2/qalora_wiki2_int3_g64_ep1.log 2>&1
+echo "qalora rc=$?"
+
+echo -e "\n########## 3/4  QEFT INT3 k=128 (Stage 0 builds its own base) ##########"
+bash runs/qeft/run_qeft_wikitext2.sh \
+    --config     baseline/QEFT/sqat/configs/qeft_wiki2_int3_g64_ep1_lr16e5.yaml \
+    --bits 3 --group_size 64 --with_base --num_gpus 4 \
+    --note       "T2 Wiki2 INT3 g64 1-epoch cell: 3+fp16 mixed-precision artifact (k=128)" \
+    > logs/wikitext2/qeft_wiki2_int3_g64_ep1.log 2>&1
+echo "qeft rc=$?"
+
+echo -e "\n########## 4/4  SALT-Q INT3 k=128 (fresh permuted base + fresh codes) ##########"
+bash runs/saltq/run_saltq_wikitext2.sh \
+    --config           configs/saltq_wiki2_int3_g64_ep1_bcal_sgptql.yaml \
+    --bits 3 --num_gpus 4 \
+    --output_root      outputs/saltq_wiki2_int3_g64_ep1_bcal_sgptql \
+    --train_layernorms false \
+    --note             "T2 Wiki2 INT3 g64 1-epoch cell: deployed artifact (identity merge)" \
+    > logs/wikitext2/saltq_wiki2_int3_g64_ep1.log 2>&1
+echo "saltq rc=$?"
+
+echo -e "\n>>> INT3 g64 1-epoch cell, test-split PPL"
+python - <<'PY'
+import glob, json, os
+for p in sorted(glob.glob("results/wikitext2_ppl/*int3*.json") + glob.glob("results/wikitext2_ppl/*_int3_*.json")):
+    r = json.load(open(p))
+    print(f"{os.path.basename(p)[:-5]:<62} " +
+          "  ".join(f"{k[8:]}: {v['ppl']:8.4f}" for k, v in sorted(r["results"].items())))
+PY
+echo "End time: $(date)"

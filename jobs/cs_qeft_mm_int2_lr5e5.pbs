@@ -1,0 +1,31 @@
+#!/bin/bash
+#PBS -N cs_qeft_mm_int2_lr5e5
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+# QEFT on MetaMath, INT2 g32 k=256, weak lr 5e-5, no zp — the 2x2's fp16-weak/no-zp cell next to
+# the SALT-Q MetaMath run (job 15860115). Fresh QEFT base on the balanced 1000-record MetaMath
+# calibration (stage 0). Training on 2 GPUs (effective batch 80, same as every row); eval TP=4
+# (TP=2 + bf16 crashes vLLM's sampler). Scored on GSM8K.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/metamath
+echo "Start time: $(date)"
+bash runs/qeft/run_qeft_math.sh \
+    --bits       2 \
+    --group_size 32 \
+    --with_base \
+    --num_gpus   2 \
+    --eval_gpus  0,1,2,3 \
+    --eval_tasks gsm8k \
+    --note       "MetaMath span bcal, weak lr 5e-5, no zp: the fp16-weak/no-zp cell of the 2x2 vs SALT-Q MM" \
+    > logs/metamath/qeft_mm_int2_g32_ep1_span_bcal_lr5e5.log 2>&1
+echo "rc=$?"
+echo "End time: $(date)"

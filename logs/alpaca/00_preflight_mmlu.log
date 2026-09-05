@@ -1,0 +1,1389 @@
+The following values were not passed to `accelerate launch` and had defaults used instead:
+		More than one GPU was found, enabling multi-GPU training.
+		If this was unintended please pass in `--num_processes=1`.
+	`--dynamo_backend` was set to a value of `'no'`
+To avoid this warning pass in values for each of the problematic parameters or run `accelerate config`.
+[Eval] Model: meta-llama/Llama-2-7b-hf
+[Eval] Tasks: ['mmlu']
+[Eval] Num fewshot: 5
+[Eval] Model: meta-llama/Llama-2-7b-hf[Eval] Batch size: 8
+
+[Eval] Tasks: ['mmlu']
+[Eval] Num fewshot: 5
+[Eval] Batch size: 8
+[Eval] Model: meta-llama/Llama-2-7b-hf
+[Eval] Tasks: ['mmlu']
+[Eval] Num fewshot: 5
+[Eval] Batch size: 8
+[Eval] Model: meta-llama/Llama-2-7b-hf
+[Eval] Tasks: ['mmlu']
+[Eval] Num fewshot: 5
+[Eval] Batch size: 8
+[RANK 0] Detected kernel version 4.18.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<01:33,  3.12it/s]Loading weights:   0%|          | 1/291 [00:00<02:56,  1.64it/s]Loading weights:   1%|          | 2/291 [00:01<05:20,  1.11s/it]Loading weights:   1%|          | 2/291 [00:02<05:53,  1.22s/it]Loading weights:   0%|          | 1/291 [00:02<11:41,  2.42s/it]Loading weights:   1%|          | 3/291 [00:02<03:25,  1.40it/s]Loading weights:   1%|▏         | 4/291 [00:02<02:31,  1.90it/s]Loading weights:   1%|          | 3/291 [00:02<03:14,  1.48it/s]Loading weights:   0%|          | 1/291 [00:02<12:51,  2.66s/it]Loading weights:   2%|▏         | 5/291 [00:03<03:00,  1.58it/s]Loading weights:   2%|▏         | 5/291 [00:03<02:37,  1.82it/s]Loading weights:   2%|▏         | 5/291 [00:03<02:38,  1.80it/s]Loading weights:   2%|▏         | 5/291 [00:03<02:38,  1.80it/s]Loading weights:   2%|▏         | 6/291 [00:04<03:37,  1.31it/s]Loading weights:   2%|▏         | 6/291 [00:04<03:33,  1.34it/s]Loading weights:   2%|▏         | 6/291 [00:04<03:27,  1.38it/s]Loading weights:   2%|▏         | 6/291 [00:04<03:57,  1.20it/s]Loading weights:   3%|▎         | 8/291 [00:05<02:42,  1.74it/s]Loading weights:   2%|▏         | 7/291 [00:05<03:32,  1.34it/s]Loading weights:   3%|▎         | 8/291 [00:05<02:42,  1.74it/s]Loading weights:   3%|▎         | 8/291 [00:05<02:51,  1.65it/s]Loading weights:   3%|▎         | 9/291 [00:05<02:15,  2.08it/s]Loading weights:   3%|▎         | 9/291 [00:05<02:20,  2.00it/s]Loading weights:   3%|▎         | 9/291 [00:05<02:17,  2.05it/s]Loading weights:   3%|▎         | 10/291 [00:06<02:16,  2.07it/s]Loading weights:   3%|▎         | 10/291 [00:06<02:18,  2.03it/s]Loading weights:   3%|▎         | 10/291 [00:06<02:21,  1.99it/s]Loading weights:   3%|▎         | 9/291 [00:05<02:39,  1.76it/s]Loading weights:   4%|▍         | 13/291 [00:06<01:17,  3.59it/s]Loading weights:   4%|▍         | 13/291 [00:06<01:17,  3.61it/s]Loading weights:   4%|▍         | 13/291 [00:06<01:17,  3.59it/s]Loading weights:   4%|▍         | 13/291 [00:06<01:18,  3.53it/s]Loading weights:   5%|▍         | 14/291 [00:07<02:18,  2.00it/s]Loading weights:   5%|▍         | 14/291 [00:07<02:09,  2.14it/s]Loading weights:   5%|▍         | 14/291 [00:07<02:19,  1.98it/s]Loading weights:   5%|▍         | 14/291 [00:07<02:18,  2.00it/s]Loading weights:   5%|▌         | 15/291 [00:08<02:26,  1.89it/s]Loading weights:   5%|▌         | 15/291 [00:08<02:26,  1.89it/s]Loading weights:   5%|▌         | 15/291 [00:08<02:27,  1.87it/s]Loading weights:   5%|▌         | 15/291 [00:08<02:17,  2.00it/s]Loading weights:   6%|▌         | 17/291 [00:08<01:44,  2.63it/s]Loading weights:   6%|▌         | 17/291 [00:08<01:46,  2.57it/s]Loading weights:   6%|▌         | 17/291 [00:08<01:46,  2.57it/s]Loading weights:   6%|▌         | 17/291 [00:08<01:46,  2.57it/s]Loading weights:   6%|▌         | 18/291 [00:08<01:38,  2.77it/s]Loading weights:   6%|▌         | 18/291 [00:08<01:36,  2.82it/s]Loading weights:   6%|▌         | 18/291 [00:08<01:38,  2.77it/s]Loading weights:   6%|▌         | 18/291 [00:08<01:38,  2.78it/s]Loading weights:   7%|▋         | 19/291 [00:09<02:01,  2.24it/s]Loading weights:   7%|▋         | 19/291 [00:09<02:01,  2.24it/s]Loading weights:   7%|▋         | 19/291 [00:09<02:01,  2.24it/s]Loading weights:   7%|▋         | 19/291 [00:09<01:59,  2.27it/s]Loading weights:   8%|▊         | 22/291 [00:10<01:33,  2.88it/s]Loading weights:   8%|▊         | 22/291 [00:10<01:33,  2.88it/s]Loading weights:   8%|▊         | 22/291 [00:10<01:32,  2.90it/s]Loading weights:   7%|▋         | 20/291 [00:10<02:23,  1.89it/s]Loading weights:   8%|▊         | 24/291 [00:10<01:08,  3.89it/s]Loading weights:   8%|▊         | 24/291 [00:10<01:08,  3.89it/s]Loading weights:   8%|▊         | 24/291 [00:10<01:08,  3.89it/s]Loading weights:   8%|▊         | 24/291 [00:10<01:02,  4.28it/s]Loading weights:  10%|▉         | 28/291 [00:10<00:36,  7.22it/s]Loading weights:   9%|▉         | 26/291 [00:10<00:51,  5.19it/s]Loading weights:  10%|▉         | 29/291 [00:10<00:34,  7.52it/s]Loading weights:  10%|▉         | 29/291 [00:10<00:34,  7.52it/s]Loading weights:  11%|█         | 31/291 [00:11<00:59,  4.38it/s]Loading weights:  11%|█         | 31/291 [00:11<00:53,  4.82it/s]Loading weights:  11%|█         | 31/291 [00:11<00:59,  4.38it/s]Loading weights:  11%|█         | 31/291 [00:11<00:55,  4.67it/s]Loading weights:  11%|█         | 32/291 [00:12<01:24,  3.07it/s]Loading weights:  11%|█▏        | 33/291 [00:13<01:47,  2.41it/s]Loading weights:  11%|█▏        | 33/291 [00:13<01:47,  2.40it/s]Loading weights:  11%|█▏        | 33/291 [00:13<01:42,  2.52it/s]Loading weights:  11%|█▏        | 33/291 [00:13<01:45,  2.45it/s]Loading weights:  12%|█▏        | 35/291 [00:13<01:27,  2.91it/s]Loading weights:  12%|█▏        | 35/291 [00:13<01:23,  3.08it/s]Loading weights:  12%|█▏        | 35/291 [00:13<01:27,  2.91it/s]Loading weights:  12%|█▏        | 35/291 [00:13<01:24,  3.02it/s]Loading weights:  12%|█▏        | 36/291 [00:14<01:22,  3.08it/s]Loading weights:  12%|█▏        | 36/291 [00:14<01:25,  2.99it/s]Loading weights:  12%|█▏        | 36/291 [00:14<01:25,  2.99it/s]Loading weights:  12%|█▏        | 36/291 [00:13<01:21,  3.15it/s]Loading weights:  13%|█▎        | 38/291 [00:14<01:04,  3.91it/s]Loading weights:  13%|█▎        | 38/291 [00:14<00:59,  4.22it/s]Loading weights:  13%|█▎        | 38/291 [00:14<01:03,  4.00it/s]Loading weights:  13%|█▎        | 38/291 [00:14<01:05,  3.86it/s]Loading weights:  14%|█▎        | 40/291 [00:14<01:08,  3.69it/s]Loading weights:  14%|█▎        | 40/291 [00:15<01:10,  3.55it/s]Loading weights:  14%|█▎        | 40/291 [00:15<01:09,  3.60it/s]Loading weights:  14%|█▎        | 40/291 [00:15<01:10,  3.56it/s]Loading weights:  14%|█▍        | 41/291 [00:16<02:00,  2.07it/s]Loading weights:  14%|█▍        | 41/291 [00:16<02:00,  2.08it/s]Loading weights:  14%|█▍        | 41/291 [00:16<01:59,  2.08it/s]Loading weights:  14%|█▍        | 41/291 [00:16<01:58,  2.11it/s]Loading weights:  14%|█▍        | 42/291 [00:17<02:08,  1.93it/s]Loading weights:  14%|█▍        | 42/291 [00:17<02:09,  1.92it/s]Loading weights:  14%|█▍        | 42/291 [00:17<02:10,  1.91it/s]Loading weights:  14%|█▍        | 42/291 [00:16<02:11,  1.90it/s]Loading weights:  15%|█▌        | 44/291 [00:17<01:39,  2.47it/s]Loading weights:  15%|█▌        | 44/291 [00:17<01:40,  2.47it/s]Loading weights:  15%|█▌        | 44/291 [00:17<01:39,  2.48it/s]Loading weights:  15%|█▌        | 44/291 [00:17<01:40,  2.47it/s]Loading weights:  15%|█▌        | 45/291 [00:18<01:54,  2.15it/s]Loading weights:  15%|█▌        | 45/291 [00:17<01:54,  2.15it/s]Loading weights:  15%|█▌        | 45/291 [00:18<01:54,  2.15it/s]Loading weights:  15%|█▌        | 45/291 [00:18<01:53,  2.16it/s]Loading weights:  16%|█▌        | 46/291 [00:18<01:43,  2.37it/s]Loading weights:  16%|█▌        | 46/291 [00:18<01:43,  2.36it/s]Loading weights:  16%|█▌        | 46/291 [00:18<01:43,  2.36it/s]Loading weights:  16%|█▌        | 46/291 [00:18<01:43,  2.36it/s]Loading weights:  17%|█▋        | 49/291 [00:18<00:55,  4.34it/s]Loading weights:  17%|█▋        | 49/291 [00:18<00:56,  4.31it/s]Loading weights:  17%|█▋        | 49/291 [00:18<00:56,  4.31it/s]Loading weights:  17%|█▋        | 49/291 [00:18<00:56,  4.32it/s]Loading weights:  18%|█▊        | 51/291 [00:19<01:30,  2.64it/s]Loading weights:  18%|█▊        | 51/291 [00:20<01:31,  2.63it/s]Loading weights:  18%|█▊        | 51/291 [00:20<01:31,  2.61it/s]Loading weights:  18%|█▊        | 51/291 [00:20<01:31,  2.62it/s]Loading weights:  18%|█▊        | 53/291 [00:20<01:14,  3.19it/s]Loading weights:  18%|█▊        | 53/291 [00:20<01:14,  3.19it/s]Loading weights:  18%|█▊        | 53/291 [00:20<01:14,  3.18it/s]Loading weights:  18%|█▊        | 53/291 [00:20<01:14,  3.19it/s]Loading weights:  19%|█▊        | 54/291 [00:20<01:13,  3.24it/s]Loading weights:  19%|█▊        | 54/291 [00:20<01:13,  3.24it/s]Loading weights:  19%|█▊        | 54/291 [00:20<01:13,  3.23it/s]Loading weights:  19%|█▊        | 54/291 [00:20<01:13,  3.24it/s]Loading weights:  19%|█▉        | 55/291 [00:20<01:12,  3.24it/s]Loading weights:  19%|█▉        | 55/291 [00:21<01:12,  3.25it/s]Loading weights:  19%|█▉        | 55/291 [00:21<01:12,  3.25it/s]Loading weights:  19%|█▉        | 55/291 [00:20<01:12,  3.24it/s]Loading weights:  19%|█▉        | 56/291 [00:21<01:01,  3.82it/s]Loading weights:  19%|█▉        | 56/291 [00:20<01:02,  3.79it/s]Loading weights:  19%|█▉        | 56/291 [00:21<01:02,  3.79it/s]Loading weights:  19%|█▉        | 56/291 [00:21<01:02,  3.78it/s]Loading weights:  20%|█▉        | 58/291 [00:21<01:02,  3.71it/s]Loading weights:  20%|█▉        | 58/291 [00:21<01:02,  3.70it/s]Loading weights:  20%|█▉        | 58/291 [00:21<01:02,  3.71it/s]Loading weights:  20%|█▉        | 58/291 [00:21<01:02,  3.71it/s]Loading weights:  20%|██        | 59/291 [00:22<01:50,  2.10it/s]Loading weights:  20%|██        | 59/291 [00:22<01:50,  2.10it/s]Loading weights:  20%|██        | 59/291 [00:22<01:50,  2.10it/s]Loading weights:  20%|██        | 59/291 [00:22<01:50,  2.10it/s]Loading weights:  21%|██        | 60/291 [00:23<02:02,  1.89it/s]Loading weights:  21%|██        | 60/291 [00:23<02:02,  1.88it/s]Loading weights:  21%|██        | 60/291 [00:23<02:03,  1.88it/s]Loading weights:  21%|██        | 60/291 [00:23<02:03,  1.88it/s]Loading weights:  21%|██▏       | 62/291 [00:23<01:32,  2.46it/s]Loading weights:  21%|██▏       | 62/291 [00:24<01:32,  2.47it/s]Loading weights:  21%|██▏       | 62/291 [00:23<01:32,  2.47it/s]Loading weights:  21%|██▏       | 62/291 [00:24<01:32,  2.47it/s]Loading weights:  22%|██▏       | 63/291 [00:24<01:48,  2.11it/s]Loading weights:  22%|██▏       | 63/291 [00:24<01:48,  2.11it/s]Loading weights:  22%|██▏       | 63/291 [00:24<01:48,  2.11it/s]Loading weights:  22%|██▏       | 63/291 [00:24<01:48,  2.11it/s]Loading weights:  22%|██▏       | 64/291 [00:24<01:28,  2.56it/s]Loading weights:  22%|██▏       | 64/291 [00:24<01:28,  2.56it/s]Loading weights:  22%|██▏       | 65/291 [00:25<01:14,  3.04it/s]Loading weights:  22%|██▏       | 64/291 [00:25<01:37,  2.34it/s]Loading weights:  22%|██▏       | 64/291 [00:24<01:38,  2.32it/s]Loading weights:  22%|██▏       | 65/291 [00:24<01:15,  2.99it/s]Loading weights:  23%|██▎       | 67/291 [00:25<01:12,  3.10it/s]Loading weights:  23%|██▎       | 67/291 [00:25<01:12,  3.10it/s]Loading weights:  23%|██▎       | 67/291 [00:25<01:13,  3.03it/s]Loading weights:  23%|██▎       | 67/291 [00:25<01:14,  3.02it/s]Loading weights:  23%|██▎       | 68/291 [00:26<01:48,  2.05it/s]Loading weights:  23%|██▎       | 68/291 [00:26<01:57,  1.90it/s]Loading weights:  23%|██▎       | 68/291 [00:26<01:57,  1.91it/s]Loading weights:  23%|██▎       | 68/291 [00:26<01:48,  2.05it/s]Loading weights:  24%|██▎       | 69/291 [00:27<01:59,  1.86it/s]Loading weights:  24%|██▎       | 69/291 [00:27<01:52,  1.97it/s]Loading weights:  24%|██▎       | 69/291 [00:27<01:52,  1.97it/s]Loading weights:  24%|██▎       | 69/291 [00:27<01:59,  1.86it/s]Loading weights:  24%|██▍       | 71/291 [00:27<01:21,  2.70it/s]Loading weights:  24%|██▍       | 71/291 [00:27<01:21,  2.69it/s]Loading weights:  24%|██▍       | 71/291 [00:27<01:23,  2.65it/s]Loading weights:  24%|██▍       | 71/291 [00:27<01:23,  2.65it/s]Loading weights:  25%|██▍       | 72/291 [00:31<03:50,  1.05s/it]Loading weights:  25%|██▍       | 72/291 [00:31<03:40,  1.01s/it]Loading weights:  25%|██▍       | 72/291 [00:31<03:50,  1.05s/it]Loading weights:  25%|██▍       | 72/291 [00:30<03:40,  1.01s/it]Loading weights:  25%|██▌       | 73/291 [00:32<04:10,  1.15s/it]Loading weights:  25%|██▌       | 73/291 [00:32<04:10,  1.15s/it]Loading weights:  25%|██▌       | 73/291 [00:32<04:01,  1.11s/it]Loading weights:  25%|██▌       | 73/291 [00:32<04:02,  1.11s/it]Loading weights:  26%|██▌       | 76/291 [00:32<02:03,  1.75it/s]Loading weights:  26%|██▌       | 76/291 [00:32<02:03,  1.75it/s]Loading weights:  26%|██▌       | 76/291 [00:32<02:04,  1.73it/s]Loading weights:  26%|██▌       | 76/291 [00:32<02:04,  1.73it/s]Loading weights:  26%|██▋       | 77/291 [00:32<01:51,  1.93it/s]Loading weights:  26%|██▋       | 77/291 [00:32<01:52,  1.91it/s]Loading weights:  26%|██▋       | 77/291 [00:32<01:51,  1.93it/s]Loading weights:  26%|██▋       | 77/291 [00:32<01:52,  1.91it/s]Loading weights:  27%|██▋       | 78/291 [00:33<01:46,  2.00it/s]Loading weights:  27%|██▋       | 78/291 [00:33<01:46,  2.00it/s]Loading weights:  27%|██▋       | 78/291 [00:33<01:47,  1.98it/s]Loading weights:  27%|██▋       | 78/291 [00:33<01:47,  1.98it/s]Loading weights:  27%|██▋       | 80/291 [00:33<01:22,  2.54it/s]Loading weights:  27%|██▋       | 80/291 [00:33<01:22,  2.54it/s]Loading weights:  27%|██▋       | 80/291 [00:33<01:22,  2.55it/s]Loading weights:  27%|██▋       | 80/291 [00:33<01:22,  2.55it/s]Loading weights:  28%|██▊       | 81/291 [00:34<01:30,  2.31it/s]Loading weights:  28%|██▊       | 81/291 [00:34<01:31,  2.31it/s]Loading weights:  28%|██▊       | 81/291 [00:34<01:31,  2.31it/s]Loading weights:  28%|██▊       | 81/291 [00:34<01:30,  2.31it/s]Loading weights:  28%|██▊       | 82/291 [00:34<01:15,  2.76it/s]Loading weights:  28%|██▊       | 82/291 [00:34<01:15,  2.76it/s]Loading weights:  28%|██▊       | 82/291 [00:34<01:15,  2.76it/s]Loading weights:  28%|██▊       | 82/291 [00:34<01:15,  2.76it/s]Loading weights:  29%|██▊       | 83/291 [00:34<01:12,  2.88it/s]Loading weights:  29%|██▊       | 83/291 [00:34<01:12,  2.85it/s]Loading weights:  29%|██▊       | 83/291 [00:34<01:13,  2.85it/s]Loading weights:  29%|██▊       | 83/291 [00:34<01:13,  2.85it/s]Loading weights:  29%|██▉       | 85/291 [00:35<01:07,  3.04it/s]Loading weights:  29%|██▉       | 85/291 [00:35<01:07,  3.05it/s]Loading weights:  29%|██▉       | 85/291 [00:35<01:07,  3.05it/s]Loading weights:  29%|██▉       | 85/291 [00:35<01:07,  3.05it/s]Loading weights:  30%|██▉       | 86/291 [00:36<02:18,  1.48it/s]Loading weights:  30%|██▉       | 86/291 [00:37<02:18,  1.48it/s]Loading weights:  30%|██▉       | 86/291 [00:37<02:18,  1.48it/s]Loading weights:  30%|██▉       | 86/291 [00:37<02:19,  1.47it/s]Loading weights:  30%|██▉       | 87/291 [00:37<02:07,  1.60it/s]Loading weights:  30%|██▉       | 87/291 [00:37<02:07,  1.60it/s]Loading weights:  30%|██▉       | 87/291 [00:37<02:07,  1.60it/s]Loading weights:  30%|██▉       | 87/291 [00:37<02:08,  1.59it/s]Loading weights:  31%|███       | 89/291 [00:38<01:50,  1.82it/s]Loading weights:  31%|███       | 89/291 [00:38<01:51,  1.82it/s]Loading weights:  31%|███       | 89/291 [00:38<01:51,  1.82it/s]Loading weights:  31%|███       | 89/291 [00:38<01:51,  1.82it/s]Loading weights:  31%|███       | 90/291 [00:38<01:40,  1.99it/s]Loading weights:  31%|███       | 90/291 [00:38<01:41,  1.99it/s]Loading weights:  31%|███       | 90/291 [00:38<01:41,  1.99it/s]Loading weights:  31%|███       | 90/291 [00:38<01:41,  1.99it/s]Loading weights:  32%|███▏      | 94/291 [00:39<00:47,  4.18it/s]Loading weights:  32%|███▏      | 94/291 [00:39<00:47,  4.19it/s]Loading weights:  32%|███▏      | 94/291 [00:39<00:47,  4.18it/s]Loading weights:  32%|███▏      | 94/291 [00:38<00:47,  4.18it/s]Loading weights:  33%|███▎      | 96/291 [00:40<01:08,  2.86it/s]Loading weights:  33%|███▎      | 96/291 [00:40<01:08,  2.86it/s]Loading weights:  33%|███▎      | 96/291 [00:40<01:08,  2.86it/s]Loading weights:  33%|███▎      | 96/291 [00:40<01:08,  2.84it/s]Loading weights:  34%|███▎      | 98/291 [00:40<00:55,  3.49it/s]Loading weights:  34%|███▎      | 98/291 [00:40<00:55,  3.49it/s]Loading weights:  34%|███▎      | 98/291 [00:40<00:55,  3.48it/s]Loading weights:  34%|███▎      | 98/291 [00:40<00:55,  3.48it/s]Loading weights:  34%|███▍      | 99/291 [00:41<01:09,  2.76it/s]Loading weights:  34%|███▍      | 99/291 [00:41<01:09,  2.76it/s]Loading weights:  34%|███▍      | 99/291 [00:41<01:09,  2.76it/s]Loading weights:  34%|███▍      | 99/291 [00:41<01:09,  2.77it/s]Loading weights:  34%|███▍      | 100/291 [00:41<01:15,  2.54it/s]Loading weights:  34%|███▍      | 100/291 [00:41<01:15,  2.54it/s]Loading weights:  34%|███▍      | 100/291 [00:41<01:15,  2.54it/s]Loading weights:  34%|███▍      | 100/291 [00:41<01:15,  2.54it/s]Loading weights:  35%|███▍      | 101/291 [00:42<01:16,  2.47it/s]Loading weights:  35%|███▍      | 101/291 [00:42<01:16,  2.47it/s]Loading weights:  35%|███▍      | 101/291 [00:42<01:17,  2.45it/s]Loading weights:  35%|███▍      | 101/291 [00:42<01:17,  2.45it/s]Loading weights:  35%|███▌      | 103/291 [00:42<01:07,  2.77it/s]Loading weights:  35%|███▌      | 103/291 [00:42<01:07,  2.77it/s]Loading weights:  35%|███▌      | 103/291 [00:42<01:07,  2.77it/s]Loading weights:  35%|███▌      | 103/291 [00:42<01:07,  2.77it/s]Loading weights:  36%|███▌      | 104/291 [00:44<01:41,  1.85it/s]Loading weights:  36%|███▌      | 104/291 [00:44<01:41,  1.85it/s]Loading weights:  36%|███▌      | 104/291 [00:44<01:41,  1.85it/s]Loading weights:  36%|███▌      | 104/291 [00:43<01:41,  1.85it/s]Loading weights:  36%|███▌      | 105/291 [00:44<01:45,  1.77it/s]Loading weights:  36%|███▌      | 105/291 [00:44<01:45,  1.77it/s]Loading weights:  36%|███▌      | 105/291 [00:44<01:45,  1.77it/s]Loading weights:  36%|███▌      | 105/291 [00:44<01:45,  1.77it/s]Loading weights:  37%|███▋      | 107/291 [00:45<01:17,  2.36it/s]Loading weights:  37%|███▋      | 107/291 [00:45<01:17,  2.36it/s]Loading weights:  37%|███▋      | 107/291 [00:44<01:17,  2.36it/s]Loading weights:  37%|███▋      | 107/291 [00:45<01:17,  2.36it/s]Loading weights:  37%|███▋      | 109/291 [00:45<01:07,  2.69it/s]Loading weights:  37%|███▋      | 109/291 [00:45<01:07,  2.69it/s]Loading weights:  37%|███▋      | 109/291 [00:45<01:07,  2.69it/s]Loading weights:  37%|███▋      | 109/291 [00:45<01:07,  2.69it/s]Loading weights:  38%|███▊      | 110/291 [00:45<01:02,  2.91it/s]Loading weights:  38%|███▊      | 110/291 [00:45<01:02,  2.91it/s]Loading weights:  38%|███▊      | 110/291 [00:45<01:02,  2.90it/s]Loading weights:  38%|███▊      | 110/291 [00:45<01:02,  2.90it/s]Loading weights:  38%|███▊      | 112/291 [00:46<01:10,  2.55it/s]Loading weights:  38%|███▊      | 112/291 [00:46<01:10,  2.55it/s]Loading weights:  38%|███▊      | 112/291 [00:46<01:10,  2.55it/s]Loading weights:  38%|███▊      | 112/291 [00:46<01:10,  2.55it/s]Loading weights:  39%|███▉      | 113/291 [00:48<01:50,  1.61it/s]Loading weights:  39%|███▉      | 113/291 [00:48<01:50,  1.61it/s]Loading weights:  39%|███▉      | 113/291 [00:48<01:50,  1.61it/s]Loading weights:  39%|███▉      | 113/291 [00:48<01:51,  1.60it/s]Loading weights:  39%|███▉      | 114/291 [00:49<01:52,  1.57it/s]Loading weights:  39%|███▉      | 114/291 [00:49<01:52,  1.57it/s]Loading weights:  39%|███▉      | 114/291 [00:48<01:52,  1.57it/s]Loading weights:  39%|███▉      | 114/291 [00:49<01:52,  1.57it/s]Loading weights:  40%|███▉      | 116/291 [00:49<01:19,  2.21it/s]Loading weights:  40%|███▉      | 116/291 [00:49<01:19,  2.21it/s]Loading weights:  40%|███▉      | 116/291 [00:49<01:19,  2.21it/s]Loading weights:  40%|███▉      | 116/291 [00:49<01:19,  2.21it/s]Loading weights:  40%|████      | 117/291 [00:49<01:08,  2.53it/s]Loading weights:  40%|████      | 117/291 [00:49<01:08,  2.53it/s]Loading weights:  40%|████      | 117/291 [00:49<01:08,  2.53it/s]Loading weights:  41%|████      | 118/291 [00:49<01:04,  2.69it/s]Loading weights:  41%|████      | 118/291 [00:49<01:04,  2.69it/s]Loading weights:  40%|████      | 117/291 [00:49<01:21,  2.14it/s]Loading weights:  41%|████      | 118/291 [00:49<01:05,  2.64it/s]Loading weights:  42%|████▏     | 121/291 [00:50<00:34,  4.87it/s]Loading weights:  42%|████▏     | 121/291 [00:49<00:34,  4.87it/s]Loading weights:  42%|████▏     | 121/291 [00:50<00:34,  4.91it/s]Loading weights:  42%|████▏     | 121/291 [00:50<00:37,  4.53it/s]Loading weights:  42%|████▏     | 122/291 [00:50<00:38,  4.35it/s]Loading weights:  42%|████▏     | 122/291 [00:50<00:38,  4.35it/s]Loading weights:  42%|████▏     | 123/291 [00:50<00:44,  3.74it/s]Loading weights:  42%|████▏     | 123/291 [00:50<00:46,  3.59it/s]Loading weights:  42%|████▏     | 123/291 [00:50<00:44,  3.76it/s]Loading weights:  42%|████▏     | 123/291 [00:50<00:46,  3.59it/s]Loading weights:  43%|████▎     | 125/291 [00:51<00:42,  3.88it/s]Loading weights:  43%|████▎     | 125/291 [00:51<00:41,  3.96it/s]Loading weights:  43%|████▎     | 125/291 [00:50<00:42,  3.87it/s]Loading weights:  43%|████▎     | 125/291 [00:51<00:42,  3.87it/s]Loading weights:  43%|████▎     | 126/291 [00:51<00:45,  3.59it/s]Loading weights:  43%|████▎     | 126/291 [00:51<00:44,  3.69it/s]Loading weights:  43%|████▎     | 126/291 [00:51<00:45,  3.59it/s]Loading weights:  43%|████▎     | 126/291 [00:51<00:45,  3.65it/s]Loading weights:  44%|████▎     | 127/291 [00:51<00:40,  4.03it/s]Loading weights:  44%|████▎     | 127/291 [00:51<00:41,  3.97it/s]Loading weights:  44%|████▎     | 127/291 [00:51<00:54,  3.02it/s]Loading weights:  44%|████▍     | 128/291 [00:52<00:44,  3.67it/s]Loading weights:  44%|████▍     | 128/291 [00:52<00:44,  3.65it/s]Loading weights:  44%|████▎     | 127/291 [00:52<00:54,  2.99it/s]Loading weights:  45%|████▍     | 130/291 [00:52<00:41,  3.90it/s]Loading weights:  45%|████▍     | 130/291 [00:52<00:43,  3.68it/s]Loading weights:  45%|████▍     | 130/291 [00:52<00:43,  3.69it/s]Loading weights:  45%|████▍     | 130/291 [00:52<00:41,  3.89it/s]Loading weights:  45%|████▌     | 131/291 [00:53<01:05,  2.46it/s]Loading weights:  45%|████▌     | 131/291 [00:53<01:05,  2.45it/s]Loading weights:  45%|████▌     | 131/291 [00:53<01:09,  2.29it/s]Loading weights:  45%|████▌     | 131/291 [00:53<01:10,  2.27it/s]Loading weights:  45%|████▌     | 132/291 [00:54<01:13,  2.15it/s]Loading weights:  45%|████▌     | 132/291 [00:54<01:13,  2.15it/s]Loading weights:  45%|████▌     | 132/291 [00:54<01:19,  2.00it/s]Loading weights:  45%|████▌     | 132/291 [00:54<01:18,  2.02it/s]Loading weights:  46%|████▌     | 134/291 [00:54<01:01,  2.55it/s]Loading weights:  46%|████▌     | 134/291 [00:54<01:01,  2.55it/s]Loading weights:  46%|████▌     | 134/291 [00:54<01:03,  2.46it/s]Loading weights:  46%|████▌     | 134/291 [00:54<01:03,  2.47it/s]Loading weights:  46%|████▋     | 135/291 [00:54<00:59,  2.62it/s]Loading weights:  46%|████▋     | 135/291 [00:55<01:01,  2.56it/s]Loading weights:  46%|████▋     | 135/291 [00:55<00:59,  2.62it/s]Loading weights:  46%|████▋     | 135/291 [00:55<01:01,  2.55it/s]Loading weights:  47%|████▋     | 136/291 [00:55<00:57,  2.67it/s]Loading weights:  47%|████▋     | 136/291 [00:55<00:56,  2.72it/s]Loading weights:  47%|████▋     | 136/291 [00:55<00:58,  2.67it/s]Loading weights:  47%|████▋     | 136/291 [00:55<00:56,  2.72it/s]Loading weights:  47%|████▋     | 137/291 [00:55<00:50,  3.04it/s]Loading weights:  47%|████▋     | 137/291 [00:55<00:51,  3.02it/s]Loading weights:  47%|████▋     | 137/291 [00:55<00:51,  2.98it/s]Loading weights:  47%|████▋     | 137/291 [00:55<00:51,  2.98it/s]Loading weights:  48%|████▊     | 139/291 [00:56<00:52,  2.88it/s]Loading weights:  48%|████▊     | 139/291 [00:56<00:52,  2.90it/s]Loading weights:  48%|████▊     | 139/291 [00:56<00:52,  2.88it/s]Loading weights:  48%|████▊     | 139/291 [00:56<00:52,  2.90it/s]Loading weights:  48%|████▊     | 140/291 [00:57<01:16,  1.98it/s]Loading weights:  48%|████▊     | 140/291 [00:57<01:16,  1.97it/s]Loading weights:  48%|████▊     | 140/291 [00:57<01:16,  1.98it/s]Loading weights:  48%|████▊     | 140/291 [00:57<01:16,  1.97it/s]Loading weights:  48%|████▊     | 141/291 [00:57<01:12,  2.07it/s]Loading weights:  48%|████▊     | 141/291 [00:58<01:13,  2.05it/s]Loading weights:  48%|████▊     | 141/291 [00:58<01:13,  2.05it/s]Loading weights:  48%|████▊     | 141/291 [00:57<01:12,  2.06it/s]Loading weights:  49%|████▉     | 143/291 [00:58<00:57,  2.56it/s]Loading weights:  49%|████▉     | 143/291 [00:58<00:57,  2.56it/s]Loading weights:  49%|████▉     | 143/291 [00:58<00:57,  2.56it/s]Loading weights:  49%|████▉     | 143/291 [00:58<00:57,  2.56it/s]Loading weights:  49%|████▉     | 144/291 [00:58<00:48,  3.04it/s]Loading weights:  49%|████▉     | 144/291 [00:58<00:48,  3.04it/s]Loading weights:  49%|████▉     | 144/291 [00:58<00:48,  3.04it/s]Loading weights:  49%|████▉     | 144/291 [00:58<00:48,  3.04it/s]Loading weights:  50%|████▉     | 145/291 [00:58<00:58,  2.50it/s]Loading weights:  50%|████▉     | 145/291 [00:59<00:58,  2.50it/s]Loading weights:  50%|████▉     | 145/291 [00:59<00:58,  2.50it/s]Loading weights:  50%|████▉     | 145/291 [00:59<00:58,  2.49it/s]Loading weights:  50%|█████     | 146/291 [00:59<00:51,  2.80it/s]Loading weights:  50%|█████     | 146/291 [00:59<00:51,  2.79it/s]Loading weights:  50%|█████     | 146/291 [00:59<00:51,  2.80it/s]Loading weights:  50%|█████     | 146/291 [00:59<00:52,  2.77it/s]Loading weights:  51%|█████     | 148/291 [00:59<00:40,  3.50it/s]Loading weights:  51%|█████     | 148/291 [00:59<00:41,  3.49it/s]Loading weights:  51%|█████     | 148/291 [00:59<00:41,  3.49it/s]Loading weights:  51%|█████     | 148/291 [00:59<00:41,  3.49it/s]Loading weights:  51%|█████     | 149/291 [01:00<01:10,  2.00it/s]Loading weights:  51%|█████     | 149/291 [01:01<01:10,  2.00it/s]Loading weights:  51%|█████     | 149/291 [01:01<01:10,  2.01it/s]Loading weights:  51%|█████     | 149/291 [01:01<01:10,  2.00it/s]Loading weights:  52%|█████▏    | 150/291 [01:01<01:14,  1.90it/s]Loading weights:  52%|█████▏    | 150/291 [01:01<01:14,  1.90it/s]Loading weights:  52%|█████▏    | 150/291 [01:01<01:14,  1.90it/s]Loading weights:  52%|█████▏    | 150/291 [01:01<01:14,  1.90it/s]Loading weights:  52%|█████▏    | 152/291 [01:01<00:49,  2.81it/s]Loading weights:  52%|█████▏    | 152/291 [01:01<00:49,  2.81it/s]Loading weights:  52%|█████▏    | 152/291 [01:01<00:49,  2.81it/s]Loading weights:  52%|█████▏    | 152/291 [01:01<00:49,  2.81it/s]Loading weights:  53%|█████▎    | 153/291 [01:02<00:46,  2.94it/s]Loading weights:  53%|█████▎    | 153/291 [01:01<00:46,  2.94it/s]Loading weights:  53%|█████▎    | 153/291 [01:02<00:46,  2.94it/s]Loading weights:  53%|█████▎    | 153/291 [01:02<00:46,  2.94it/s]Loading weights:  53%|█████▎    | 155/291 [01:02<00:34,  3.99it/s]Loading weights:  53%|█████▎    | 155/291 [01:02<00:33,  4.00it/s]Loading weights:  53%|█████▎    | 155/291 [01:02<00:34,  4.00it/s]Loading weights:  53%|█████▎    | 155/291 [01:02<00:34,  4.00it/s]Loading weights:  54%|█████▍    | 157/291 [01:02<00:32,  4.08it/s]Loading weights:  54%|█████▍    | 157/291 [01:02<00:32,  4.08it/s]Loading weights:  54%|█████▍    | 157/291 [01:02<00:32,  4.08it/s]Loading weights:  54%|█████▍    | 157/291 [01:02<00:32,  4.08it/s]Loading weights:  54%|█████▍    | 158/291 [01:04<01:17,  1.71it/s]Loading weights:  54%|█████▍    | 158/291 [01:04<01:17,  1.71it/s]Loading weights:  54%|█████▍    | 158/291 [01:04<01:17,  1.71it/s]Loading weights:  54%|█████▍    | 158/291 [01:04<01:18,  1.70it/s]Loading weights:  55%|█████▍    | 159/291 [01:05<01:10,  1.88it/s]Loading weights:  55%|█████▍    | 159/291 [01:05<01:10,  1.88it/s]Loading weights:  55%|█████▍    | 159/291 [01:04<01:09,  1.89it/s]Loading weights:  55%|█████▍    | 159/291 [01:05<01:10,  1.88it/s]Loading weights:  55%|█████▌    | 161/291 [01:05<00:48,  2.68it/s]Loading weights:  55%|█████▌    | 161/291 [01:05<00:48,  2.68it/s]Loading weights:  55%|█████▌    | 161/291 [01:05<00:48,  2.68it/s]Loading weights:  55%|█████▌    | 161/291 [01:05<00:48,  2.68it/s]Loading weights:  56%|█████▌    | 162/291 [01:06<01:04,  2.01it/s]Loading weights:  56%|█████▌    | 162/291 [01:06<01:04,  2.01it/s]Loading weights:  56%|█████▌    | 162/291 [01:06<01:04,  2.01it/s]Loading weights:  56%|█████▌    | 162/291 [01:06<01:04,  2.01it/s]Loading weights:  56%|█████▌    | 163/291 [01:06<00:58,  2.20it/s]Loading weights:  56%|█████▌    | 163/291 [01:06<00:58,  2.20it/s]Loading weights:  56%|█████▌    | 163/291 [01:06<00:58,  2.20it/s]Loading weights:  56%|█████▌    | 163/291 [01:06<00:58,  2.20it/s]Loading weights:  56%|█████▋    | 164/291 [01:06<00:48,  2.62it/s]Loading weights:  56%|█████▋    | 164/291 [01:06<00:48,  2.62it/s]Loading weights:  56%|█████▋    | 164/291 [01:06<00:48,  2.59it/s]Loading weights:  56%|█████▋    | 164/291 [01:06<00:48,  2.59it/s]Loading weights:  57%|█████▋    | 166/291 [01:07<00:57,  2.19it/s]Loading weights:  57%|█████▋    | 166/291 [01:08<00:57,  2.19it/s]Loading weights:  57%|█████▋    | 166/291 [01:07<00:57,  2.19it/s]Loading weights:  57%|█████▋    | 166/291 [01:08<00:57,  2.19it/s]Loading weights:  57%|█████▋    | 167/291 [01:09<01:26,  1.43it/s]Loading weights:  57%|█████▋    | 167/291 [01:09<01:26,  1.43it/s]Loading weights:  57%|█████▋    | 167/291 [01:09<01:26,  1.43it/s]Loading weights:  57%|█████▋    | 167/291 [01:09<01:26,  1.43it/s]Loading weights:  58%|█████▊    | 168/291 [01:10<01:21,  1.51it/s]Loading weights:  58%|█████▊    | 168/291 [01:09<01:21,  1.51it/s]Loading weights:  58%|█████▊    | 168/291 [01:10<01:21,  1.51it/s]Loading weights:  58%|█████▊    | 168/291 [01:10<01:21,  1.51it/s]Loading weights:  58%|█████▊    | 170/291 [01:10<00:57,  2.10it/s]Loading weights:  58%|█████▊    | 170/291 [01:10<00:57,  2.10it/s]Loading weights:  58%|█████▊    | 170/291 [01:10<00:57,  2.11it/s]Loading weights:  58%|█████▊    | 170/291 [01:10<00:57,  2.11it/s]Loading weights:  59%|█████▉    | 171/291 [01:11<01:05,  1.84it/s]Loading weights:  59%|█████▉    | 171/291 [01:11<01:05,  1.84it/s]Loading weights:  59%|█████▉    | 171/291 [01:11<01:05,  1.84it/s]Loading weights:  59%|█████▉    | 171/291 [01:10<01:05,  1.84it/s]Loading weights:  59%|█████▉    | 172/291 [01:11<00:59,  2.00it/s]Loading weights:  59%|█████▉    | 172/291 [01:11<00:59,  2.00it/s]Loading weights:  59%|█████▉    | 172/291 [01:11<00:59,  2.00it/s]Loading weights:  59%|█████▉    | 172/291 [01:11<00:59,  2.00it/s]Loading weights:  59%|█████▉    | 173/291 [01:11<00:47,  2.48it/s]Loading weights:  59%|█████▉    | 173/291 [01:11<00:47,  2.48it/s]Loading weights:  59%|█████▉    | 173/291 [01:11<00:48,  2.44it/s]Loading weights:  59%|█████▉    | 173/291 [01:11<00:48,  2.44it/s]Loading weights:  60%|██████    | 175/291 [01:12<00:43,  2.69it/s]Loading weights:  60%|██████    | 175/291 [01:12<00:43,  2.68it/s]Loading weights:  60%|██████    | 175/291 [01:12<00:43,  2.69it/s]Loading weights:  60%|██████    | 175/291 [01:12<00:43,  2.68it/s]Loading weights:  60%|██████    | 176/291 [01:12<00:50,  2.28it/s]Loading weights:  60%|██████    | 176/291 [01:13<00:50,  2.28it/s]Loading weights:  60%|██████    | 176/291 [01:13<00:50,  2.28it/s]Loading weights:  60%|██████    | 176/291 [01:13<00:50,  2.27it/s]Loading weights:  61%|██████    | 177/291 [01:13<00:48,  2.35it/s]Loading weights:  61%|██████    | 177/291 [01:13<00:48,  2.34it/s]Loading weights:  61%|██████    | 177/291 [01:13<00:48,  2.35it/s]Loading weights:  61%|██████    | 177/291 [01:13<00:48,  2.34it/s]Loading weights:  62%|██████▏   | 179/291 [01:13<00:30,  3.63it/s]Loading weights:  62%|██████▏   | 179/291 [01:13<00:31,  3.61it/s]Loading weights:  62%|██████▏   | 179/291 [01:13<00:30,  3.62it/s]Loading weights:  62%|██████▏   | 179/291 [01:13<00:31,  3.60it/s]Loading weights:  62%|██████▏   | 180/291 [01:13<00:30,  3.66it/s]Loading weights:  62%|██████▏   | 180/291 [01:13<00:30,  3.67it/s]Loading weights:  62%|██████▏   | 180/291 [01:13<00:30,  3.66it/s]Loading weights:  62%|██████▏   | 180/291 [01:13<00:30,  3.67it/s]Loading weights:  62%|██████▏   | 181/291 [01:14<00:31,  3.54it/s]Loading weights:  62%|██████▏   | 181/291 [01:13<00:31,  3.54it/s]Loading weights:  62%|██████▏   | 181/291 [01:14<00:30,  3.55it/s]Loading weights:  62%|██████▏   | 181/291 [01:14<00:31,  3.55it/s]Loading weights:  63%|██████▎   | 182/291 [01:14<00:31,  3.43it/s]Loading weights:  63%|██████▎   | 182/291 [01:14<00:31,  3.42it/s]Loading weights:  63%|██████▎   | 182/291 [01:14<00:31,  3.42it/s]Loading weights:  63%|██████▎   | 182/291 [01:14<00:31,  3.43it/s]Loading weights:  64%|██████▎   | 185/291 [01:15<00:26,  3.96it/s]Loading weights:  64%|██████▎   | 185/291 [01:14<00:26,  3.96it/s]Loading weights:  64%|██████▎   | 185/291 [01:15<00:26,  3.96it/s]Loading weights:  64%|██████▎   | 185/291 [01:15<00:26,  3.96it/s]Loading weights:  64%|██████▍   | 186/291 [01:15<00:36,  2.86it/s]Loading weights:  64%|██████▍   | 186/291 [01:15<00:36,  2.86it/s]Loading weights:  64%|██████▍   | 186/291 [01:15<00:36,  2.85it/s]Loading weights:  64%|██████▍   | 186/291 [01:15<00:36,  2.86it/s]Loading weights:  65%|██████▍   | 188/291 [01:16<00:33,  3.04it/s]Loading weights:  65%|██████▍   | 188/291 [01:16<00:33,  3.03it/s]Loading weights:  65%|██████▍   | 188/291 [01:16<00:33,  3.03it/s]Loading weights:  65%|██████▍   | 188/291 [01:16<00:33,  3.03it/s]Loading weights:  65%|██████▍   | 189/291 [01:17<00:39,  2.60it/s]Loading weights:  65%|██████▍   | 189/291 [01:16<00:39,  2.59it/s]Loading weights:  65%|██████▍   | 189/291 [01:17<00:39,  2.60it/s]Loading weights:  65%|██████▍   | 189/291 [01:17<00:39,  2.59it/s]Loading weights:  65%|██████▌   | 190/291 [01:16<00:32,  3.11it/s]Loading weights:  65%|██████▌   | 190/291 [01:17<00:32,  3.11it/s]Loading weights:  65%|██████▌   | 190/291 [01:17<00:32,  3.11it/s]Loading weights:  65%|██████▌   | 190/291 [01:17<00:32,  3.10it/s]Loading weights:  66%|██████▌   | 191/291 [01:17<00:28,  3.49it/s]Loading weights:  66%|██████▌   | 191/291 [01:17<00:28,  3.49it/s]Loading weights:  66%|██████▌   | 191/291 [01:17<00:29,  3.44it/s]Loading weights:  66%|██████▌   | 191/291 [01:17<00:29,  3.44it/s]Loading weights:  66%|██████▋   | 193/291 [01:17<00:25,  3.80it/s]Loading weights:  66%|██████▋   | 193/291 [01:17<00:25,  3.78it/s]Loading weights:  66%|██████▋   | 193/291 [01:17<00:25,  3.80it/s]Loading weights:  66%|██████▋   | 193/291 [01:17<00:25,  3.78it/s]Loading weights:  67%|██████▋   | 194/291 [01:18<00:41,  2.31it/s]Loading weights:  67%|██████▋   | 194/291 [01:18<00:41,  2.32it/s]Loading weights:  67%|██████▋   | 194/291 [01:18<00:41,  2.31it/s]Loading weights:  67%|██████▋   | 194/291 [01:18<00:41,  2.32it/s]Loading weights:  67%|██████▋   | 195/291 [01:19<00:43,  2.20it/s]Loading weights:  67%|██████▋   | 195/291 [01:19<00:43,  2.19it/s]Loading weights:  67%|██████▋   | 195/291 [01:19<00:43,  2.19it/s]Loading weights:  67%|██████▋   | 195/291 [01:19<00:43,  2.19it/s]Loading weights:  68%|██████▊   | 197/291 [01:19<00:30,  3.08it/s]Loading weights:  68%|██████▊   | 197/291 [01:19<00:30,  3.08it/s]Loading weights:  68%|██████▊   | 197/291 [01:19<00:30,  3.07it/s]Loading weights:  68%|██████▊   | 197/291 [01:19<00:30,  3.08it/s]Loading weights:  68%|██████▊   | 198/291 [01:19<00:25,  3.58it/s]Loading weights:  68%|██████▊   | 198/291 [01:19<00:25,  3.58it/s]Loading weights:  68%|██████▊   | 198/291 [01:19<00:25,  3.58it/s]Loading weights:  68%|██████▊   | 198/291 [01:19<00:26,  3.57it/s]Loading weights:  68%|██████▊   | 199/291 [01:20<00:29,  3.15it/s]Loading weights:  68%|██████▊   | 199/291 [01:19<00:29,  3.15it/s]Loading weights:  68%|██████▊   | 199/291 [01:20<00:29,  3.14it/s]Loading weights:  68%|██████▊   | 199/291 [01:20<00:29,  3.12it/s]Loading weights:  69%|██████▉   | 202/291 [01:20<00:15,  5.73it/s]Loading weights:  69%|██████▉   | 202/291 [01:20<00:15,  5.70it/s]Loading weights:  69%|██████▉   | 202/291 [01:19<00:15,  5.70it/s]Loading weights:  69%|██████▉   | 202/291 [01:20<00:15,  5.70it/s]Loading weights:  70%|███████   | 204/291 [01:22<00:37,  2.34it/s]Loading weights:  70%|███████   | 204/291 [01:22<00:37,  2.34it/s]Loading weights:  70%|███████   | 204/291 [01:22<00:37,  2.33it/s]Loading weights:  70%|███████   | 204/291 [01:21<00:37,  2.33it/s]Loading weights:  71%|███████   | 206/291 [01:22<00:28,  2.97it/s]Loading weights:  71%|███████   | 206/291 [01:22<00:28,  2.97it/s]Loading weights:  71%|███████   | 206/291 [01:22<00:28,  2.97it/s]Loading weights:  71%|███████   | 206/291 [01:22<00:28,  2.97it/s]Loading weights:  71%|███████   | 207/291 [01:23<00:35,  2.39it/s]Loading weights:  71%|███████   | 207/291 [01:22<00:35,  2.39it/s]Loading weights:  71%|███████   | 207/291 [01:23<00:35,  2.39it/s]Loading weights:  71%|███████   | 207/291 [01:23<00:35,  2.39it/s]Loading weights:  71%|███████▏  | 208/291 [01:23<00:33,  2.47it/s]Loading weights:  71%|███████▏  | 208/291 [01:23<00:33,  2.47it/s]Loading weights:  71%|███████▏  | 208/291 [01:23<00:33,  2.47it/s]Loading weights:  71%|███████▏  | 208/291 [01:23<00:33,  2.46it/s]Loading weights:  73%|███████▎  | 211/291 [01:23<00:18,  4.35it/s]Loading weights:  73%|███████▎  | 211/291 [01:23<00:18,  4.35it/s]Loading weights:  73%|███████▎  | 211/291 [01:23<00:18,  4.35it/s]Loading weights:  73%|███████▎  | 212/291 [01:23<00:18,  4.27it/s]Loading weights:  73%|███████▎  | 213/291 [01:24<00:22,  3.44it/s]Loading weights:  73%|███████▎  | 213/291 [01:24<00:22,  3.41it/s]Loading weights:  73%|███████▎  | 213/291 [01:24<00:22,  3.41it/s]Loading weights:  73%|███████▎  | 213/291 [01:24<00:22,  3.40it/s]Loading weights:  74%|███████▍  | 215/291 [01:24<00:18,  4.09it/s]Loading weights:  74%|███████▍  | 215/291 [01:24<00:18,  4.10it/s]Loading weights:  74%|███████▍  | 215/291 [01:24<00:18,  4.08it/s]Loading weights:  74%|███████▍  | 215/291 [01:24<00:18,  4.07it/s]Loading weights:  74%|███████▍  | 216/291 [01:25<00:25,  2.96it/s]Loading weights:  74%|███████▍  | 216/291 [01:25<00:25,  2.97it/s]Loading weights:  74%|███████▍  | 216/291 [01:25<00:25,  2.98it/s]Loading weights:  74%|███████▍  | 216/291 [01:25<00:25,  2.98it/s]Loading weights:  75%|███████▍  | 217/291 [01:25<00:22,  3.26it/s]Loading weights:  75%|███████▍  | 217/291 [01:25<00:22,  3.26it/s]Loading weights:  75%|███████▍  | 217/291 [01:25<00:22,  3.25it/s]Loading weights:  75%|███████▍  | 217/291 [01:25<00:22,  3.26it/s]Loading weights:  75%|███████▌  | 219/291 [01:25<00:15,  4.72it/s]Loading weights:  75%|███████▍  | 218/291 [01:25<00:18,  3.85it/s]Loading weights:  75%|███████▌  | 219/291 [01:25<00:15,  4.72it/s]Loading weights:  75%|███████▌  | 219/291 [01:25<00:15,  4.71it/s]Loading weights:  76%|███████▌  | 220/291 [01:26<00:21,  3.36it/s]Loading weights:  76%|███████▌  | 221/291 [01:27<00:25,  2.73it/s]Loading weights:  76%|███████▌  | 221/291 [01:27<00:25,  2.73it/s]Loading weights:  76%|███████▌  | 221/291 [01:27<00:25,  2.73it/s]Loading weights:  76%|███████▌  | 221/291 [01:26<00:25,  2.73it/s]Loading weights:  76%|███████▋  | 222/291 [01:27<00:24,  2.81it/s]Loading weights:  76%|███████▋  | 222/291 [01:27<00:24,  2.81it/s]Loading weights:  76%|███████▋  | 222/291 [01:27<00:24,  2.82it/s]Loading weights:  76%|███████▋  | 222/291 [01:27<00:24,  2.80it/s]Loading weights:  77%|███████▋  | 224/291 [01:28<00:24,  2.71it/s]Loading weights:  77%|███████▋  | 224/291 [01:27<00:24,  2.71it/s]Loading weights:  77%|███████▋  | 224/291 [01:28<00:24,  2.71it/s]Loading weights:  77%|███████▋  | 224/291 [01:28<00:24,  2.71it/s]Loading weights:  77%|███████▋  | 225/291 [01:28<00:23,  2.84it/s]Loading weights:  77%|███████▋  | 225/291 [01:28<00:23,  2.85it/s]Loading weights:  77%|███████▋  | 225/291 [01:28<00:23,  2.83it/s]Loading weights:  77%|███████▋  | 225/291 [01:28<00:23,  2.83it/s]Loading weights:  78%|███████▊  | 226/291 [01:28<00:22,  2.90it/s]Loading weights:  78%|███████▊  | 226/291 [01:28<00:22,  2.90it/s]Loading weights:  78%|███████▊  | 226/291 [01:28<00:22,  2.90it/s]Loading weights:  78%|███████▊  | 226/291 [01:28<00:22,  2.92it/s]Loading weights:  78%|███████▊  | 227/291 [01:29<00:19,  3.36it/s]Loading weights:  78%|███████▊  | 227/291 [01:29<00:19,  3.35it/s]Loading weights:  78%|███████▊  | 227/291 [01:29<00:19,  3.31it/s]Loading weights:  78%|███████▊  | 227/291 [01:28<00:19,  3.36it/s]Loading weights:  79%|███████▊  | 229/291 [01:29<00:17,  3.51it/s]Loading weights:  79%|███████▊  | 229/291 [01:29<00:17,  3.51it/s]Loading weights:  79%|███████▊  | 229/291 [01:29<00:17,  3.56it/s]Loading weights:  79%|███████▊  | 229/291 [01:29<00:17,  3.52it/s]Loading weights:  79%|███████▉  | 230/291 [01:30<00:23,  2.60it/s]Loading weights:  79%|███████▉  | 230/291 [01:30<00:23,  2.60it/s]Loading weights:  79%|███████▉  | 230/291 [01:30<00:23,  2.60it/s]Loading weights:  79%|███████▉  | 230/291 [01:30<00:23,  2.60it/s]Loading weights:  79%|███████▉  | 231/291 [01:30<00:24,  2.41it/s]Loading weights:  79%|███████▉  | 231/291 [01:30<00:24,  2.41it/s]Loading weights:  79%|███████▉  | 231/291 [01:30<00:25,  2.40it/s]Loading weights:  79%|███████▉  | 231/291 [01:30<00:25,  2.39it/s]Loading weights:  80%|████████  | 233/291 [01:30<00:15,  3.66it/s]Loading weights:  80%|████████  | 233/291 [01:30<00:15,  3.67it/s]Loading weights:  80%|████████  | 233/291 [01:30<00:15,  3.69it/s]Loading weights:  80%|████████  | 233/291 [01:30<00:15,  3.67it/s]Loading weights:  80%|████████  | 234/291 [01:31<00:16,  3.50it/s]Loading weights:  80%|████████  | 234/291 [01:30<00:16,  3.51it/s]Loading weights:  80%|████████  | 234/291 [01:31<00:16,  3.50it/s]Loading weights:  80%|████████  | 234/291 [01:31<00:16,  3.49it/s]Loading weights:  81%|████████  | 235/291 [01:31<00:17,  3.29it/s]Loading weights:  81%|████████  | 235/291 [01:31<00:16,  3.30it/s]Loading weights:  81%|████████  | 235/291 [01:31<00:17,  3.29it/s]Loading weights:  81%|████████  | 235/291 [01:31<00:17,  3.29it/s]Loading weights:  81%|████████  | 236/291 [01:31<00:16,  3.34it/s]Loading weights:  81%|████████  | 236/291 [01:31<00:16,  3.30it/s]Loading weights:  81%|████████  | 236/291 [01:31<00:16,  3.30it/s]Loading weights:  81%|████████  | 236/291 [01:31<00:16,  3.30it/s]Loading weights:  82%|████████▏ | 238/291 [01:32<00:14,  3.66it/s]Loading weights:  82%|████████▏ | 238/291 [01:32<00:14,  3.66it/s]Loading weights:  82%|████████▏ | 238/291 [01:32<00:14,  3.65it/s]Loading weights:  82%|████████▏ | 238/291 [01:32<00:14,  3.66it/s]Loading weights:  82%|████████▏ | 239/291 [01:33<00:20,  2.51it/s]Loading weights:  82%|████████▏ | 239/291 [01:33<00:20,  2.51it/s]Loading weights:  82%|████████▏ | 239/291 [01:33<00:20,  2.51it/s]Loading weights:  82%|████████▏ | 239/291 [01:32<00:20,  2.50it/s]Loading weights:  82%|████████▏ | 240/291 [01:33<00:19,  2.66it/s]Loading weights:  82%|████████▏ | 240/291 [01:33<00:19,  2.62it/s]Loading weights:  82%|████████▏ | 240/291 [01:33<00:19,  2.62it/s]Loading weights:  82%|████████▏ | 240/291 [01:33<00:19,  2.63it/s]Loading weights:  83%|████████▎ | 242/291 [01:33<00:14,  3.27it/s]Loading weights:  83%|████████▎ | 242/291 [01:33<00:14,  3.27it/s]Loading weights:  83%|████████▎ | 242/291 [01:33<00:15,  3.26it/s]Loading weights:  83%|████████▎ | 242/291 [01:33<00:14,  3.27it/s]Loading weights:  84%|████████▎ | 243/291 [01:34<00:15,  3.11it/s]Loading weights:  84%|████████▎ | 243/291 [01:34<00:15,  3.11it/s]Loading weights:  84%|████████▎ | 243/291 [01:34<00:15,  3.11it/s]Loading weights:  84%|████████▎ | 243/291 [01:34<00:15,  3.10it/s]Loading weights:  84%|████████▍ | 244/291 [01:35<00:20,  2.26it/s]Loading weights:  84%|████████▍ | 244/291 [01:35<00:20,  2.26it/s]Loading weights:  84%|████████▍ | 244/291 [01:34<00:20,  2.26it/s]Loading weights:  84%|████████▍ | 244/291 [01:35<00:20,  2.26it/s]Loading weights:  84%|████████▍ | 245/291 [01:35<00:18,  2.45it/s]Loading weights:  84%|████████▍ | 245/291 [01:35<00:18,  2.45it/s]Loading weights:  84%|████████▍ | 245/291 [01:35<00:19,  2.42it/s]Loading weights:  84%|████████▍ | 245/291 [01:35<00:18,  2.42it/s]Loading weights:  85%|████████▍ | 247/291 [01:35<00:14,  3.13it/s]Loading weights:  85%|████████▍ | 247/291 [01:35<00:14,  3.14it/s]Loading weights:  85%|████████▍ | 247/291 [01:35<00:14,  3.14it/s]Loading weights:  85%|████████▍ | 247/291 [01:35<00:14,  3.13it/s]Loading weights:  85%|████████▌ | 248/291 [01:36<00:19,  2.23it/s]Loading weights:  85%|████████▌ | 248/291 [01:36<00:19,  2.22it/s]Loading weights:  85%|████████▌ | 248/291 [01:36<00:19,  2.23it/s]Loading weights:  85%|████████▌ | 248/291 [01:36<00:19,  2.21it/s]Loading weights:  86%|████████▌ | 249/291 [01:37<00:20,  2.09it/s]Loading weights:  86%|████████▌ | 249/291 [01:37<00:20,  2.09it/s]Loading weights:  86%|████████▌ | 249/291 [01:37<00:20,  2.08it/s]Loading weights:  86%|████████▌ | 249/291 [01:37<00:20,  2.08it/s]Loading weights:  86%|████████▋ | 251/291 [01:37<00:12,  3.09it/s]Loading weights:  86%|████████▋ | 251/291 [01:37<00:12,  3.10it/s]Loading weights:  86%|████████▋ | 251/291 [01:37<00:12,  3.10it/s]Loading weights:  86%|████████▋ | 251/291 [01:37<00:12,  3.09it/s]Loading weights:  87%|████████▋ | 252/291 [01:37<00:11,  3.42it/s]Loading weights:  87%|████████▋ | 252/291 [01:37<00:11,  3.41it/s]Loading weights:  87%|████████▋ | 252/291 [01:37<00:11,  3.42it/s]Loading weights:  87%|████████▋ | 252/291 [01:37<00:11,  3.41it/s]Loading weights:  87%|████████▋ | 253/291 [01:38<00:11,  3.32it/s]Loading weights:  87%|████████▋ | 253/291 [01:37<00:11,  3.31it/s]Loading weights:  87%|████████▋ | 253/291 [01:37<00:11,  3.32it/s]Loading weights:  87%|████████▋ | 253/291 [01:38<00:11,  3.31it/s]Loading weights:  87%|████████▋ | 254/291 [01:38<00:09,  3.71it/s]Loading weights:  87%|████████▋ | 254/291 [01:37<00:09,  3.71it/s]Loading weights:  87%|████████▋ | 254/291 [01:38<00:09,  3.70it/s]Loading weights:  87%|████████▋ | 254/291 [01:38<00:10,  3.67it/s]Loading weights:  88%|████████▊ | 256/291 [01:38<00:08,  4.27it/s]Loading weights:  88%|████████▊ | 256/291 [01:38<00:08,  4.26it/s]Loading weights:  88%|████████▊ | 256/291 [01:38<00:08,  4.26it/s]Loading weights:  88%|████████▊ | 256/291 [01:38<00:08,  4.26it/s]Loading weights:  88%|████████▊ | 257/291 [01:39<00:13,  2.53it/s]Loading weights:  88%|████████▊ | 257/291 [01:39<00:13,  2.53it/s]Loading weights:  88%|████████▊ | 257/291 [01:39<00:13,  2.54it/s]Loading weights:  88%|████████▊ | 257/291 [01:39<00:13,  2.53it/s]Loading weights:  89%|████████▊ | 258/291 [01:40<00:14,  2.31it/s]Loading weights:  89%|████████▊ | 258/291 [01:39<00:14,  2.31it/s]Loading weights:  89%|████████▊ | 258/291 [01:40<00:14,  2.31it/s]Loading weights:  89%|████████▊ | 258/291 [01:40<00:14,  2.28it/s]Loading weights:  89%|████████▉ | 260/291 [01:40<00:09,  3.12it/s]Loading weights:  89%|████████▉ | 260/291 [01:40<00:09,  3.11it/s]Loading weights:  89%|████████▉ | 260/291 [01:40<00:09,  3.11it/s]Loading weights:  89%|████████▉ | 260/291 [01:40<00:09,  3.11it/s]Loading weights:  90%|████████▉ | 261/291 [01:40<00:08,  3.40it/s]Loading weights:  90%|████████▉ | 261/291 [01:40<00:08,  3.40it/s]Loading weights:  90%|████████▉ | 261/291 [01:40<00:08,  3.40it/s]Loading weights:  90%|████████▉ | 261/291 [01:40<00:08,  3.41it/s]Loading weights:  90%|█████████ | 262/291 [01:41<00:09,  3.01it/s]Loading weights:  90%|█████████ | 262/291 [01:40<00:09,  3.01it/s]Loading weights:  90%|█████████ | 262/291 [01:40<00:09,  3.00it/s]Loading weights:  90%|█████████ | 262/291 [01:41<00:09,  3.01it/s]Loading weights:  90%|█████████ | 263/291 [01:41<00:08,  3.42it/s]Loading weights:  90%|█████████ | 263/291 [01:41<00:08,  3.42it/s]Loading weights:  90%|█████████ | 263/291 [01:40<00:08,  3.42it/s]Loading weights:  90%|█████████ | 263/291 [01:41<00:08,  3.40it/s]Loading weights:  91%|█████████ | 265/291 [01:41<00:06,  4.16it/s]Loading weights:  91%|█████████ | 265/291 [01:41<00:06,  4.15it/s]Loading weights:  91%|█████████ | 265/291 [01:41<00:06,  4.15it/s]Loading weights:  91%|█████████ | 265/291 [01:41<00:06,  4.15it/s]Loading weights:  91%|█████████▏| 266/291 [01:42<00:12,  1.96it/s]Loading weights:  91%|█████████▏| 266/291 [01:42<00:12,  1.96it/s]Loading weights:  91%|█████████▏| 266/291 [01:42<00:12,  1.96it/s]Loading weights:  91%|█████████▏| 266/291 [01:42<00:12,  1.95it/s]Loading weights:  92%|█████████▏| 267/291 [01:43<00:13,  1.82it/s]Loading weights:  92%|█████████▏| 267/291 [01:43<00:13,  1.82it/s]Loading weights:  92%|█████████▏| 267/291 [01:43<00:13,  1.82it/s]Loading weights:  92%|█████████▏| 267/291 [01:43<00:13,  1.81it/s]Loading weights:  92%|█████████▏| 269/291 [01:44<00:08,  2.48it/s]Loading weights:  92%|█████████▏| 269/291 [01:43<00:08,  2.48it/s]Loading weights:  92%|█████████▏| 269/291 [01:44<00:08,  2.49it/s]Loading weights:  92%|█████████▏| 269/291 [01:43<00:08,  2.48it/s]Loading weights:  93%|█████████▎| 270/291 [01:44<00:08,  2.46it/s]Loading weights:  93%|█████████▎| 270/291 [01:44<00:08,  2.45it/s]Loading weights:  93%|█████████▎| 270/291 [01:44<00:08,  2.45it/s]Loading weights:  93%|█████████▎| 270/291 [01:44<00:08,  2.45it/s]Loading weights:  93%|█████████▎| 271/291 [01:44<00:09,  2.15it/s]Loading weights:  93%|█████████▎| 271/291 [01:45<00:09,  2.15it/s]Loading weights:  93%|█████████▎| 271/291 [01:45<00:09,  2.15it/s]Loading weights:  93%|█████████▎| 271/291 [01:45<00:09,  2.15it/s]Loading weights:  93%|█████████▎| 272/291 [01:44<00:07,  2.60it/s]Loading weights:  93%|█████████▎| 272/291 [01:45<00:07,  2.60it/s]Loading weights:  93%|█████████▎| 272/291 [01:45<00:07,  2.59it/s]Loading weights:  93%|█████████▎| 272/291 [01:45<00:08,  2.30it/s]Loading weights:  94%|█████████▍| 273/291 [01:45<00:05,  3.02it/s]Loading weights:  94%|█████████▍| 273/291 [01:45<00:05,  3.02it/s]Loading weights:  94%|█████████▍| 273/291 [01:45<00:05,  3.02it/s]Loading weights:  94%|█████████▍| 274/291 [01:46<00:07,  2.20it/s]Loading weights:  94%|█████████▍| 274/291 [01:46<00:07,  2.20it/s]Loading weights:  94%|█████████▍| 274/291 [01:45<00:07,  2.20it/s]Loading weights:  94%|█████████▍| 274/291 [01:46<00:07,  2.42it/s]Loading weights:  95%|█████████▍| 275/291 [01:47<00:09,  1.72it/s]Loading weights:  95%|█████████▍| 275/291 [01:47<00:09,  1.71it/s]Loading weights:  95%|█████████▍| 275/291 [01:46<00:09,  1.72it/s]Loading weights:  95%|█████████▍| 275/291 [01:47<00:08,  1.89it/s]Loading weights:  95%|█████████▍| 276/291 [01:47<00:08,  1.70it/s]Loading weights:  95%|█████████▍| 276/291 [01:47<00:08,  1.70it/s]Loading weights:  95%|█████████▍| 276/291 [01:47<00:08,  1.80it/s]Loading weights:  95%|█████████▍| 276/291 [01:47<00:08,  1.67it/s]Loading weights:  96%|█████████▌| 278/291 [01:48<00:05,  2.36it/s]Loading weights:  96%|█████████▌| 278/291 [01:48<00:05,  2.36it/s]Loading weights:  96%|█████████▌| 278/291 [01:47<00:05,  2.37it/s]Loading weights:  96%|█████████▌| 278/291 [01:48<00:05,  2.43it/s]Loading weights:  96%|█████████▌| 279/291 [01:48<00:04,  2.52it/s]Loading weights:  96%|█████████▌| 279/291 [01:48<00:04,  2.53it/s]Loading weights:  96%|█████████▌| 279/291 [01:48<00:04,  2.52it/s]Loading weights:  96%|█████████▌| 279/291 [01:48<00:04,  2.57it/s]Loading weights:  96%|█████████▌| 280/291 [01:48<00:04,  2.68it/s]Loading weights:  96%|█████████▌| 280/291 [01:48<00:04,  2.67it/s]Loading weights:  96%|█████████▌| 280/291 [01:48<00:04,  2.71it/s]Loading weights:  96%|█████████▌| 280/291 [01:48<00:04,  2.67it/s]Loading weights:  97%|█████████▋| 281/291 [01:49<00:03,  2.73it/s]Loading weights:  97%|█████████▋| 281/291 [01:48<00:03,  2.71it/s]Loading weights:  97%|█████████▋| 281/291 [01:49<00:03,  2.70it/s]Loading weights:  97%|█████████▋| 281/291 [01:49<00:03,  2.70it/s]Loading weights:  97%|█████████▋| 283/291 [01:49<00:02,  3.47it/s]Loading weights:  97%|█████████▋| 283/291 [01:49<00:02,  3.48it/s]Loading weights:  97%|█████████▋| 283/291 [01:49<00:02,  3.47it/s]Loading weights:  97%|█████████▋| 283/291 [01:49<00:02,  3.48it/s]Loading weights:  98%|█████████▊| 284/291 [01:50<00:02,  2.35it/s]Loading weights:  98%|█████████▊| 284/291 [01:50<00:02,  2.35it/s]Loading weights:  98%|█████████▊| 284/291 [01:50<00:02,  2.36it/s]Loading weights:  98%|█████████▊| 284/291 [01:50<00:02,  2.35it/s]Loading weights:  98%|█████████▊| 285/291 [01:50<00:02,  2.44it/s]Loading weights:  98%|█████████▊| 285/291 [01:50<00:02,  2.44it/s]Loading weights:  98%|█████████▊| 285/291 [01:50<00:02,  2.40it/s]Loading weights:  98%|█████████▊| 285/291 [01:50<00:02,  2.40it/s]Loading weights:  99%|█████████▊| 287/291 [01:50<00:01,  3.67it/s]Loading weights:  99%|█████████▊| 287/291 [01:50<00:01,  3.68it/s]Loading weights:  99%|█████████▊| 287/291 [01:50<00:01,  3.67it/s]Loading weights:  99%|█████████▊| 287/291 [01:50<00:01,  3.68it/s]Loading weights:  99%|█████████▉| 288/291 [01:51<00:01,  2.73it/s]Loading weights:  99%|█████████▉| 288/291 [01:51<00:01,  2.73it/s]Loading weights:  99%|█████████▉| 288/291 [01:51<00:01,  2.73it/s]Loading weights:  99%|█████████▉| 288/291 [01:51<00:01,  2.73it/s]Loading weights:  99%|█████████▉| 289/291 [01:52<00:00,  2.11it/s]Loading weights:  99%|█████████▉| 289/291 [01:52<00:00,  2.11it/s]Loading weights:  99%|█████████▉| 289/291 [01:52<00:00,  2.11it/s]Loading weights:  99%|█████████▉| 289/291 [01:52<00:00,  2.11it/s]Loading weights: 100%|██████████| 291/291 [01:52<00:00,  2.59it/s]
+Loading weights: 100%|██████████| 291/291 [01:52<00:00,  2.59it/s]
+Loading weights: 100%|██████████| 291/291 [01:52<00:00,  2.59it/s]
+Loading weights: 100%|██████████| 291/291 [01:52<00:00,  2.60it/s]
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'abstract_algebra' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/abstract_algebra/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:27 2026).
+Found the latest cached dataset configuration 'abstract_algebra' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/abstract_algebra/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:27 2026).
+Found the latest cached dataset configuration 'abstract_algebra' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/abstract_algebra/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:27 2026).
+Found the latest cached dataset configuration 'abstract_algebra' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/abstract_algebra/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:27 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'anatomy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/anatomy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:36 2026).
+Found the latest cached dataset configuration 'anatomy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/anatomy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:36 2026).
+Found the latest cached dataset configuration 'anatomy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/anatomy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:36 2026).
+Found the latest cached dataset configuration 'anatomy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/anatomy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:36 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'astronomy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/astronomy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:44 2026).
+Found the latest cached dataset configuration 'astronomy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/astronomy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:44 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'astronomy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/astronomy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:44 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_biology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_biology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:53 2026).
+Found the latest cached dataset configuration 'college_biology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_biology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:53 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_biology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_biology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:53 2026).
+Found the latest cached dataset configuration 'astronomy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/astronomy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:44 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_biology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_biology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:05:53 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_chemistry' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_chemistry/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:02 2026).
+Found the latest cached dataset configuration 'college_chemistry' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_chemistry/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:02 2026).
+Found the latest cached dataset configuration 'college_chemistry' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_chemistry/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:02 2026).
+Found the latest cached dataset configuration 'college_chemistry' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_chemistry/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:02 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_computer_science' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_computer_science/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:10 2026).
+Found the latest cached dataset configuration 'college_computer_science' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_computer_science/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:10 2026).
+Found the latest cached dataset configuration 'college_computer_science' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_computer_science/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:10 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_computer_science' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_computer_science/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:10 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:19 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:28 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'computer_security' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/computer_security/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:36 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:19 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:19 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:28 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:19 2026).
+Found the latest cached dataset configuration 'college_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:28 2026).
+Found the latest cached dataset configuration 'conceptual_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/conceptual_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:45 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'computer_security' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/computer_security/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:36 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:28 2026).
+Found the latest cached dataset configuration 'computer_security' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/computer_security/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:36 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'conceptual_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/conceptual_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:45 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'computer_security' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/computer_security/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:36 2026).
+Found the latest cached dataset configuration 'conceptual_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/conceptual_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:45 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'electrical_engineering' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/electrical_engineering/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:55 2026).
+Found the latest cached dataset configuration 'electrical_engineering' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/electrical_engineering/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:55 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'conceptual_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/conceptual_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:45 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'elementary_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/elementary_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:03 2026).
+Found the latest cached dataset configuration 'elementary_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/elementary_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:03 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'electrical_engineering' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/electrical_engineering/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:55 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'electrical_engineering' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/electrical_engineering/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:06:55 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'elementary_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/elementary_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:03 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'elementary_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/elementary_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:03 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_biology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_biology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:11 2026).
+Found the latest cached dataset configuration 'high_school_biology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_biology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:11 2026).
+Found the latest cached dataset configuration 'high_school_biology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_biology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:11 2026).
+Found the latest cached dataset configuration 'high_school_biology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_biology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:11 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_chemistry' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_chemistry/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:22 2026).
+Found the latest cached dataset configuration 'high_school_chemistry' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_chemistry/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:22 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_chemistry' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_chemistry/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:22 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_chemistry' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_chemistry/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:22 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_computer_science' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_computer_science/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:31 2026).
+Found the latest cached dataset configuration 'high_school_computer_science' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_computer_science/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:31 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:41 2026).
+Found the latest cached dataset configuration 'high_school_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:41 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:53 2026).
+Found the latest cached dataset configuration 'high_school_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:53 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_statistics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_statistics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:03 2026).
+Found the latest cached dataset configuration 'high_school_statistics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_statistics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:03 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_computer_science' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_computer_science/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:31 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'machine_learning' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/machine_learning/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:11 2026).
+Found the latest cached dataset configuration 'machine_learning' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/machine_learning/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:11 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_computer_science' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_computer_science/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:31 2026).
+Found the latest cached dataset configuration 'high_school_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:41 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_mathematics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_mathematics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:41 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'business_ethics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/business_ethics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:20 2026).
+Found the latest cached dataset configuration 'business_ethics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/business_ethics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:20 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'clinical_knowledge' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/clinical_knowledge/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:30 2026).
+Found the latest cached dataset configuration 'clinical_knowledge' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/clinical_knowledge/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:30 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_medicine' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_medicine/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:38 2026).
+Found the latest cached dataset configuration 'college_medicine' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_medicine/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:38 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:53 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_physics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_physics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:07:53 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'global_facts' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/global_facts/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:47 2026).
+Found the latest cached dataset configuration 'global_facts' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/global_facts/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:47 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_statistics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_statistics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:03 2026).
+Found the latest cached dataset configuration 'human_aging' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/human_aging/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:55 2026).
+Found the latest cached dataset configuration 'human_aging' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/human_aging/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:55 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_statistics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_statistics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:03 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'machine_learning' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/machine_learning/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:11 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'machine_learning' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/machine_learning/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:11 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'management' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/management/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:06 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'business_ethics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/business_ethics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:20 2026).
+Found the latest cached dataset configuration 'management' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/management/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:06 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'business_ethics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/business_ethics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:20 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'clinical_knowledge' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/clinical_knowledge/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:30 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'clinical_knowledge' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/clinical_knowledge/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:30 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_medicine' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_medicine/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:38 2026).
+Found the latest cached dataset configuration 'marketing' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/marketing/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:16 2026).
+Found the latest cached dataset configuration 'marketing' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/marketing/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:16 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'college_medicine' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/college_medicine/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:38 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'medical_genetics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/medical_genetics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:26 2026).
+Found the latest cached dataset configuration 'medical_genetics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/medical_genetics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:26 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'global_facts' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/global_facts/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:47 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'global_facts' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/global_facts/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:47 2026).
+Found the latest cached dataset configuration 'human_aging' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/human_aging/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:55 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'human_aging' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/human_aging/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:08:55 2026).
+Found the latest cached dataset configuration 'management' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/management/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:06 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'management' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/management/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:06 2026).
+Found the latest cached dataset configuration 'marketing' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/marketing/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:16 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'marketing' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/marketing/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:16 2026).
+Found the latest cached dataset configuration 'medical_genetics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/medical_genetics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:26 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'medical_genetics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/medical_genetics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:26 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'miscellaneous' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/miscellaneous/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:37 2026).
+Found the latest cached dataset configuration 'miscellaneous' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/miscellaneous/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:37 2026).
+Found the latest cached dataset configuration 'miscellaneous' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/miscellaneous/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:37 2026).
+Found the latest cached dataset configuration 'miscellaneous' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/miscellaneous/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:37 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'nutrition' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/nutrition/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:48 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'professional_accounting' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_accounting/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:57 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'nutrition' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/nutrition/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:48 2026).
+Found the latest cached dataset configuration 'nutrition' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/nutrition/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:48 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'nutrition' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/nutrition/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:48 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'professional_accounting' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_accounting/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:57 2026).
+Found the latest cached dataset configuration 'professional_medicine' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_medicine/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:07 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'professional_accounting' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_accounting/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:57 2026).
+Found the latest cached dataset configuration 'professional_accounting' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_accounting/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:09:57 2026).
+Found the latest cached dataset configuration 'professional_medicine' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_medicine/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:07 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'professional_medicine' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_medicine/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:07 2026).
+Found the latest cached dataset configuration 'professional_medicine' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_medicine/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:07 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'virology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/virology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:19 2026).
+Found the latest cached dataset configuration 'virology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/virology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:19 2026).
+Found the latest cached dataset configuration 'virology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/virology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:19 2026).
+Found the latest cached dataset configuration 'virology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/virology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:19 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'econometrics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/econometrics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:28 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_geography' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_geography/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:39 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'econometrics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/econometrics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:28 2026).
+Found the latest cached dataset configuration 'econometrics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/econometrics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:28 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_geography' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_geography/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:39 2026).
+Found the latest cached dataset configuration 'high_school_geography' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_geography/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:39 2026).
+Found the latest cached dataset configuration 'econometrics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/econometrics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:28 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_geography' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_geography/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:39 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_government_and_politics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_government_and_politics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:48 2026).
+Found the latest cached dataset configuration 'high_school_government_and_politics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_government_and_politics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:48 2026).
+Found the latest cached dataset configuration 'high_school_government_and_politics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_government_and_politics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:48 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_government_and_politics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_government_and_politics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:48 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_macroeconomics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_macroeconomics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:57 2026).
+Found the latest cached dataset configuration 'high_school_macroeconomics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_macroeconomics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:57 2026).
+Found the latest cached dataset configuration 'high_school_macroeconomics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_macroeconomics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:57 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_macroeconomics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_macroeconomics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:10:57 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_microeconomics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_microeconomics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:07 2026).
+Found the latest cached dataset configuration 'high_school_microeconomics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_microeconomics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:07 2026).
+Found the latest cached dataset configuration 'high_school_microeconomics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_microeconomics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:07 2026).
+Found the latest cached dataset configuration 'high_school_microeconomics' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_microeconomics/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:07 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_psychology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_psychology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:16 2026).
+Found the latest cached dataset configuration 'high_school_psychology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_psychology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:16 2026).
+Found the latest cached dataset configuration 'high_school_psychology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_psychology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:16 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_psychology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_psychology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:16 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'human_sexuality' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/human_sexuality/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:26 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'human_sexuality' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/human_sexuality/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:26 2026).
+Found the latest cached dataset configuration 'human_sexuality' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/human_sexuality/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:26 2026).
+Found the latest cached dataset configuration 'human_sexuality' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/human_sexuality/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:26 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'professional_psychology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_psychology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:35 2026).
+Found the latest cached dataset configuration 'professional_psychology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_psychology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:35 2026).
+Found the latest cached dataset configuration 'professional_psychology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_psychology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:35 2026).
+Found the latest cached dataset configuration 'professional_psychology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_psychology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:35 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'public_relations' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/public_relations/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:44 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'security_studies' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/security_studies/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:52 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'sociology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/sociology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:02 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'public_relations' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/public_relations/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:44 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'public_relations' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/public_relations/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:44 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'security_studies' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/security_studies/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:52 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'security_studies' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/security_studies/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:52 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'us_foreign_policy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/us_foreign_policy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:10 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'formal_logic' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/formal_logic/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:19 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_european_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_european_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:28 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_us_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_us_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:37 2026).
+Found the latest cached dataset configuration 'sociology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/sociology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:02 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'us_foreign_policy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/us_foreign_policy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:10 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'public_relations' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/public_relations/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:44 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_world_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_world_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:45 2026).
+Found the latest cached dataset configuration 'security_studies' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/security_studies/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:11:52 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'international_law' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/international_law/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:53 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'jurisprudence' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/jurisprudence/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:02 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'logical_fallacies' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/logical_fallacies/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:10 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'formal_logic' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/formal_logic/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:19 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_european_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_european_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:28 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'moral_disputes' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/moral_disputes/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:18 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_us_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_us_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:37 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'moral_scenarios' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/moral_scenarios/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:27 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_world_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_world_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:45 2026).
+Found the latest cached dataset configuration 'sociology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/sociology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:02 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'sociology' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/sociology/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:02 2026).
+Found the latest cached dataset configuration 'international_law' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/international_law/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:53 2026).
+Found the latest cached dataset configuration 'us_foreign_policy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/us_foreign_policy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:10 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'us_foreign_policy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/us_foreign_policy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:10 2026).
+Found the latest cached dataset configuration 'jurisprudence' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/jurisprudence/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:02 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'logical_fallacies' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/logical_fallacies/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:10 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'moral_disputes' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/moral_disputes/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:18 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'formal_logic' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/formal_logic/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:19 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'moral_scenarios' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/moral_scenarios/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:27 2026).
+Found the latest cached dataset configuration 'formal_logic' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/formal_logic/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:19 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_european_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_european_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:28 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'philosophy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/philosophy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:34 2026).
+Found the latest cached dataset configuration 'philosophy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/philosophy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:34 2026).
+Found the latest cached dataset configuration 'high_school_european_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_european_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:28 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_us_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_us_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:37 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_us_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_us_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:37 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'high_school_world_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_world_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:45 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'prehistory' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/prehistory/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:44 2026).
+Found the latest cached dataset configuration 'high_school_world_history' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/high_school_world_history/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:45 2026).
+Found the latest cached dataset configuration 'prehistory' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/prehistory/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:44 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'international_law' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/international_law/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:53 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'international_law' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/international_law/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:12:53 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'jurisprudence' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/jurisprudence/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:02 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'jurisprudence' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/jurisprudence/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:02 2026).
+Found the latest cached dataset configuration 'professional_law' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_law/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:52 2026).
+Found the latest cached dataset configuration 'professional_law' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_law/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:52 2026).
+Found the latest cached dataset configuration 'logical_fallacies' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/logical_fallacies/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:10 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'logical_fallacies' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/logical_fallacies/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:10 2026).
+Found the latest cached dataset configuration 'moral_disputes' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/moral_disputes/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:18 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'moral_disputes' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/moral_disputes/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:18 2026).
+Found the latest cached dataset configuration 'moral_scenarios' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/moral_scenarios/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:27 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'moral_scenarios' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/moral_scenarios/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:27 2026).
+Found the latest cached dataset configuration 'philosophy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/philosophy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:34 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'philosophy' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/philosophy/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:34 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'prehistory' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/prehistory/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:44 2026).
+Found the latest cached dataset configuration 'world_religions' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/world_religions/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:14:00 2026).
+Found the latest cached dataset configuration 'world_religions' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/world_religions/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:14:00 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'prehistory' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/prehistory/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:44 2026).
+Overwriting default num_fewshot of mmlu_abstract_algebra from None to 5
+Overwriting default num_fewshot of mmlu_abstract_algebra from None to 5
+Overwriting default num_fewshot of mmlu_anatomy from None to 5
+Overwriting default num_fewshot of mmlu_anatomy from None to 5
+Overwriting default num_fewshot of mmlu_astronomy from None to 5
+Overwriting default num_fewshot of mmlu_astronomy from None to 5
+Overwriting default num_fewshot of mmlu_college_biology from None to 5
+Overwriting default num_fewshot of mmlu_college_biology from None to 5
+Overwriting default num_fewshot of mmlu_college_chemistry from None to 5
+Overwriting default num_fewshot of mmlu_college_chemistry from None to 5
+Overwriting default num_fewshot of mmlu_college_computer_science from None to 5
+Overwriting default num_fewshot of mmlu_college_computer_science from None to 5
+Overwriting default num_fewshot of mmlu_college_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_college_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_college_physics from None to 5
+Overwriting default num_fewshot of mmlu_college_physics from None to 5
+Overwriting default num_fewshot of mmlu_computer_security from None to 5
+Overwriting default num_fewshot of mmlu_computer_security from None to 5
+Overwriting default num_fewshot of mmlu_conceptual_physics from None to 5
+Overwriting default num_fewshot of mmlu_conceptual_physics from None to 5
+Overwriting default num_fewshot of mmlu_electrical_engineering from None to 5
+Overwriting default num_fewshot of mmlu_electrical_engineering from None to 5
+Overwriting default num_fewshot of mmlu_elementary_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_elementary_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_biology from None to 5
+Overwriting default num_fewshot of mmlu_high_school_biology from None to 5
+Overwriting default num_fewshot of mmlu_high_school_chemistry from None to 5
+Overwriting default num_fewshot of mmlu_high_school_chemistry from None to 5
+Overwriting default num_fewshot of mmlu_high_school_computer_science from None to 5
+Overwriting default num_fewshot of mmlu_high_school_computer_science from None to 5
+Overwriting default num_fewshot of mmlu_high_school_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_physics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_physics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_statistics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_statistics from None to 5
+Overwriting default num_fewshot of mmlu_machine_learning from None to 5
+Overwriting default num_fewshot of mmlu_machine_learning from None to 5
+Overwriting default num_fewshot of mmlu_business_ethics from None to 5
+Overwriting default num_fewshot of mmlu_business_ethics from None to 5
+Overwriting default num_fewshot of mmlu_clinical_knowledge from None to 5
+Overwriting default num_fewshot of mmlu_clinical_knowledge from None to 5
+Overwriting default num_fewshot of mmlu_college_medicine from None to 5
+Overwriting default num_fewshot of mmlu_college_medicine from None to 5
+Overwriting default num_fewshot of mmlu_global_facts from None to 5
+Overwriting default num_fewshot of mmlu_global_facts from None to 5
+Overwriting default num_fewshot of mmlu_human_aging from None to 5
+Overwriting default num_fewshot of mmlu_human_aging from None to 5
+Overwriting default num_fewshot of mmlu_management from None to 5
+Overwriting default num_fewshot of mmlu_management from None to 5
+Overwriting default num_fewshot of mmlu_marketing from None to 5
+Overwriting default num_fewshot of mmlu_marketing from None to 5
+Overwriting default num_fewshot of mmlu_medical_genetics from None to 5
+Overwriting default num_fewshot of mmlu_medical_genetics from None to 5
+Overwriting default num_fewshot of mmlu_miscellaneous from None to 5
+Overwriting default num_fewshot of mmlu_miscellaneous from None to 5
+Overwriting default num_fewshot of mmlu_nutrition from None to 5
+Overwriting default num_fewshot of mmlu_nutrition from None to 5
+Overwriting default num_fewshot of mmlu_professional_accounting from None to 5
+Overwriting default num_fewshot of mmlu_professional_accounting from None to 5
+Overwriting default num_fewshot of mmlu_professional_medicine from None to 5
+Overwriting default num_fewshot of mmlu_professional_medicine from None to 5
+Overwriting default num_fewshot of mmlu_virology from None to 5
+Overwriting default num_fewshot of mmlu_virology from None to 5
+Overwriting default num_fewshot of mmlu_econometrics from None to 5
+Overwriting default num_fewshot of mmlu_econometrics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_geography from None to 5
+Overwriting default num_fewshot of mmlu_high_school_geography from None to 5
+Overwriting default num_fewshot of mmlu_high_school_government_and_politics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_government_and_politics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_macroeconomics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_macroeconomics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_microeconomics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_microeconomics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_psychology from None to 5
+Overwriting default num_fewshot of mmlu_high_school_psychology from None to 5
+Overwriting default num_fewshot of mmlu_human_sexuality from None to 5
+Overwriting default num_fewshot of mmlu_human_sexuality from None to 5
+Overwriting default num_fewshot of mmlu_professional_psychology from None to 5
+Overwriting default num_fewshot of mmlu_professional_psychology from None to 5
+Overwriting default num_fewshot of mmlu_public_relations from None to 5
+Overwriting default num_fewshot of mmlu_public_relations from None to 5
+Overwriting default num_fewshot of mmlu_security_studies from None to 5
+Overwriting default num_fewshot of mmlu_security_studies from None to 5
+Overwriting default num_fewshot of mmlu_sociology from None to 5
+Overwriting default num_fewshot of mmlu_sociology from None to 5
+Overwriting default num_fewshot of mmlu_us_foreign_policy from None to 5
+Overwriting default num_fewshot of mmlu_us_foreign_policy from None to 5
+Overwriting default num_fewshot of mmlu_formal_logic from None to 5
+Overwriting default num_fewshot of mmlu_formal_logic from None to 5
+Overwriting default num_fewshot of mmlu_high_school_european_history from None to 5
+Overwriting default num_fewshot of mmlu_high_school_european_history from None to 5
+Overwriting default num_fewshot of mmlu_high_school_us_history from None to 5
+Overwriting default num_fewshot of mmlu_high_school_us_history from None to 5
+Overwriting default num_fewshot of mmlu_high_school_world_history from None to 5
+Overwriting default num_fewshot of mmlu_high_school_world_history from None to 5
+Overwriting default num_fewshot of mmlu_international_law from None to 5
+Overwriting default num_fewshot of mmlu_international_law from None to 5
+Overwriting default num_fewshot of mmlu_jurisprudence from None to 5
+Overwriting default num_fewshot of mmlu_jurisprudence from None to 5
+Overwriting default num_fewshot of mmlu_logical_fallacies from None to 5
+Overwriting default num_fewshot of mmlu_logical_fallacies from None to 5
+Overwriting default num_fewshot of mmlu_moral_disputes from None to 5
+Overwriting default num_fewshot of mmlu_moral_disputes from None to 5
+Overwriting default num_fewshot of mmlu_moral_scenarios from None to 5
+Overwriting default num_fewshot of mmlu_moral_scenarios from None to 5
+Overwriting default num_fewshot of mmlu_philosophy from None to 5
+Overwriting default num_fewshot of mmlu_philosophy from None to 5
+Overwriting default num_fewshot of mmlu_prehistory from None to 5
+Overwriting default num_fewshot of mmlu_prehistory from None to 5
+Overwriting default num_fewshot of mmlu_professional_law from None to 5
+Overwriting default num_fewshot of mmlu_professional_law from None to 5
+Overwriting default num_fewshot of mmlu_world_religions from None to 5
+Overwriting default num_fewshot of mmlu_world_religions from None to 5
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+100%|██████████| 2/2 [00:00<00:00, 167.95it/s]
+100%|██████████| 2/2 [00:00<00:00, 153.64it/s]
+Found the latest cached dataset configuration 'professional_law' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_law/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:52 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'professional_law' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/professional_law/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:13:52 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'world_religions' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/world_religions/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:14:00 2026).
+Using the latest cached version of the dataset since cais/mmlu couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'world_religions' at /scratch/users/nus/jingzege/cache/huggingface/datasets/cais___mmlu/world_religions/0.0.0/c30699e8356da336a370243923dbaf21066bb9fe (last modified on Tue Aug 18 08:14:00 2026).
+Overwriting default num_fewshot of mmlu_abstract_algebra from None to 5
+Overwriting default num_fewshot of mmlu_anatomy from None to 5
+Overwriting default num_fewshot of mmlu_astronomy from None to 5
+Overwriting default num_fewshot of mmlu_college_biology from None to 5
+Overwriting default num_fewshot of mmlu_college_chemistry from None to 5
+Overwriting default num_fewshot of mmlu_college_computer_science from None to 5
+Overwriting default num_fewshot of mmlu_college_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_college_physics from None to 5
+Overwriting default num_fewshot of mmlu_computer_security from None to 5
+Overwriting default num_fewshot of mmlu_conceptual_physics from None to 5
+Overwriting default num_fewshot of mmlu_electrical_engineering from None to 5
+Overwriting default num_fewshot of mmlu_elementary_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_biology from None to 5
+Overwriting default num_fewshot of mmlu_high_school_chemistry from None to 5
+Overwriting default num_fewshot of mmlu_high_school_computer_science from None to 5
+Overwriting default num_fewshot of mmlu_high_school_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_physics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_statistics from None to 5
+Overwriting default num_fewshot of mmlu_machine_learning from None to 5
+Overwriting default num_fewshot of mmlu_business_ethics from None to 5
+Overwriting default num_fewshot of mmlu_clinical_knowledge from None to 5
+Overwriting default num_fewshot of mmlu_college_medicine from None to 5
+Overwriting default num_fewshot of mmlu_global_facts from None to 5
+Overwriting default num_fewshot of mmlu_human_aging from None to 5
+Overwriting default num_fewshot of mmlu_management from None to 5
+Overwriting default num_fewshot of mmlu_marketing from None to 5
+Overwriting default num_fewshot of mmlu_medical_genetics from None to 5
+Overwriting default num_fewshot of mmlu_miscellaneous from None to 5
+Overwriting default num_fewshot of mmlu_nutrition from None to 5
+Overwriting default num_fewshot of mmlu_professional_accounting from None to 5
+Overwriting default num_fewshot of mmlu_professional_medicine from None to 5
+Overwriting default num_fewshot of mmlu_virology from None to 5
+Overwriting default num_fewshot of mmlu_econometrics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_geography from None to 5
+Overwriting default num_fewshot of mmlu_high_school_government_and_politics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_macroeconomics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_microeconomics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_psychology from None to 5
+Overwriting default num_fewshot of mmlu_human_sexuality from None to 5
+Overwriting default num_fewshot of mmlu_professional_psychology from None to 5
+Overwriting default num_fewshot of mmlu_public_relations from None to 5
+Overwriting default num_fewshot of mmlu_security_studies from None to 5
+Overwriting default num_fewshot of mmlu_sociology from None to 5
+Overwriting default num_fewshot of mmlu_us_foreign_policy from None to 5
+Overwriting default num_fewshot of mmlu_formal_logic from None to 5
+Overwriting default num_fewshot of mmlu_high_school_european_history from None to 5
+Overwriting default num_fewshot of mmlu_high_school_us_history from None to 5
+Overwriting default num_fewshot of mmlu_high_school_world_history from None to 5
+Overwriting default num_fewshot of mmlu_international_law from None to 5
+Overwriting default num_fewshot of mmlu_jurisprudence from None to 5
+Overwriting default num_fewshot of mmlu_logical_fallacies from None to 5
+Overwriting default num_fewshot of mmlu_moral_disputes from None to 5
+Overwriting default num_fewshot of mmlu_moral_scenarios from None to 5
+Overwriting default num_fewshot of mmlu_philosophy from None to 5
+Overwriting default num_fewshot of mmlu_prehistory from None to 5
+Overwriting default num_fewshot of mmlu_professional_law from None to 5
+Overwriting default num_fewshot of mmlu_world_religions from None to 5
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 187.05it/s]
+Overwriting default num_fewshot of mmlu_abstract_algebra from None to 5
+Overwriting default num_fewshot of mmlu_anatomy from None to 5
+Overwriting default num_fewshot of mmlu_astronomy from None to 5
+Overwriting default num_fewshot of mmlu_college_biology from None to 5
+Overwriting default num_fewshot of mmlu_college_chemistry from None to 5
+Overwriting default num_fewshot of mmlu_college_computer_science from None to 5
+Overwriting default num_fewshot of mmlu_college_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_college_physics from None to 5
+Overwriting default num_fewshot of mmlu_computer_security from None to 5
+Overwriting default num_fewshot of mmlu_conceptual_physics from None to 5
+Overwriting default num_fewshot of mmlu_electrical_engineering from None to 5
+Overwriting default num_fewshot of mmlu_elementary_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_biology from None to 5
+Overwriting default num_fewshot of mmlu_high_school_chemistry from None to 5
+Overwriting default num_fewshot of mmlu_high_school_computer_science from None to 5
+Overwriting default num_fewshot of mmlu_high_school_mathematics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_physics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_statistics from None to 5
+Overwriting default num_fewshot of mmlu_machine_learning from None to 5
+Overwriting default num_fewshot of mmlu_business_ethics from None to 5
+Overwriting default num_fewshot of mmlu_clinical_knowledge from None to 5
+Overwriting default num_fewshot of mmlu_college_medicine from None to 5
+Overwriting default num_fewshot of mmlu_global_facts from None to 5
+Overwriting default num_fewshot of mmlu_human_aging from None to 5
+Overwriting default num_fewshot of mmlu_management from None to 5
+Overwriting default num_fewshot of mmlu_marketing from None to 5
+Overwriting default num_fewshot of mmlu_medical_genetics from None to 5
+Overwriting default num_fewshot of mmlu_miscellaneous from None to 5
+Overwriting default num_fewshot of mmlu_nutrition from None to 5
+Overwriting default num_fewshot of mmlu_professional_accounting from None to 5
+Overwriting default num_fewshot of mmlu_professional_medicine from None to 5
+Overwriting default num_fewshot of mmlu_virology from None to 5
+Overwriting default num_fewshot of mmlu_econometrics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_geography from None to 5
+Overwriting default num_fewshot of mmlu_high_school_government_and_politics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_macroeconomics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_microeconomics from None to 5
+Overwriting default num_fewshot of mmlu_high_school_psychology from None to 5
+Overwriting default num_fewshot of mmlu_human_sexuality from None to 5
+Overwriting default num_fewshot of mmlu_professional_psychology from None to 5
+Overwriting default num_fewshot of mmlu_public_relations from None to 5
+Overwriting default num_fewshot of mmlu_security_studies from None to 5
+Overwriting default num_fewshot of mmlu_sociology from None to 5
+Overwriting default num_fewshot of mmlu_us_foreign_policy from None to 5
+Overwriting default num_fewshot of mmlu_formal_logic from None to 5
+Overwriting default num_fewshot of mmlu_high_school_european_history from None to 5
+Overwriting default num_fewshot of mmlu_high_school_us_history from None to 5
+Overwriting default num_fewshot of mmlu_high_school_world_history from None to 5
+Overwriting default num_fewshot of mmlu_international_law from None to 5
+Overwriting default num_fewshot of mmlu_jurisprudence from None to 5
+Overwriting default num_fewshot of mmlu_logical_fallacies from None to 5
+Overwriting default num_fewshot of mmlu_moral_disputes from None to 5
+Overwriting default num_fewshot of mmlu_moral_scenarios from None to 5
+Overwriting default num_fewshot of mmlu_philosophy from None to 5
+Overwriting default num_fewshot of mmlu_prehistory from None to 5
+Overwriting default num_fewshot of mmlu_professional_law from None to 5
+Overwriting default num_fewshot of mmlu_world_religions from None to 5
+  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 175.59it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 175.52it/s]
+100%|██████████| 2/2 [00:00<00:00, 169.02it/s]
+100%|██████████| 2/2 [00:00<00:00, 169.31it/s]
+100%|██████████| 2/2 [00:00<00:00, 167.94it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 174.24it/s]
+100%|██████████| 2/2 [00:00<00:00, 174.25it/s]
+100%|██████████| 2/2 [00:00<00:00, 172.85it/s]
+100%|██████████| 2/2 [00:00<00:00, 173.09it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 178.95it/s]
+100%|██████████| 2/2 [00:00<00:00, 177.32it/s]
+100%|██████████| 2/2 [00:00<00:00, 175.27it/s]100%|██████████| 2/2 [00:00<00:00, 175.52it/s]
+
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 179.33it/s]
+100%|██████████| 2/2 [00:00<00:00, 177.05it/s]
+100%|██████████| 2/2 [00:00<00:00, 176.83it/s]
+100%|██████████| 2/2 [00:00<00:00, 175.51it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 171.58it/s]
+100%|██████████| 2/2 [00:00<00:00, 170.31it/s]
+100%|██████████| 2/2 [00:00<00:00, 169.21it/s]
+100%|██████████| 2/2 [00:00<00:00, 169.01it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 193.39it/s]
+100%|██████████| 2/2 [00:00<00:00, 191.72it/s]100%|██████████| 2/2 [00:00<00:00, 190.89it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 190.28it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 212.99it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.13it/s]
+100%|██████████| 2/2 [00:00<00:00, 208.80it/s]
+100%|██████████| 2/2 [00:00<00:00, 207.76it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 214.33it/s]
+100%|██████████| 2/2 [00:00<00:00, 210.35it/s]100%|██████████| 2/2 [00:00<00:00, 210.63it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 207.88it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 216.51it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.61it/s]100%|██████████| 2/2 [00:00<00:00, 213.80it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 212.95it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 215.11it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.47it/s]100%|██████████| 2/2 [00:00<00:00, 213.04it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 212.09it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 213.52it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.40it/s]
+100%|██████████| 2/2 [00:00<00:00, 210.24it/s]
+100%|██████████| 2/2 [00:00<00:00, 209.81it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 215.68it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.76it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.35it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.80it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 216.12it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.71it/s]100%|██████████| 2/2 [00:00<00:00, 213.02it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 213.05it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 214.82it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.08it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.05it/s]
+100%|██████████| 2/2 [00:00<00:00, 210.00it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 216.28it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.24it/s]
+100%|██████████| 2/2 [00:00<00:00, 214.26it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.22it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 215.37it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.78it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.30it/s]100%|██████████| 2/2 [00:00<00:00, 212.43it/s]
+
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 214.30it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.71it/s]100%|██████████| 2/2 [00:00<00:00, 212.02it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 211.22it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 217.08it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.18it/s]
+100%|██████████| 2/2 [00:00<00:00, 214.34it/s]100%|██████████| 2/2 [00:00<00:00, 214.77it/s]
+
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 215.92it/s]
+100%|██████████| 2/2 [00:00<00:00, 214.85it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.58it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.30it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 213.30it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.50it/s]100%|██████████| 2/2 [00:00<00:00, 212.59it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 210.77it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 208.07it/s]
+100%|██████████| 2/2 [00:00<00:00, 208.32it/s]100%|██████████| 2/2 [00:00<00:00, 206.35it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 204.84it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 215.60it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.51it/s]
+100%|██████████| 2/2 [00:00<00:00, 214.48it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.66it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 212.94it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.05it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.06it/s]
+100%|██████████| 2/2 [00:00<00:00, 210.56it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 212.40it/s]
+100%|██████████| 2/2 [00:00<00:00, 210.52it/s]
+100%|██████████| 2/2 [00:00<00:00, 208.77it/s]
+100%|██████████| 2/2 [00:00<00:00, 205.66it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 214.90it/s]
+100%|██████████| 2/2 [00:00<00:00, 214.60it/s]100%|██████████| 2/2 [00:00<00:00, 214.62it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 214.17it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 212.94it/s]100%|██████████| 2/2 [00:00<00:00, 213.13it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 210.69it/s]
+100%|██████████| 2/2 [00:00<00:00, 208.81it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 216.88it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.21it/s]
+100%|██████████| 2/2 [00:00<00:00, 214.01it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.33it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 217.14it/s]100%|██████████| 2/2 [00:00<00:00, 216.62it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 215.31it/s]
+100%|██████████| 2/2 [00:00<00:00, 214.70it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 214.92it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.19it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.94it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.89it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 209.29it/s]
+100%|██████████| 2/2 [00:00<00:00, 209.09it/s]
+100%|██████████| 2/2 [00:00<00:00, 207.46it/s]
+100%|██████████| 2/2 [00:00<00:00, 206.87it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 217.85it/s]
+100%|██████████| 2/2 [00:00<00:00, 217.17it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.99it/s]100%|██████████| 2/2 [00:00<00:00, 216.30it/s]
+
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 215.34it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.44it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.61it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.19it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 211.00it/s]100%|██████████| 2/2 [00:00<00:00, 211.27it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.29it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 210.02it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 216.26it/s]100%|██████████| 2/2 [00:00<00:00, 215.92it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 214.66it/s]100%|██████████| 2/2 [00:00<00:00, 213.55it/s]
+
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 216.01it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.58it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.29it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.53it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 213.26it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.71it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.28it/s]
+100%|██████████| 2/2 [00:00<00:00, 209.76it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 215.40it/s]
+100%|██████████| 2/2 [00:00<00:00, 214.46it/s]100%|██████████| 2/2 [00:00<00:00, 214.03it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 211.96it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 210.02it/s]
+100%|██████████| 2/2 [00:00<00:00, 209.13it/s]
+100%|██████████| 2/2 [00:00<00:00, 208.15it/s]
+100%|██████████| 2/2 [00:00<00:00, 209.36it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 207.11it/s]
+100%|██████████| 2/2 [00:00<00:00, 205.46it/s]
+100%|██████████| 2/2 [00:00<00:00, 204.82it/s]
+100%|██████████| 2/2 [00:00<00:00, 202.97it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 216.50it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.71it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.02it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.78it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 216.80it/s]100%|██████████| 2/2 [00:00<00:00, 216.11it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 215.79it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.40it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 217.11it/s]100%|██████████| 2/2 [00:00<00:00, 216.68it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 213.47it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.49it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 212.63it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.10it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.17it/s]
+100%|██████████| 2/2 [00:00<00:00, 209.43it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 217.27it/s]
+100%|██████████| 2/2 [00:00<00:00, 215.17it/s]
+100%|██████████| 2/2 [00:00<00:00, 214.58it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.79it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 209.70it/s]
+100%|██████████| 2/2 [00:00<00:00, 207.93it/s]100%|██████████| 2/2 [00:00<00:00, 208.44it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 207.85it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 206.11it/s]
+100%|██████████| 2/2 [00:00<00:00, 204.14it/s]
+100%|██████████| 2/2 [00:00<00:00, 204.41it/s]100%|██████████| 2/2 [00:00<00:00, 204.05it/s]
+
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 207.91it/s]100%|██████████| 2/2 [00:00<00:00, 207.06it/s]
+100%|██████████| 2/2 [00:00<00:00, 207.15it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 206.38it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 216.10it/s]100%|██████████| 2/2 [00:00<00:00, 215.33it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 214.17it/s]
+100%|██████████| 2/2 [00:00<00:00, 213.46it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 213.96it/s]
+100%|██████████| 2/2 [00:00<00:00, 212.66it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.87it/s]
+100%|██████████| 2/2 [00:00<00:00, 211.64it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 207.73it/s]
+100%|██████████| 2/2 [00:00<00:00, 207.83it/s]
+100%|██████████| 2/2 [00:00<00:00, 202.33it/s]
+100%|██████████| 2/2 [00:00<00:00, 201.05it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 182.19it/s]
+100%|██████████| 2/2 [00:00<00:00, 180.98it/s]
+100%|██████████| 2/2 [00:00<00:00, 180.01it/s]
+100%|██████████| 2/2 [00:00<00:00, 178.31it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 184.09it/s]
+100%|██████████| 2/2 [00:00<00:00, 183.00it/s]
+100%|██████████| 2/2 [00:00<00:00, 181.68it/s]
+100%|██████████| 2/2 [00:00<00:00, 179.57it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 180.63it/s]
+100%|██████████| 2/2 [00:00<00:00, 178.63it/s]
+100%|██████████| 2/2 [00:00<00:00, 177.53it/s]
+100%|██████████| 2/2 [00:00<00:00, 177.15it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 180.25it/s]
+100%|██████████| 2/2 [00:00<00:00, 179.25it/s]
+100%|██████████| 2/2 [00:00<00:00, 178.31it/s]
+100%|██████████| 2/2 [00:00<00:00, 178.60it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 179.44it/s]
+100%|██████████| 2/2 [00:00<00:00, 179.03it/s]
+100%|██████████| 2/2 [00:00<00:00, 177.57it/s]
+100%|██████████| 2/2 [00:00<00:00, 176.65it/s]
+  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]  0%|          | 0/2 [00:00<?, ?it/s]100%|██████████| 2/2 [00:00<00:00, 184.03it/s]100%|██████████| 2/2 [00:00<00:00, 183.76it/s]
+
+100%|██████████| 2/2 [00:00<00:00, 181.27it/s]
+100%|██████████| 2/2 [00:00<00:00, 180.46it/s]
+Tokenizing inputs:   0%|          | 0/456 [00:00<?, ?it/s]Tokenizing inputs:   0%|          | 0/456 [00:00<?, ?it/s]Tokenizing inputs:   0%|          | 0/456 [00:00<?, ?it/s]Tokenizing inputs:   0%|          | 0/456 [00:00<?, ?it/s]Tokenizing inputs:  21%|██        | 95/456 [00:00<00:00, 946.75it/s]Tokenizing inputs:  21%|██▏       | 97/456 [00:00<00:00, 964.29it/s]Tokenizing inputs:  20%|██        | 92/456 [00:00<00:00, 914.06it/s]Tokenizing inputs:  21%|██        | 96/456 [00:00<00:00, 952.46it/s]Tokenizing inputs:  42%|████▏     | 190/456 [00:00<00:00, 934.58it/s]Tokenizing inputs:  42%|████▏     | 192/456 [00:00<00:00, 934.68it/s]Tokenizing inputs:  43%|████▎     | 194/456 [00:00<00:00, 928.69it/s]Tokenizing inputs:  40%|████      | 184/456 [00:00<00:00, 852.30it/s]Tokenizing inputs:  62%|██████▎   | 285/456 [00:00<00:00, 939.13it/s]Tokenizing inputs:  63%|██████▎   | 286/456 [00:00<00:00, 929.76it/s]Tokenizing inputs:  64%|██████▎   | 290/456 [00:00<00:00, 940.45it/s]Tokenizing inputs:  62%|██████▏   | 282/456 [00:00<00:00, 904.02it/s]Tokenizing inputs:  82%|████████▏ | 373/456 [00:00<00:00, 698.74it/s]Tokenizing inputs:  83%|████████▎ | 379/456 [00:00<00:00, 674.04it/s]Tokenizing inputs:  83%|████████▎ | 379/456 [00:00<00:00, 670.14it/s]Tokenizing inputs:  84%|████████▍ | 385/456 [00:00<00:00, 649.06it/s]Tokenizing inputs: 100%|█████████▉| 455/456 [00:00<00:00, 680.16it/s]Tokenizing inputs: 100%|██████████| 456/456 [00:00<00:00, 742.57it/s]
+Tokenizing inputs: 100%|█████████▉| 454/456 [00:00<00:00, 672.15it/s]Tokenizing inputs: 100%|██████████| 456/456 [00:00<00:00, 737.92it/s]
+Tokenizing inputs: 100%|██████████| 456/456 [00:00<00:00, 737.86it/s]
+Running loglikelihood requests:   0%|          | 0/456 [00:00<?, ?it/s]Tokenizing inputs:  98%|█████████▊| 449/456 [00:00<00:00, 641.35it/s]Tokenizing inputs: 100%|██████████| 456/456 [00:00<00:00, 717.77it/s]
+Running loglikelihood requests:   0%|          | 1/456 [00:03<25:54,  3.42s/it]Running loglikelihood requests:   7%|▋         | 33/456 [00:04<00:42,  9.92it/s]Running loglikelihood requests:  14%|█▍        | 65/456 [00:04<00:20, 19.11it/s]Running loglikelihood requests:  21%|██▏       | 97/456 [00:05<00:12, 28.42it/s]Running loglikelihood requests:  28%|██▊       | 129/456 [00:05<00:08, 37.41it/s]Running loglikelihood requests:  35%|███▌      | 161/456 [00:06<00:06, 45.98it/s]Running loglikelihood requests:  42%|████▏     | 193/456 [00:06<00:04, 54.07it/s]Running loglikelihood requests:  49%|████▉     | 225/456 [00:06<00:03, 61.29it/s]Running loglikelihood requests:  56%|█████▋    | 257/456 [00:07<00:02, 68.38it/s]Running loglikelihood requests:  63%|██████▎   | 289/456 [00:07<00:02, 75.34it/s]Running loglikelihood requests:  70%|███████   | 321/456 [00:07<00:01, 82.22it/s]Running loglikelihood requests:  77%|███████▋  | 353/456 [00:08<00:01, 89.19it/s]Running loglikelihood requests:  84%|████████▍ | 385/456 [00:08<00:00, 96.29it/s]Running loglikelihood requests:  91%|█████████▏| 417/456 [00:08<00:00, 104.75it/s]Running loglikelihood requests: 100%|██████████| 456/456 [00:08<00:00, 51.52it/s] 
+
+======================================================================
+RESULTS
+======================================================================
+
+  mmlu_abstract_algebra:
+    name: mmlu_abstract_algebra
+    alias: abstract_algebra
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_anatomy:
+    name: mmlu_anatomy
+    alias: anatomy
+    sample_len: 8.0000
+    acc,none: 0.3750
+    acc_stderr,none: 0.1830
+
+  mmlu_astronomy:
+    name: mmlu_astronomy
+    alias: astronomy
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_college_biology:
+    name: mmlu_college_biology
+    alias: college_biology
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_college_chemistry:
+    name: mmlu_college_chemistry
+    alias: college_chemistry
+    sample_len: 8.0000
+    acc,none: 0.7500
+    acc_stderr,none: 0.1637
+
+  mmlu_college_computer_science:
+    name: mmlu_college_computer_science
+    alias: college_computer_science
+    sample_len: 8.0000
+    acc,none: 0.2500
+    acc_stderr,none: 0.1637
+
+  mmlu_college_mathematics:
+    name: mmlu_college_mathematics
+    alias: college_mathematics
+    sample_len: 8.0000
+    acc,none: 0.3750
+    acc_stderr,none: 0.1830
+
+  mmlu_college_physics:
+    name: mmlu_college_physics
+    alias: college_physics
+    sample_len: 8.0000
+    acc,none: 0.2500
+    acc_stderr,none: 0.1637
+
+  mmlu_computer_security:
+    name: mmlu_computer_security
+    alias: computer_security
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_conceptual_physics:
+    name: mmlu_conceptual_physics
+    alias: conceptual_physics
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_electrical_engineering:
+    name: mmlu_electrical_engineering
+    alias: electrical_engineering
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_elementary_mathematics:
+    name: mmlu_elementary_mathematics
+    alias: elementary_mathematics
+    sample_len: 8.0000
+    acc,none: 0.2500
+    acc_stderr,none: 0.1637
+
+  mmlu_high_school_biology:
+    name: mmlu_high_school_biology
+    alias: high_school_biology
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_high_school_chemistry:
+    name: mmlu_high_school_chemistry
+    alias: high_school_chemistry
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_high_school_computer_science:
+    name: mmlu_high_school_computer_science
+    alias: high_school_computer_science
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_high_school_mathematics:
+    name: mmlu_high_school_mathematics
+    alias: high_school_mathematics
+    sample_len: 8.0000
+    acc,none: 0.1250
+    acc_stderr,none: 0.1250
+
+  mmlu_high_school_physics:
+    name: mmlu_high_school_physics
+    alias: high_school_physics
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_high_school_statistics:
+    name: mmlu_high_school_statistics
+    alias: high_school_statistics
+    sample_len: 8.0000
+    acc,none: 0.2500
+    acc_stderr,none: 0.1637
+
+  mmlu_machine_learning:
+    name: mmlu_machine_learning
+    alias: machine_learning
+    sample_len: 8.0000
+    acc,none: 0.2500
+    acc_stderr,none: 0.1637
+
+  mmlu_business_ethics:
+    name: mmlu_business_ethics
+    alias: business_ethics
+    sample_len: 8.0000
+    acc,none: 0.8750
+    acc_stderr,none: 0.1250
+
+  mmlu_clinical_knowledge:
+    name: mmlu_clinical_knowledge
+    alias: clinical_knowledge
+    sample_len: 8.0000
+    acc,none: 0.3750
+    acc_stderr,none: 0.1830
+
+  mmlu_college_medicine:
+    name: mmlu_college_medicine
+    alias: college_medicine
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_global_facts:
+    name: mmlu_global_facts
+    alias: global_facts
+    sample_len: 8.0000
+    acc,none: 0.2500
+    acc_stderr,none: 0.1637
+
+  mmlu_human_aging:
+    name: mmlu_human_aging
+    alias: human_aging
+    sample_len: 8.0000
+    acc,none: 0.2500
+    acc_stderr,none: 0.1637
+
+  mmlu_management:
+    name: mmlu_management
+    alias: management
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_marketing:
+    name: mmlu_marketing
+    alias: marketing
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_medical_genetics:
+    name: mmlu_medical_genetics
+    alias: medical_genetics
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_miscellaneous:
+    name: mmlu_miscellaneous
+    alias: miscellaneous
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_nutrition:
+    name: mmlu_nutrition
+    alias: nutrition
+    sample_len: 8.0000
+    acc,none: 0.7500
+    acc_stderr,none: 0.1637
+
+  mmlu_professional_accounting:
+    name: mmlu_professional_accounting
+    alias: professional_accounting
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_professional_medicine:
+    name: mmlu_professional_medicine
+    alias: professional_medicine
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_virology:
+    name: mmlu_virology
+    alias: virology
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_econometrics:
+    name: mmlu_econometrics
+    alias: econometrics
+    sample_len: 8.0000
+    acc,none: 0.2500
+    acc_stderr,none: 0.1637
+
+  mmlu_high_school_geography:
+    name: mmlu_high_school_geography
+    alias: high_school_geography
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_high_school_government_and_politics:
+    name: mmlu_high_school_government_and_politics
+    alias: high_school_government_and_politics
+    sample_len: 8.0000
+    acc,none: 1.0000
+    acc_stderr,none: 0.0000
+
+  mmlu_high_school_macroeconomics:
+    name: mmlu_high_school_macroeconomics
+    alias: high_school_macroeconomics
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_high_school_microeconomics:
+    name: mmlu_high_school_microeconomics
+    alias: high_school_microeconomics
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_high_school_psychology:
+    name: mmlu_high_school_psychology
+    alias: high_school_psychology
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_human_sexuality:
+    name: mmlu_human_sexuality
+    alias: human_sexuality
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_professional_psychology:
+    name: mmlu_professional_psychology
+    alias: professional_psychology
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_public_relations:
+    name: mmlu_public_relations
+    alias: public_relations
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_security_studies:
+    name: mmlu_security_studies
+    alias: security_studies
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_sociology:
+    name: mmlu_sociology
+    alias: sociology
+    sample_len: 8.0000
+    acc,none: 0.3750
+    acc_stderr,none: 0.1830
+
+  mmlu_us_foreign_policy:
+    name: mmlu_us_foreign_policy
+    alias: us_foreign_policy
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_formal_logic:
+    name: mmlu_formal_logic
+    alias: formal_logic
+    sample_len: 8.0000
+    acc,none: 0.2500
+    acc_stderr,none: 0.1637
+
+  mmlu_high_school_european_history:
+    name: mmlu_high_school_european_history
+    alias: high_school_european_history
+    sample_len: 8.0000
+    acc,none: 1.0000
+    acc_stderr,none: 0.0000
+
+  mmlu_high_school_us_history:
+    name: mmlu_high_school_us_history
+    alias: high_school_us_history
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_high_school_world_history:
+    name: mmlu_high_school_world_history
+    alias: high_school_world_history
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_international_law:
+    name: mmlu_international_law
+    alias: international_law
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_jurisprudence:
+    name: mmlu_jurisprudence
+    alias: jurisprudence
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_logical_fallacies:
+    name: mmlu_logical_fallacies
+    alias: logical_fallacies
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_moral_disputes:
+    name: mmlu_moral_disputes
+    alias: moral_disputes
+    sample_len: 8.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.1890
+
+  mmlu_moral_scenarios:
+    name: mmlu_moral_scenarios
+    alias: moral_scenarios
+    sample_len: 8.0000
+    acc,none: 0.1250
+    acc_stderr,none: 0.1250
+
+  mmlu_philosophy:
+    name: mmlu_philosophy
+    alias: philosophy
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_prehistory:
+    name: mmlu_prehistory
+    alias: prehistory
+    sample_len: 8.0000
+    acc,none: 0.1250
+    acc_stderr,none: 0.1250
+
+  mmlu_professional_law:
+    name: mmlu_professional_law
+    alias: professional_law
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_world_religions:
+    name: mmlu_world_religions
+    alias: world_religions
+    sample_len: 8.0000
+    acc,none: 0.6250
+    acc_stderr,none: 0.1830
+
+  mmlu_stem:
+    alias: stem
+    name: mmlu_stem
+    sample_len: 152.0000
+    acc,none: 0.4342
+    acc_stderr,none: 0.0406
+    sample_count: {'acc,none': 152}
+
+  mmlu_other:
+    alias: other
+    name: mmlu_other
+    sample_len: 104.0000
+    acc,none: 0.5192
+    acc_stderr,none: 0.0493
+    sample_count: {'acc,none': 104}
+
+  mmlu_social_sciences:
+    alias: social sciences
+    name: mmlu_social_sciences
+    sample_len: 96.0000
+    acc,none: 0.5625
+    acc_stderr,none: 0.0507
+    sample_count: {'acc,none': 96}
+
+  mmlu_humanities:
+    alias: humanities
+    name: mmlu_humanities
+    sample_len: 104.0000
+    acc,none: 0.5000
+    acc_stderr,none: 0.0468
+    sample_count: {'acc,none': 104}
+
+  mmlu:
+    alias: mmlu
+    name: mmlu
+    sample_len: 456.0000
+    acc,none: 0.4956
+    acc_stderr,none: 0.0232
+    sample_count: {'acc,none': 456}
+
+[Eval] Results saved to results/preflight/alpaca_mmlu_preflight.json
+[rank0]:[W904 14:30:50.574499251 ProcessGroupNCCL.cpp:1575] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())

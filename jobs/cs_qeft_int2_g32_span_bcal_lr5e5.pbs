@@ -1,0 +1,56 @@
+#!/bin/bash
+#PBS -N cs_qeft_int2_g32_bcal_lr5e5
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+
+# QEFT INT2 g32, k=256 weak columns, Commonsense-170k, 1 epoch,
+# loss_span=instruction+response, BALANCED calibration -- the bcal cell, next to QA-LoRA, QWHA
+# and SALT-Q's bcal rows.
+#
+# HOW TO READ IT. Only against the other bcal rows. And NOT as a pure INT2 row: QEFT deploys as
+# INT2 codes PLUS k=256 fp16 columns per linear, so it belongs next to the fp16-salient PTQ rows
+# as "2 + fp16" (the export meta carries the exact fp16 share and effective bit width). The
+# --with_base scores the bare mixed-precision base -- INT2 + k=256 fp16 columns, no tuning -- through
+# the same seam. That is this row's own floor, and it is NOT the fp16-salient PTQ sweep's k=256
+# point: the sweep quantizes an already QLoRA-fine-tuned merged checkpoint, while QEFT (like
+# QA-LoRA, SALT-Q and LoTA-QAF) starts from the pre-trained model, so its floor is a model that has
+# never seen the instruction format -- expect something like LoTA-QAF's own floor (8.72), not 66-77.
+#
+# 2 GPUs, not 4, at the SAME effective batch 80 (per_device 5 x accum 8 x 2): the g3 queue had no
+# schedulable 4-GPU node (the four wide enough were offline), and 2 GPUs start now. The step count
+# T is unchanged, so every learning rate transports unchanged and the cell is the same one; only
+# wall clock doubles (~10 h instead of ~5 h). Eval runs vLLM at tensor-parallel 2.
+#
+# Depends on jobs/qeft_prep_int2_g32_bcal.pbs having produced the base.
+# Train + export + eval + collection all land in the one log below.
+# lr 5e-5 arm of the INT2 QEFT row. Training stays on 2 GPUs (--num_gpus 2, same effective
+# batch); the node has 4 so the eval runs TP=4 — TP=2 + bf16 deterministically crashes vLLM's
+# sampler at 22313-22316/22419 (three INT3/INT2 attempts vs the clean TP=4 run 15838948).
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_DISABLE_XET=1
+mkdir -p logs/commonsense_170k
+bash runs/qeft/run_qeft_commonsense.sh \
+    --config     baseline/QEFT/sqat/configs/qeft_cs170k_int2_g32_ep1_span_bcal_lr5e5.yaml \
+    --bits       2 \
+    --group_size 32 \
+    --skip_base \
+    --with_base \
+    --num_gpus   2 \
+    --eval_gpus  0,1,2,3 \
+    --note       "lr 5e-5 (INT3 finding transported: paper lr under-trains by 10 pts); eval at TP=4 — TP=2+bf16 crashes the vLLM sampler" \
+    > logs/commonsense_170k/qeft_cs170k_int2_g32_ep1_span_bcal_lr5e5.log 2>&1
+rc=$?
+echo "rc=$rc"; echo "End time: $(date)"
+# The job's exit status IS the dependency signal: a downstream `-W depend=afterok:` job is
+# released on it. Ending on `echo` would hand PBS the echo's 0 no matter how the run went.
+exit $rc

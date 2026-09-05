@@ -30,7 +30,17 @@ dataset_dir_for() {
     case "$1" in
         math)        echo "datasets/metamath" ;;
         commonsense) echo "datasets/commonsense" ;;
-        *) echo "ERROR: unknown --dataset '$1' (expected math or commonsense)" >&2; return 1 ;;
+        # wikitext2 is a RAW-TEXT causal-LM task (data.task_type: lm) scored by perplexity, not
+        # by generation + exact match. runs/eval_vllm.sh dispatches it to scripts/eval_ppl.py;
+        # everything upstream of eval -- the config/dataset agreement check included -- is the
+        # same as for the other two.
+        wikitext2)   echo "datasets/wikitext2" ;;
+        # alpaca is an instruction-tuning task with NO test split of its own: it is scored on
+        # MMLU (lm-eval, 5-shot), an external benchmark the model never trains on. So
+        # runs/eval_vllm.sh dispatches it to scripts/eval_mmlu.py, and this mapping exists only
+        # to keep the config/dataset agreement check honest about what was TRAINED on.
+        alpaca)      echo "datasets/alpaca" ;;
+        *) echo "ERROR: unknown --dataset '$1' (expected math, commonsense, wikitext2 or alpaca)" >&2; return 1 ;;
     esac
 }
 

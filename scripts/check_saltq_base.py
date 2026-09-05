@@ -16,9 +16,23 @@ A loss value is a bad proxy for "is the quantizer wired up". These are the direc
     histograms mean the grid is broken.
   * reconstruction error — (q - z) * s against the permuted fp16 weight it came from. INT3 g64 is
     brutal; a few tens of percent relative Frobenius error is CORRECT. A near-zero error would mean
-    the "quantized" weights are still effectively full precision.
+    the "quantized" weights are still effectively full precision. Reported next to the SAME
+    quantizer with the error compensation removed (RTN on the identical stored grid), because on a
+    salient_init=gptq* base the non-salient codes do NOT target their own fp16 weights — see below.
   * group_k per layer — o_proj must be 0 (no contiguous salient slice exists for it), everything
     else a positive multiple of group_size.
+
+ON A salient_init=gptq / gptq_latent BASE, A >100% LAYER IS NOT NECESSARILY BROKEN. That setting
+runs ONE OBS problem over the whole matrix with the salient (highest-E[x^2]) columns first, so the
+salient slice's INT2 error is deliberately absorbed by the non-salient block: those codes target
+"W_nonsalient + a correction that cancels the salient error at the OUTPUT", not W_nonsalient. Layer
+0's q_proj/k_proj measure 160-172% on every such base built so far (MetaMath INT2, the one behind
+GSM8K 56.48, and Alpaca INT2) while their OUTPUT error is 5.3-5.6% — LOWER than the 7.6-8.3% the
+same weights get with the compensation removed. So this script now fails only when the grid itself
+is broken (the RTN control is also >=100%), when the base does not use OBS over the salient slice,
+or when MOST sampled layers are >=100% — the uniform pattern of the INT3 disaster below, as opposed
+to the isolated layer-0 q/k signature of compensation. Measure the output directly with
+scripts/diagnose_obs_compensation.py before rebuilding anything.
 
 Runs read-only off disk on CPU, so it is safe to run against a base while training uses it.
 
@@ -52,10 +66,17 @@ def main():
     gs, qb, sym = meta["group_size"], meta["q_bits"], meta["symmetric"]
     qmin, qmax = (0, 2 ** qb - 1) if not sym else (-(2 ** (qb - 1)), 2 ** (qb - 1) - 1)
     permuted = args.permuted or meta["permuted_base_dir"]
+    salient_init = str(meta.get("salient_init", "minmax"))
+    # Whole-matrix OBS: the salient slice was quantized inside the same sweep, so its error was
+    # compensated INTO the non-salient codes. That changes what the codes are supposed to equal.
+    obs_salient = salient_init in ("gptq", "gptq_latent")
 
     print(f"base      : {args.base}")
     print(f"grid      : INT{qb} {'asym' if not sym else 'sym'}, group_size={gs}, "
           f"levels [{qmin}, {qmax}]")
+    print(f"init      : salient_init={salient_init}"
+          + ("  (whole-matrix OBS: the non-salient codes carry the salient slice's correction)"
+             if obs_salient else ""))
     print(f"layers    : {len(meta['layers'])}")
     pc = meta["param_counts"]
     print(f"freedom   : {pc['trainable_salient_weights']/1e6:.1f}M full + "
@@ -89,6 +110,7 @@ def main():
 
     print()
     ok = True
+    over_100 = []
     with safe_open(os.path.join(args.base, SALTQ_BASE_FILENAME), framework="pt", device="cpu") as f:
         g = safe_open(perm_file, framework="pt", device="cpu") if have_perm else None
         for n in names:
@@ -112,23 +134,63 @@ def main():
                 q = codes.float().view(out, in_n // gs, gs)
                 rec = ((q - z.unsqueeze(-1)) * s.unsqueeze(-1)).reshape(out, in_n)
                 rel = (rec - W).norm() / W.norm() * 100
+                # The SAME quantizer with the error compensation removed: round-to-nearest of the
+                # fp16 weights onto the identical stored grid. It isolates the two causes of a
+                # large number — a grid that cannot represent these weights (RTN is bad too) from
+                # compensation that moved them on purpose (RTN is fine, the codes are not).
+                rtn_i = torch.round(torch.clamp(
+                    W.view(out, in_n // gs, gs) / s.unsqueeze(-1) + z.unsqueeze(-1), qmin, qmax))
+                rtn = ((rtn_i - z.unsqueeze(-1)) * s.unsqueeze(-1)).reshape(out, in_n)
+                rel_rtn = (rtn - W).norm() / W.norm() * 100
                 print(f"  reconstruction: relative Frobenius error {rel:.2f}%  "
-                      f"(INT{qb} should be tens of percent)")
-                # >= 100% means the dequantized weight is further from the target than ZERO is,
-                # i.e. the codes carry no usable signal. Observed on working bases: INT2 g32
-                # sits at 49-69%. An INT3 g64 base measured 114% on every layer but the first,
-                # and its untrained model scored a 10.6 LM loss — uniform noise over a 32k
-                # vocab is 10.37 — so the run that used it was recovering from a destroyed
-                # model rather than fine-tuning. That base passed this script's earlier
-                # "looks sane" verdict, which only flagged a suspiciously LOW error.
-                if rel >= 100.0:
-                    print(f"  ^ PROBLEM: {rel:.1f}% >= 100% — reconstruction is worse than "
-                          f"predicting zero. Do NOT train on this base; rebuild it.")
+                      f"(no-compensation control: RTN on the same grid {rel_rtn:.2f}%)")
+                # A grid that cannot even hold the RTN of its own weights is broken outright, and
+                # that is true whatever the init was.
+                if rel_rtn >= 100.0:
+                    print(f"  ^ PROBLEM: even RTN on this grid is {rel_rtn:.1f}% — the grid itself "
+                          f"cannot represent these weights. Rebuild the base.")
                     ok = False
+                elif rel >= 100.0:
+                    # >= 100% means the dequantized weight is further from W than ZERO is. On a
+                    # NON-OBS base the codes then carry no usable signal: an INT3 g64 base measured
+                    # 114% on every layer but the first and its untrained model scored a 10.6 LM
+                    # loss (uniform noise over a 32k vocab is 10.37), i.e. the run that used it was
+                    # recovering from a destroyed model rather than fine-tuning.
+                    # On an OBS base W is the WRONG TARGET for the non-salient codes (see the module
+                    # docstring), so this is recorded and reported at the end, where the number of
+                    # layers involved distinguishes compensation from a real disaster.
+                    over_100.append((n, rel, rel_rtn))
+                    if not obs_salient:
+                        print(f"  ^ PROBLEM: {rel:.1f}% >= 100% — reconstruction is worse than "
+                              f"predicting zero. Do NOT train on this base; rebuild it.")
+                        ok = False
+                    else:
+                        print(f"  ^ NOTE: {rel:.1f}% >= 100% while RTN on the same grid is fine "
+                              f"({rel_rtn:.1f}%) — the signature of OBS compensation, not damage.")
                 if rel < 1.0:
                     print("  ^ PROBLEM: error is near zero — these weights are effectively fp")
                     ok = False
             print()
+
+    # An OBS base is allowed a MINORITY of >=100% layers (in practice layer 0/1 q_proj and k_proj,
+    # whose salient columns carry ~97% of the input energy). A majority is the uniform pattern of a
+    # broken base, and no amount of compensation explains it.
+    if over_100 and obs_salient:
+        n_over, n_seen = len(over_100), len(names)
+        print(f"{n_over} of {n_seen} sampled layers exceed 100% while their RTN control does not:")
+        for n, r, rr in over_100:
+            print(f"  {n}  {r:.1f}%  (RTN {rr:.1f}%)")
+        if n_over > n_seen // 2:
+            print("  ^ PROBLEM: that is MOST of the sampled layers — too many to be the salient "
+                  "slice's\n    compensation. Rebuild the base.")
+            ok = False
+        else:
+            print("  ^ Expected on a salient_init=gptq* base: those codes target "
+                  "W_nonsalient PLUS the\n    correction that cancels the salient slice's error "
+                  "at the OUTPUT, so W_nonsalient is not\n    what they approximate. Confirm with "
+                  "scripts/diagnose_obs_compensation.py, which measures\n    the output error "
+                  "directly (Alpaca INT2: layer-0 q_proj 171.9% weight / 5.57% output, "
+                  "against\n    7.56% for the same weights with the compensation removed).")
 
     print("RESULT:", "base looks sane" if (ok and not bad) else "SOMETHING IS WRONG")
     return 0 if (ok and not bad) else 1

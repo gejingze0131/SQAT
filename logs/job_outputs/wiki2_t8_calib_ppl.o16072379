@@ -1,0 +1,478 @@
+Thu Sep  3 00:46:19 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:41:00.0 Off |                    0 |
+| N/A   42C    P0             54W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+Start time: Thu Sep  3 00:46:19 +08 2026
+
+============ fp16_llama2_7b_base :: wikitext-2-raw-v1 test ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      /scratch/users/nus/jingzege/cache/huggingface/hub/models--meta-llama--Llama-2-7b-hf/snapshots/01c7f73d771dfac7d292323805ebc428287df4f9
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   3%|▎         | 10/291 [00:00<00:06, 46.05it/s]Loading weights:   5%|▌         | 15/291 [00:00<00:05, 46.99it/s]Loading weights:  12%|█▏        | 35/291 [00:00<00:02, 95.91it/s]Loading weights:  16%|█▌        | 46/291 [00:00<00:02, 96.77it/s]Loading weights:  20%|█▉        | 57/291 [00:00<00:02, 88.91it/s]Loading weights:  23%|██▎       | 67/291 [00:00<00:03, 59.73it/s]Loading weights:  26%|██▌       | 75/291 [00:01<00:05, 40.44it/s]Loading weights:  30%|██▉       | 87/291 [00:01<00:04, 44.77it/s]Loading weights:  34%|███▍      | 99/291 [00:01<00:03, 51.87it/s]Loading weights:  38%|███▊      | 112/291 [00:01<00:02, 59.85it/s]Loading weights:  41%|████      | 119/291 [00:02<00:02, 58.95it/s]Loading weights:  44%|████▎     | 127/291 [00:02<00:02, 62.44it/s]Loading weights:  47%|████▋     | 138/291 [00:02<00:02, 69.78it/s]Loading weights:  50%|█████     | 146/291 [00:02<00:02, 54.66it/s]Loading weights:  54%|█████▍    | 157/291 [00:02<00:02, 59.26it/s]Loading weights:  58%|█████▊    | 169/291 [00:02<00:01, 70.70it/s]Loading weights:  62%|██████▏   | 180/291 [00:02<00:01, 79.32it/s]Loading weights:  65%|██████▍   | 189/291 [00:02<00:01, 78.21it/s]Loading weights:  69%|██████▊   | 200/291 [00:03<00:01, 75.38it/s]Loading weights:  71%|███████▏  | 208/291 [00:03<00:01, 58.64it/s]Loading weights:  75%|███████▌  | 219/291 [00:03<00:01, 65.43it/s]Loading weights:  80%|████████  | 234/291 [00:03<00:00, 78.89it/s]Loading weights:  84%|████████▍ | 245/291 [00:03<00:00, 73.59it/s]Loading weights:  89%|████████▉ | 259/291 [00:03<00:00, 85.34it/s]Loading weights:  93%|█████████▎| 271/291 [00:04<00:00, 66.72it/s]Loading weights: 100%|██████████| 291/291 [00:04<00:00, 69.12it/s]
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 5.7296
+[ppl]   40/333 windows  running ppl 6.4697
+[ppl]   60/333 windows  running ppl 6.5174
+[ppl]   80/333 windows  running ppl 6.4932
+[ppl]   100/333 windows  running ppl 6.1921
+[ppl]   120/333 windows  running ppl 6.2930
+[ppl]   140/333 windows  running ppl 6.0870
+[ppl]   160/333 windows  running ppl 6.0257
+[ppl]   180/333 windows  running ppl 6.0219
+[ppl]   200/333 windows  running ppl 6.0183
+[ppl]   220/333 windows  running ppl 6.2060
+[ppl]   240/333 windows  running ppl 6.1994
+[ppl]   260/333 windows  running ppl 6.1190
+[ppl]   280/333 windows  running ppl 6.1275
+[ppl]   300/333 windows  running ppl 6.0995
+[ppl]   320/333 windows  running ppl 6.0719
+[ppl] seq_len=1024  PPL 6.0976  (exact-denominator 6.0976)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 5.7244
+[ppl]   40/166 windows  running ppl 5.8230
+[ppl]   60/166 windows  running ppl 5.6374
+[ppl]   80/166 windows  running ppl 5.3935
+[ppl]   100/166 windows  running ppl 5.3764
+[ppl]   120/166 windows  running ppl 5.5569
+[ppl]   140/166 windows  running ppl 5.5013
+[ppl]   160/166 windows  running ppl 5.4464
+[ppl] seq_len=2048  PPL 5.4721  (exact-denominator 5.4721)
+[ppl] wrote results/wikitext2_ppl_nofinetune/fp16_llama2_7b_base.json
+
+============ fp16_llama2_7b_base :: C4 validation control ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      /scratch/users/nus/jingzege/cache/huggingface/hub/models--meta-llama--Llama-2-7b-hf/snapshots/01c7f73d771dfac7d292323805ebc428287df4f9
+[ppl] data       datasets/c4_val_ppl.json split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 1073002 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 8030.52it/s]
+[ppl] seq_len=2048: 523 non-overlapping windows (1071104 tokens scored)
+[ppl]   20/523 windows  running ppl 6.9690
+[ppl]   40/523 windows  running ppl 7.2956
+[ppl]   60/523 windows  running ppl 7.0439
+[ppl]   80/523 windows  running ppl 7.0258
+[ppl]   100/523 windows  running ppl 7.0127
+[ppl]   120/523 windows  running ppl 7.0929
+[ppl]   140/523 windows  running ppl 7.0968
+[ppl]   160/523 windows  running ppl 6.8691
+[ppl]   180/523 windows  running ppl 7.0116
+[ppl]   200/523 windows  running ppl 6.9467
+[ppl]   220/523 windows  running ppl 7.0714
+[ppl]   240/523 windows  running ppl 7.1870
+[ppl]   260/523 windows  running ppl 7.1913
+[ppl]   280/523 windows  running ppl 7.0828
+[ppl]   300/523 windows  running ppl 7.1321
+[ppl]   320/523 windows  running ppl 7.1626
+[ppl]   340/523 windows  running ppl 7.1529
+[ppl]   360/523 windows  running ppl 7.1910
+[ppl]   380/523 windows  running ppl 7.2214
+[ppl]   400/523 windows  running ppl 7.2369
+[ppl]   420/523 windows  running ppl 7.2244
+[ppl]   440/523 windows  running ppl 7.1732
+[ppl]   460/523 windows  running ppl 7.2186
+[ppl]   480/523 windows  running ppl 7.2575
+[ppl]   500/523 windows  running ppl 7.2583
+[ppl]   520/523 windows  running ppl 7.2653
+[ppl] seq_len=2048  PPL 7.2861  (exact-denominator 7.2861)
+[ppl] wrote results/c4_val_ppl_nofinetune/fp16_llama2_7b_base.json
+
+============ cs_int2_merged_fp16_parent :: wikitext-2-raw-v1 test ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   4%|▍         | 13/291 [00:00<00:03, 79.93it/s]Loading weights:   9%|▊         | 25/291 [00:00<00:03, 81.58it/s]Loading weights:  14%|█▍        | 42/291 [00:00<00:02, 99.40it/s]Loading weights:  18%|█▊        | 53/291 [00:00<00:02, 97.51it/s]Loading weights:  22%|██▏       | 63/291 [00:00<00:02, 95.21it/s]Loading weights:  25%|██▌       | 73/291 [00:00<00:02, 89.74it/s]Loading weights:  31%|███       | 89/291 [00:01<00:02, 69.26it/s]Loading weights:  35%|███▌      | 103/291 [00:01<00:02, 74.52it/s]Loading weights:  38%|███▊      | 112/291 [00:01<00:02, 73.10it/s]Loading weights:  43%|████▎     | 126/291 [00:01<00:02, 80.59it/s]Loading weights:  46%|████▋     | 135/291 [00:01<00:02, 69.56it/s]Loading weights:  51%|█████     | 149/291 [00:01<00:02, 69.32it/s]Loading weights:  56%|█████▌    | 163/291 [00:02<00:01, 79.98it/s]Loading weights:  59%|█████▉    | 172/291 [00:02<00:01, 73.26it/s]Loading weights:  63%|██████▎   | 184/291 [00:02<00:01, 78.55it/s]Loading weights:  66%|██████▋   | 193/291 [00:02<00:01, 77.47it/s]Loading weights:  69%|██████▉   | 202/291 [00:02<00:01, 79.49it/s]Loading weights:  73%|███████▎  | 211/291 [00:02<00:01, 68.26it/s]Loading weights:  75%|███████▌  | 219/291 [00:02<00:01, 68.70it/s]Loading weights:  80%|████████  | 234/291 [00:03<00:00, 78.49it/s]Loading weights:  85%|████████▍ | 246/291 [00:03<00:00, 71.07it/s]Loading weights:  90%|█████████ | 263/291 [00:03<00:00, 91.84it/s]Loading weights:  94%|█████████▍| 274/291 [00:03<00:00, 75.56it/s]Loading weights: 100%|██████████| 291/291 [00:03<00:00, 82.45it/s]
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 6.2133
+[ppl]   40/333 windows  running ppl 6.9612
+[ppl]   60/333 windows  running ppl 6.9929
+[ppl]   80/333 windows  running ppl 6.9655
+[ppl]   100/333 windows  running ppl 6.6408
+[ppl]   120/333 windows  running ppl 6.7482
+[ppl]   140/333 windows  running ppl 6.5389
+[ppl]   160/333 windows  running ppl 6.4752
+[ppl]   180/333 windows  running ppl 6.4715
+[ppl]   200/333 windows  running ppl 6.4674
+[ppl]   220/333 windows  running ppl 6.6768
+[ppl]   240/333 windows  running ppl 6.6698
+[ppl]   260/333 windows  running ppl 6.5841
+[ppl]   280/333 windows  running ppl 6.5937
+[ppl]   300/333 windows  running ppl 6.5650
+[ppl]   320/333 windows  running ppl 6.5335
+[ppl] seq_len=1024  PPL 6.5638  (exact-denominator 6.5638)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 6.0737
+[ppl]   40/166 windows  running ppl 6.1736
+[ppl]   60/166 windows  running ppl 5.9765
+[ppl]   80/166 windows  running ppl 5.7305
+[ppl]   100/166 windows  running ppl 5.7101
+[ppl]   120/166 windows  running ppl 5.9107
+[ppl]   140/166 windows  running ppl 5.8534
+[ppl]   160/166 windows  running ppl 5.7933
+[ppl] seq_len=2048  PPL 5.8227  (exact-denominator 5.8227)
+[ppl] wrote results/wikitext2_ppl_nofinetune/cs_int2_merged_fp16_parent.json
+
+============ cs_int2_merged_fp16_parent :: C4 validation control ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-merged-eval
+[ppl] data       datasets/c4_val_ppl.json split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 1073002 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights: 100%|██████████| 291/291 [00:00<00:00, 8097.27it/s]
+[ppl] seq_len=2048: 523 non-overlapping windows (1071104 tokens scored)
+[ppl]   20/523 windows  running ppl 7.2960
+[ppl]   40/523 windows  running ppl 7.6180
+[ppl]   60/523 windows  running ppl 7.3424
+[ppl]   80/523 windows  running ppl 7.3254
+[ppl]   100/523 windows  running ppl 7.3568
+[ppl]   120/523 windows  running ppl 7.4500
+[ppl]   140/523 windows  running ppl 7.4539
+[ppl]   160/523 windows  running ppl 7.2156
+[ppl]   180/523 windows  running ppl 7.3517
+[ppl]   200/523 windows  running ppl 7.2784
+[ppl]   220/523 windows  running ppl 7.4054
+[ppl]   240/523 windows  running ppl 7.5258
+[ppl]   260/523 windows  running ppl 7.5255
+[ppl]   280/523 windows  running ppl 7.4086
+[ppl]   300/523 windows  running ppl 7.4602
+[ppl]   320/523 windows  running ppl 7.4893
+[ppl]   340/523 windows  running ppl 7.4805
+[ppl]   360/523 windows  running ppl 7.5189
+[ppl]   380/523 windows  running ppl 7.5511
+[ppl]   400/523 windows  running ppl 7.5654
+[ppl]   420/523 windows  running ppl 7.5540
+[ppl]   440/523 windows  running ppl 7.5015
+[ppl]   460/523 windows  running ppl 7.5480
+[ppl]   480/523 windows  running ppl 7.5874
+[ppl]   500/523 windows  running ppl 7.5876
+[ppl]   520/523 windows  running ppl 7.5948
+[ppl] seq_len=2048  PPL 7.6159  (exact-denominator 7.6159)
+[ppl] wrote results/c4_val_ppl_nofinetune/cs_int2_merged_fp16_parent.json
+
+============ cs_int2_g32_calD_task_balanced3500 :: wikitext-2-raw-v1 test ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calD
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:02<14:27,  2.99s/it]Loading weights:   1%|          | 2/291 [00:03<06:59,  1.45s/it]Loading weights:   4%|▍         | 13/291 [00:04<00:57,  4.84it/s]Loading weights:   5%|▍         | 14/291 [00:04<01:03,  4.34it/s]Loading weights:   7%|▋         | 20/291 [00:04<00:37,  7.30it/s]Loading weights:   8%|▊         | 22/291 [00:06<01:13,  3.64it/s]Loading weights:   8%|▊         | 24/291 [00:06<01:02,  4.28it/s]Loading weights:  11%|█         | 31/291 [00:08<00:55,  4.66it/s]Loading weights:  11%|█▏        | 33/291 [00:08<00:51,  5.05it/s]Loading weights:  13%|█▎        | 38/291 [00:08<00:33,  7.46it/s]Loading weights:  14%|█▎        | 40/291 [00:10<01:04,  3.89it/s]Loading weights:  14%|█▍        | 42/291 [00:10<01:02,  3.98it/s]Loading weights:  17%|█▋        | 49/291 [00:11<00:53,  4.53it/s]Loading weights:  18%|█▊        | 51/291 [00:12<00:53,  4.45it/s]Loading weights:  20%|█▉        | 58/291 [00:13<00:45,  5.17it/s]Loading weights:  21%|██        | 60/291 [00:13<00:43,  5.26it/s]Loading weights:  23%|██▎       | 67/291 [00:15<00:41,  5.43it/s]Loading weights:  24%|██▎       | 69/291 [00:15<00:39,  5.64it/s]Loading weights:  26%|██▌       | 76/291 [00:16<00:36,  5.83it/s]Loading weights:  27%|██▋       | 78/291 [00:17<00:39,  5.45it/s]Loading weights:  29%|██▉       | 85/291 [00:18<00:34,  5.91it/s]Loading weights:  30%|██▉       | 87/291 [00:18<00:36,  5.54it/s]Loading weights:  32%|███▏      | 94/291 [00:19<00:34,  5.74it/s]Loading weights:  34%|███▎      | 98/291 [00:20<00:30,  6.36it/s]Loading weights:  34%|███▍      | 99/291 [00:20<00:29,  6.49it/s]Loading weights:  35%|███▌      | 103/291 [00:22<00:46,  4.03it/s]Loading weights:  36%|███▌      | 104/291 [00:22<00:45,  4.08it/s]Loading weights:  38%|███▊      | 112/291 [00:24<00:50,  3.55it/s]Loading weights:  42%|████▏     | 121/291 [00:25<00:33,  5.07it/s]Loading weights:  42%|████▏     | 123/291 [00:25<00:30,  5.53it/s]Loading weights:  44%|████▎     | 127/291 [00:25<00:23,  6.88it/s]Loading weights:  45%|████▍     | 130/291 [00:27<00:34,  4.65it/s]Loading weights:  48%|████▊     | 139/291 [00:28<00:29,  5.20it/s]Loading weights:  50%|█████     | 146/291 [00:29<00:19,  7.49it/s]Loading weights:  51%|█████     | 148/291 [00:30<00:29,  4.85it/s]Loading weights:  53%|█████▎    | 154/291 [00:30<00:20,  6.77it/s]Loading weights:  54%|█████▍    | 157/291 [00:32<00:33,  4.02it/s]Loading weights:  57%|█████▋    | 166/291 [00:34<00:25,  4.87it/s]Loading weights:  58%|█████▊    | 168/291 [00:34<00:24,  5.10it/s]Loading weights:  59%|█████▉    | 173/291 [00:34<00:16,  6.95it/s]Loading weights:  60%|██████    | 175/291 [00:36<00:30,  3.83it/s]Loading weights:  63%|██████▎   | 184/291 [00:38<00:24,  4.44it/s]Loading weights:  66%|██████▌   | 191/291 [00:38<00:16,  6.05it/s]Loading weights:  66%|██████▋   | 193/291 [00:39<00:21,  4.54it/s]Loading weights:  69%|██████▉   | 202/291 [00:41<00:19,  4.61it/s]Loading weights:  70%|███████   | 204/291 [00:42<00:20,  4.25it/s]Loading weights:  73%|███████▎  | 211/291 [00:43<00:18,  4.37it/s]Loading weights:  73%|███████▎  | 213/291 [00:44<00:16,  4.63it/s]Loading weights:  76%|███████▌  | 220/291 [00:45<00:15,  4.47it/s]Loading weights:  76%|███████▋  | 222/291 [00:46<00:15,  4.39it/s]Loading weights:  78%|███████▊  | 226/291 [00:46<00:11,  5.67it/s]Loading weights:  79%|███████▊  | 229/291 [00:47<00:14,  4.39it/s]Loading weights:  79%|███████▉  | 231/291 [00:47<00:13,  4.45it/s]Loading weights:  82%|████████▏ | 238/291 [00:49<00:10,  4.84it/s]Loading weights:  82%|████████▏ | 240/291 [00:49<00:09,  5.10it/s]Loading weights:  85%|████████▍ | 247/291 [00:51<00:09,  4.72it/s]Loading weights:  86%|████████▌ | 249/291 [00:51<00:08,  4.82it/s]Loading weights:  88%|████████▊ | 256/291 [00:52<00:06,  5.30it/s]Loading weights:  89%|████████▊ | 258/291 [00:53<00:06,  5.34it/s]Loading weights:  90%|█████████ | 262/291 [00:53<00:04,  7.00it/s]Loading weights:  91%|█████████ | 265/291 [00:54<00:05,  4.62it/s]Loading weights:  92%|█████████▏| 267/291 [00:54<00:04,  5.23it/s]Loading weights:  94%|█████████▍| 274/291 [00:56<00:03,  4.77it/s]Loading weights:  95%|█████████▍| 276/291 [00:56<00:03,  4.62it/s]Loading weights:  97%|█████████▋| 283/291 [00:58<00:01,  4.61it/s]Loading weights: 100%|█████████▉| 290/291 [00:58<00:00,  7.27it/s]Loading weights: 100%|██████████| 291/291 [00:58<00:00,  4.98it/s]
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 19.9180
+[ppl]   40/333 windows  running ppl 20.8556
+[ppl]   60/333 windows  running ppl 20.2277
+[ppl]   80/333 windows  running ppl 20.5959
+[ppl]   100/333 windows  running ppl 19.5137
+[ppl]   120/333 windows  running ppl 19.6501
+[ppl]   140/333 windows  running ppl 19.1053
+[ppl]   160/333 windows  running ppl 18.9755
+[ppl]   180/333 windows  running ppl 19.0230
+[ppl]   200/333 windows  running ppl 18.7629
+[ppl]   220/333 windows  running ppl 19.1998
+[ppl]   240/333 windows  running ppl 19.2602
+[ppl]   260/333 windows  running ppl 19.2429
+[ppl]   280/333 windows  running ppl 19.2676
+[ppl]   300/333 windows  running ppl 19.1968
+[ppl]   320/333 windows  running ppl 19.0198
+[ppl] seq_len=1024  PPL 19.1895  (exact-denominator 19.1895)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 17.2644
+[ppl]   40/166 windows  running ppl 17.3973
+[ppl]   60/166 windows  running ppl 16.6714
+[ppl]   80/166 windows  running ppl 16.0399
+[ppl]   100/166 windows  running ppl 15.8237
+[ppl]   120/166 windows  running ppl 16.3547
+[ppl]   140/166 windows  running ppl 16.3726
+[ppl]   160/166 windows  running ppl 16.1121
+[ppl] seq_len=2048  PPL 16.2480  (exact-denominator 16.2480)
+[ppl] wrote results/wikitext2_ppl_nofinetune/cs_int2_g32_calD_task_balanced3500.json
+
+============ cs_int2_g32_calD_task_balanced3500 :: C4 validation control ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calD
+[ppl] data       datasets/c4_val_ppl.json split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 1073002 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<00:32,  8.96it/s]Loading weights:   7%|▋         | 20/291 [00:00<00:02, 103.29it/s]Loading weights:  11%|█         | 31/291 [00:00<00:02, 96.07it/s] Loading weights:  17%|█▋        | 49/291 [00:00<00:02, 120.28it/s]Loading weights:  21%|██▏       | 62/291 [00:00<00:01, 122.98it/s]Loading weights:  26%|██▌       | 76/291 [00:00<00:01, 119.74it/s]Loading weights:  32%|███▏      | 92/291 [00:00<00:01, 129.42it/s]Loading weights:  36%|███▋      | 106/291 [00:00<00:01, 130.05it/s]Loading weights:  41%|████      | 120/291 [00:01<00:01, 127.70it/s]Loading weights:  46%|████▌     | 133/291 [00:01<00:01, 126.36it/s]Loading weights:  51%|█████     | 148/291 [00:01<00:01, 123.06it/s]Loading weights:  56%|█████▋    | 164/291 [00:01<00:00, 131.63it/s]Loading weights:  61%|██████    | 178/291 [00:01<00:00, 121.76it/s]Loading weights:  66%|██████▋   | 193/291 [00:01<00:00, 127.40it/s]Loading weights:  72%|███████▏  | 209/291 [00:01<00:00, 129.35it/s]Loading weights:  77%|███████▋  | 223/291 [00:01<00:00, 131.01it/s]Loading weights:  82%|████████▏ | 238/291 [00:01<00:00, 127.23it/s]Loading weights:  87%|████████▋ | 254/291 [00:02<00:00, 130.32it/s]Loading weights:  92%|█████████▏| 268/291 [00:02<00:00, 127.88it/s]Loading weights:  97%|█████████▋| 283/291 [00:02<00:00, 125.49it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 125.93it/s]
+[ppl] seq_len=2048: 523 non-overlapping windows (1071104 tokens scored)
+[ppl]   20/523 windows  running ppl 17.2817
+[ppl]   40/523 windows  running ppl 18.5213
+[ppl]   60/523 windows  running ppl 17.3444
+[ppl]   80/523 windows  running ppl 17.8137
+[ppl]   100/523 windows  running ppl 18.5405
+[ppl]   120/523 windows  running ppl 18.4828
+[ppl]   140/523 windows  running ppl 18.2996
+[ppl]   160/523 windows  running ppl 17.4706
+[ppl]   180/523 windows  running ppl 17.3560
+[ppl]   200/523 windows  running ppl 17.6308
+[ppl]   220/523 windows  running ppl 17.7939
+[ppl]   240/523 windows  running ppl 17.8225
+[ppl]   260/523 windows  running ppl 17.6854
+[ppl]   280/523 windows  running ppl 17.6148
+[ppl]   300/523 windows  running ppl 17.7074
+[ppl]   320/523 windows  running ppl 17.7562
+[ppl]   340/523 windows  running ppl 17.7123
+[ppl]   360/523 windows  running ppl 17.7269
+[ppl]   380/523 windows  running ppl 17.7366
+[ppl]   400/523 windows  running ppl 17.7549
+[ppl]   420/523 windows  running ppl 17.9429
+[ppl]   440/523 windows  running ppl 17.8750
+[ppl]   460/523 windows  running ppl 17.8727
+[ppl]   480/523 windows  running ppl 17.9066
+[ppl]   500/523 windows  running ppl 17.8663
+[ppl]   520/523 windows  running ppl 17.8896
+[ppl] seq_len=2048  PPL 17.9229  (exact-denominator 17.9229)
+[ppl] wrote results/c4_val_ppl_nofinetune/cs_int2_g32_calD_task_balanced3500.json
+
+============ cs_int2_g32_calE_c4_128x2048 :: wikitext-2-raw-v1 test ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calE
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:03<16:22,  3.39s/it]Loading weights:   3%|▎         | 10/291 [00:03<01:12,  3.87it/s]Loading weights:   5%|▍         | 14/291 [00:04<01:20,  3.45it/s]Loading weights:   7%|▋         | 20/291 [00:05<00:51,  5.29it/s]Loading weights:   8%|▊         | 22/291 [00:06<01:12,  3.69it/s]Loading weights:  10%|▉         | 29/291 [00:06<00:40,  6.41it/s]Loading weights:  11%|█         | 32/291 [00:08<01:02,  4.17it/s]Loading weights:  14%|█▎        | 40/291 [00:10<01:03,  3.96it/s]Loading weights:  17%|█▋        | 49/291 [00:11<00:50,  4.82it/s]Loading weights:  18%|█▊        | 51/291 [00:12<00:47,  5.05it/s]Loading weights:  19%|█▉        | 56/291 [00:12<00:37,  6.27it/s]Loading weights:  20%|█▉        | 58/291 [00:14<01:01,  3.76it/s]Loading weights:  21%|██        | 60/291 [00:14<00:56,  4.09it/s]Loading weights:  23%|██▎       | 67/291 [00:15<00:50,  4.42it/s]Loading weights:  25%|██▌       | 74/291 [00:16<00:33,  6.41it/s]Loading weights:  26%|██▌       | 76/291 [00:17<00:46,  4.63it/s]Loading weights:  27%|██▋       | 78/291 [00:17<00:44,  4.78it/s]Loading weights:  29%|██▊       | 83/291 [00:17<00:29,  7.08it/s]Loading weights:  29%|██▉       | 85/291 [00:19<01:01,  3.34it/s]Loading weights:  32%|███▏      | 94/291 [00:21<00:44,  4.41it/s]Loading weights:  34%|███▍      | 100/291 [00:21<00:30,  6.34it/s]Loading weights:  35%|███▌      | 103/291 [00:22<00:39,  4.77it/s]Loading weights:  36%|███▌      | 105/291 [00:23<00:37,  5.00it/s]Loading weights:  38%|███▊      | 112/291 [00:24<00:38,  4.62it/s]Loading weights:  39%|███▉      | 114/291 [00:24<00:33,  5.22it/s]Loading weights:  41%|████      | 118/291 [00:25<00:29,  5.92it/s]Loading weights:  41%|████      | 120/291 [00:25<00:30,  5.54it/s]Loading weights:  42%|████▏     | 121/291 [00:26<00:36,  4.62it/s]Loading weights:  42%|████▏     | 122/291 [00:26<00:40,  4.14it/s]Loading weights:  45%|████▍     | 130/291 [00:28<00:33,  4.77it/s]Loading weights:  47%|████▋     | 136/291 [00:28<00:22,  6.95it/s]Loading weights:  48%|████▊     | 139/291 [00:30<00:34,  4.38it/s]Loading weights:  51%|█████     | 148/291 [00:31<00:28,  5.00it/s]Loading weights:  52%|█████▏    | 150/291 [00:31<00:27,  5.16it/s]Loading weights:  54%|█████▍    | 157/291 [00:33<00:27,  4.82it/s]Loading weights:  57%|█████▋    | 166/291 [00:34<00:23,  5.40it/s]Loading weights:  60%|██████    | 175/291 [00:36<00:20,  5.77it/s]Loading weights:  61%|██████    | 177/291 [00:36<00:19,  5.78it/s]Loading weights:  63%|██████▎   | 184/291 [00:37<00:18,  5.79it/s]Loading weights:  66%|██████▋   | 193/291 [00:39<00:16,  5.93it/s]Loading weights:  67%|██████▋   | 194/291 [00:39<00:17,  5.54it/s]Loading weights:  69%|██████▉   | 202/291 [00:41<00:16,  5.56it/s]Loading weights:  72%|███████▏  | 209/291 [00:41<00:10,  7.84it/s]Loading weights:  73%|███████▎  | 211/291 [00:42<00:14,  5.35it/s]Loading weights:  73%|███████▎  | 213/291 [00:42<00:13,  5.72it/s]Loading weights:  76%|███████▌  | 220/291 [00:44<00:13,  5.30it/s]Loading weights:  76%|███████▋  | 222/291 [00:44<00:14,  4.78it/s]Loading weights:  79%|███████▊  | 229/291 [00:45<00:10,  5.82it/s]Loading weights:  79%|███████▉  | 231/291 [00:46<00:11,  5.22it/s]Loading weights:  82%|████████▏ | 238/291 [00:47<00:10,  5.22it/s]Loading weights:  82%|████████▏ | 240/291 [00:48<00:09,  5.16it/s]Loading weights:  85%|████████▍ | 247/291 [00:49<00:07,  5.69it/s]Loading weights:  86%|████████▌ | 249/291 [00:49<00:07,  5.35it/s]Loading weights:  88%|████████▊ | 256/291 [00:50<00:06,  5.73it/s]Loading weights:  89%|████████▊ | 258/291 [00:51<00:06,  5.12it/s]Loading weights:  91%|█████████ | 265/291 [00:52<00:04,  5.39it/s]Loading weights:  92%|█████████▏| 267/291 [00:52<00:04,  5.48it/s]Loading weights:  94%|█████████▍| 274/291 [00:54<00:03,  5.36it/s]Loading weights:  95%|█████████▍| 276/291 [00:54<00:02,  5.56it/s]Loading weights:  96%|█████████▌| 280/291 [00:54<00:01,  7.40it/s]Loading weights:  97%|█████████▋| 283/291 [00:55<00:01,  4.78it/s]Loading weights:  99%|█████████▉| 289/291 [00:56<00:00,  7.60it/s]Loading weights: 100%|██████████| 291/291 [00:56<00:00,  5.18it/s]
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 15.6075
+[ppl]   40/333 windows  running ppl 16.1789
+[ppl]   60/333 windows  running ppl 16.0050
+[ppl]   80/333 windows  running ppl 16.2869
+[ppl]   100/333 windows  running ppl 15.3547
+[ppl]   120/333 windows  running ppl 15.5540
+[ppl]   140/333 windows  running ppl 15.3135
+[ppl]   160/333 windows  running ppl 15.1612
+[ppl]   180/333 windows  running ppl 15.1328
+[ppl]   200/333 windows  running ppl 14.9636
+[ppl]   220/333 windows  running ppl 15.3589
+[ppl]   240/333 windows  running ppl 15.3628
+[ppl]   260/333 windows  running ppl 15.3491
+[ppl]   280/333 windows  running ppl 15.3290
+[ppl]   300/333 windows  running ppl 15.2424
+[ppl]   320/333 windows  running ppl 15.1039
+[ppl] seq_len=1024  PPL 15.2285  (exact-denominator 15.2285)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 13.2287
+[ppl]   40/166 windows  running ppl 13.7257
+[ppl]   60/166 windows  running ppl 13.1127
+[ppl]   80/166 windows  running ppl 12.7656
+[ppl]   100/166 windows  running ppl 12.5607
+[ppl]   120/166 windows  running ppl 12.9756
+[ppl]   140/166 windows  running ppl 12.9720
+[ppl]   160/166 windows  running ppl 12.7577
+[ppl] seq_len=2048  PPL 12.8677  (exact-denominator 12.8677)
+[ppl] wrote results/wikitext2_ppl_nofinetune/cs_int2_g32_calE_c4_128x2048.json
+
+============ cs_int2_g32_calE_c4_128x2048 :: C4 validation control ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int2_ep1_span-2bit-none-gptq-eval-calE
+[ppl] data       datasets/c4_val_ppl.json split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 1073002 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<00:52,  5.54it/s]Loading weights:   9%|▉         | 27/291 [00:00<00:02, 116.40it/s]Loading weights:  15%|█▍        | 43/291 [00:00<00:02, 120.82it/s]Loading weights:  20%|█▉        | 57/291 [00:00<00:01, 121.38it/s]Loading weights:  24%|██▍       | 71/291 [00:00<00:01, 126.35it/s]Loading weights:  29%|██▉       | 85/291 [00:00<00:01, 118.36it/s]Loading weights:  34%|███▍      | 100/291 [00:00<00:01, 123.85it/s]Loading weights:  39%|███▉      | 114/291 [00:00<00:01, 126.69it/s]Loading weights:  44%|████▍     | 129/291 [00:01<00:01, 132.58it/s]Loading weights:  49%|████▉     | 143/291 [00:01<00:01, 129.68it/s]Loading weights:  54%|█████▍    | 157/291 [00:01<00:01, 124.14it/s]Loading weights:  60%|██████    | 175/291 [00:01<00:00, 127.10it/s]Loading weights:  66%|██████▌   | 191/291 [00:01<00:00, 132.75it/s]Loading weights:  70%|███████   | 205/291 [00:01<00:00, 132.74it/s]Loading weights:  76%|███████▌  | 220/291 [00:01<00:00, 128.79it/s]Loading weights:  81%|████████  | 236/291 [00:01<00:00, 135.13it/s]Loading weights:  86%|████████▌ | 250/291 [00:02<00:00, 127.28it/s]Loading weights:  91%|█████████ | 265/291 [00:02<00:00, 128.85it/s]Loading weights:  96%|█████████▌| 280/291 [00:02<00:00, 133.42it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 126.51it/s]
+[ppl] seq_len=2048: 523 non-overlapping windows (1071104 tokens scored)
+[ppl]   20/523 windows  running ppl 14.4049
+[ppl]   40/523 windows  running ppl 15.3972
+[ppl]   60/523 windows  running ppl 14.3575
+[ppl]   80/523 windows  running ppl 14.6644
+[ppl]   100/523 windows  running ppl 15.2259
+[ppl]   120/523 windows  running ppl 15.2779
+[ppl]   140/523 windows  running ppl 15.0942
+[ppl]   160/523 windows  running ppl 14.4962
+[ppl]   180/523 windows  running ppl 14.5178
+[ppl]   200/523 windows  running ppl 14.5549
+[ppl]   220/523 windows  running ppl 14.6884
+[ppl]   240/523 windows  running ppl 14.7641
+[ppl]   260/523 windows  running ppl 14.6554
+[ppl]   280/523 windows  running ppl 14.4940
+[ppl]   300/523 windows  running ppl 14.5546
+[ppl]   320/523 windows  running ppl 14.5950
+[ppl]   340/523 windows  running ppl 14.5604
+[ppl]   360/523 windows  running ppl 14.5795
+[ppl]   380/523 windows  running ppl 14.6097
+[ppl]   400/523 windows  running ppl 14.6413
+[ppl]   420/523 windows  running ppl 14.7893
+[ppl]   440/523 windows  running ppl 14.7171
+[ppl]   460/523 windows  running ppl 14.7334
+[ppl]   480/523 windows  running ppl 14.7671
+[ppl]   500/523 windows  running ppl 14.7413
+[ppl]   520/523 windows  running ppl 14.7608
+[ppl] seq_len=2048  PPL 14.7884  (exact-denominator 14.7884)
+[ppl] wrote results/c4_val_ppl_nofinetune/cs_int2_g32_calE_c4_128x2048.json
+
+============ cs_int3_g64_calD_task_balanced3500 :: wikitext-2-raw-v1 test ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval-calD
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:03<14:30,  3.00s/it]Loading weights:   3%|▎         | 9/291 [00:03<01:12,  3.87it/s]Loading weights:   4%|▍         | 13/291 [00:04<01:30,  3.06it/s]Loading weights:   7%|▋         | 20/291 [00:05<00:50,  5.42it/s]Loading weights:   8%|▊         | 23/291 [00:06<01:04,  4.13it/s]Loading weights:   9%|▊         | 25/291 [00:06<00:57,  4.60it/s]Loading weights:  10%|▉         | 29/291 [00:06<00:40,  6.39it/s]Loading weights:  11%|█         | 31/291 [00:08<01:06,  3.89it/s]Loading weights:  11%|█▏        | 33/291 [00:08<00:55,  4.67it/s]Loading weights:  13%|█▎        | 37/291 [00:08<00:36,  7.05it/s]Loading weights:  14%|█▎        | 40/291 [00:10<01:10,  3.57it/s]Loading weights:  16%|█▌        | 46/291 [00:10<00:39,  6.22it/s]Loading weights:  17%|█▋        | 49/291 [00:11<00:54,  4.40it/s]Loading weights:  18%|█▊        | 52/291 [00:11<00:43,  5.55it/s]Loading weights:  19%|█▉        | 55/291 [00:11<00:35,  6.65it/s]Loading weights:  20%|█▉        | 58/291 [00:13<00:51,  4.52it/s]Loading weights:  21%|██        | 60/291 [00:13<00:56,  4.07it/s]Loading weights:  23%|██▎       | 67/291 [00:15<00:51,  4.36it/s]Loading weights:  25%|██▌       | 73/291 [00:15<00:32,  6.62it/s]Loading weights:  26%|██▌       | 76/291 [00:18<01:04,  3.32it/s]Loading weights:  29%|██▉       | 85/291 [00:19<00:44,  4.63it/s]Loading weights:  30%|██▉       | 87/291 [00:19<00:41,  4.93it/s]Loading weights:  31%|███▏      | 91/291 [00:19<00:31,  6.42it/s]Loading weights:  32%|███▏      | 94/291 [00:20<00:44,  4.40it/s]Loading weights:  34%|███▍      | 99/291 [00:21<00:30,  6.29it/s]Loading weights:  35%|███▌      | 103/291 [00:22<00:41,  4.51it/s]Loading weights:  38%|███▊      | 110/291 [00:22<00:26,  6.89it/s]Loading weights:  38%|███▊      | 112/291 [00:23<00:35,  5.01it/s]Loading weights:  40%|████      | 117/291 [00:24<00:24,  7.15it/s]Loading weights:  41%|████      | 120/291 [00:24<00:20,  8.20it/s]Loading weights:  42%|████▏     | 122/291 [00:25<00:41,  4.10it/s]Loading weights:  45%|████▍     | 130/291 [00:27<00:32,  4.91it/s]Loading weights:  45%|████▌     | 132/291 [00:27<00:29,  5.47it/s]Loading weights:  48%|████▊     | 139/291 [00:28<00:28,  5.26it/s]Loading weights:  50%|████▉     | 145/291 [00:28<00:19,  7.67it/s]Loading weights:  51%|█████     | 148/291 [00:29<00:25,  5.56it/s]Loading weights:  53%|█████▎    | 154/291 [00:30<00:18,  7.38it/s]Loading weights:  54%|█████▍    | 157/291 [00:31<00:24,  5.38it/s]Loading weights:  55%|█████▍    | 159/291 [00:31<00:25,  5.24it/s]Loading weights:  57%|█████▋    | 166/291 [00:33<00:23,  5.31it/s]Loading weights:  58%|█████▊    | 168/291 [00:33<00:20,  5.99it/s]Loading weights:  60%|██████    | 175/291 [00:34<00:20,  5.71it/s]Loading weights:  62%|██████▏   | 181/291 [00:34<00:13,  8.21it/s]Loading weights:  63%|██████▎   | 184/291 [00:36<00:22,  4.70it/s]Loading weights:  66%|██████▋   | 193/291 [00:37<00:17,  5.57it/s]Loading weights:  67%|██████▋   | 195/291 [00:38<00:17,  5.51it/s]Loading weights:  69%|██████▉   | 202/291 [00:39<00:15,  5.61it/s]Loading weights:  71%|███████▏  | 208/291 [00:39<00:11,  7.49it/s]Loading weights:  73%|███████▎  | 211/291 [00:40<00:14,  5.36it/s]Loading weights:  73%|███████▎  | 213/291 [00:41<00:14,  5.30it/s]Loading weights:  75%|███████▍  | 218/291 [00:41<00:09,  7.72it/s]Loading weights:  76%|███████▌  | 221/291 [00:43<00:18,  3.79it/s]Loading weights:  79%|███████▊  | 229/291 [00:44<00:12,  4.77it/s]Loading weights:  79%|███████▉  | 231/291 [00:44<00:11,  5.14it/s]Loading weights:  82%|████████▏ | 238/291 [00:46<00:12,  4.26it/s]Loading weights:  85%|████████▍ | 247/291 [00:47<00:08,  5.46it/s]Loading weights:  86%|████████▌ | 249/291 [00:48<00:07,  5.92it/s]Loading weights:  87%|████████▋ | 253/291 [00:48<00:05,  7.52it/s]Loading weights:  88%|████████▊ | 256/291 [00:49<00:07,  4.89it/s]Loading weights:  90%|█████████ | 262/291 [00:49<00:03,  7.28it/s]Loading weights:  91%|█████████ | 264/291 [00:49<00:03,  8.04it/s]Loading weights:  91%|█████████▏| 266/291 [00:51<00:05,  4.42it/s]Loading weights:  94%|█████████▍| 274/291 [00:52<00:03,  5.14it/s]Loading weights:  96%|█████████▌| 280/291 [00:52<00:01,  7.19it/s]Loading weights:  97%|█████████▋| 283/291 [00:54<00:01,  4.89it/s]Loading weights:  98%|█████████▊| 285/291 [00:54<00:01,  4.77it/s]Loading weights: 100%|██████████| 291/291 [00:54<00:00,  5.33it/s]
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 7.5694
+[ppl]   40/333 windows  running ppl 8.3380
+[ppl]   60/333 windows  running ppl 8.3593
+[ppl]   80/333 windows  running ppl 8.3209
+[ppl]   100/333 windows  running ppl 7.9216
+[ppl]   120/333 windows  running ppl 8.0474
+[ppl]   140/333 windows  running ppl 7.8258
+[ppl]   160/333 windows  running ppl 7.7525
+[ppl]   180/333 windows  running ppl 7.7467
+[ppl]   200/333 windows  running ppl 7.7243
+[ppl]   220/333 windows  running ppl 7.9661
+[ppl]   240/333 windows  running ppl 7.9624
+[ppl]   260/333 windows  running ppl 7.8746
+[ppl]   280/333 windows  running ppl 7.8855
+[ppl]   300/333 windows  running ppl 7.8514
+[ppl]   320/333 windows  running ppl 7.8058
+[ppl] seq_len=1024  PPL 7.8483  (exact-denominator 7.8483)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 7.1787
+[ppl]   40/166 windows  running ppl 7.2968
+[ppl]   60/166 windows  running ppl 7.0635
+[ppl]   80/166 windows  running ppl 6.7938
+[ppl]   100/166 windows  running ppl 6.7548
+[ppl]   120/166 windows  running ppl 6.9941
+[ppl]   140/166 windows  running ppl 6.9420
+[ppl]   160/166 windows  running ppl 6.8615
+[ppl] seq_len=2048  PPL 6.9013  (exact-denominator 6.9013)
+[ppl] wrote results/wikitext2_ppl_nofinetune/cs_int3_g64_calD_task_balanced3500.json
+
+============ cs_int3_g64_calD_task_balanced3500 :: C4 validation control ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval-calD
+[ppl] data       datasets/c4_val_ppl.json split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 1073002 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:00<00:29,  9.84it/s]Loading weights:   7%|▋         | 19/291 [00:00<00:02, 107.20it/s]Loading weights:  11%|█         | 31/291 [00:00<00:02, 112.07it/s]Loading weights:  16%|█▌        | 46/291 [00:00<00:01, 124.72it/s]Loading weights:  20%|██        | 59/291 [00:00<00:01, 121.68it/s]Loading weights:  26%|██▌       | 76/291 [00:00<00:01, 119.74it/s]Loading weights:  32%|███▏      | 92/291 [00:00<00:01, 129.11it/s]Loading weights:  36%|███▋      | 106/291 [00:00<00:01, 129.43it/s]Loading weights:  41%|████      | 120/291 [00:00<00:01, 127.36it/s]Loading weights:  46%|████▌     | 133/291 [00:01<00:01, 127.85it/s]Loading weights:  51%|█████     | 148/291 [00:01<00:01, 127.13it/s]Loading weights:  56%|█████▌    | 163/291 [00:01<00:00, 133.53it/s]Loading weights:  61%|██████    | 177/291 [00:01<00:00, 123.36it/s]Loading weights:  66%|██████▋   | 193/291 [00:01<00:00, 127.43it/s]Loading weights:  72%|███████▏  | 209/291 [00:01<00:00, 132.96it/s]Loading weights:  77%|███████▋  | 223/291 [00:01<00:00, 132.17it/s]Loading weights:  82%|████████▏ | 238/291 [00:01<00:00, 123.67it/s]Loading weights:  87%|████████▋ | 254/291 [00:02<00:00, 127.33it/s]Loading weights:  92%|█████████▏| 267/291 [00:02<00:00, 125.88it/s]Loading weights:  97%|█████████▋| 283/291 [00:02<00:00, 126.98it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 127.19it/s]
+[ppl] seq_len=2048: 523 non-overlapping windows (1071104 tokens scored)
+[ppl]   20/523 windows  running ppl 8.4492
+[ppl]   40/523 windows  running ppl 8.9586
+[ppl]   60/523 windows  running ppl 8.5614
+[ppl]   80/523 windows  running ppl 8.5622
+[ppl]   100/523 windows  running ppl 8.8578
+[ppl]   120/523 windows  running ppl 8.9505
+[ppl]   140/523 windows  running ppl 8.8899
+[ppl]   160/523 windows  running ppl 8.5939
+[ppl]   180/523 windows  running ppl 8.6832
+[ppl]   200/523 windows  running ppl 8.6184
+[ppl]   220/523 windows  running ppl 8.7345
+[ppl]   240/523 windows  running ppl 8.8358
+[ppl]   260/523 windows  running ppl 8.8098
+[ppl]   280/523 windows  running ppl 8.6654
+[ppl]   300/523 windows  running ppl 8.7089
+[ppl]   320/523 windows  running ppl 8.7421
+[ppl]   340/523 windows  running ppl 8.7336
+[ppl]   360/523 windows  running ppl 8.7659
+[ppl]   380/523 windows  running ppl 8.7960
+[ppl]   400/523 windows  running ppl 8.8095
+[ppl]   420/523 windows  running ppl 8.8077
+[ppl]   440/523 windows  running ppl 8.7561
+[ppl]   460/523 windows  running ppl 8.7925
+[ppl]   480/523 windows  running ppl 8.8245
+[ppl]   500/523 windows  running ppl 8.8187
+[ppl]   520/523 windows  running ppl 8.8250
+[ppl] seq_len=2048  PPL 8.8468  (exact-denominator 8.8468)
+[ppl] wrote results/c4_val_ppl_nofinetune/cs_int3_g64_calD_task_balanced3500.json
+
+============ cs_int3_g64_calE_c4_128x2048 :: wikitext-2-raw-v1 test ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval-calE
+[ppl] data       datasets/wikitext2 split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [1024, 2048]
+[ppl] 341469 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   0%|          | 1/291 [00:04<22:45,  4.71s/it]Loading weights:   4%|▍         | 13/291 [00:06<01:43,  2.68it/s]Loading weights:   6%|▌         | 18/291 [00:06<01:13,  3.74it/s]Loading weights:   8%|▊         | 22/291 [00:08<01:19,  3.37it/s]Loading weights:   8%|▊         | 24/291 [00:08<01:16,  3.50it/s]Loading weights:  11%|█         | 31/291 [00:10<01:08,  3.80it/s]Loading weights:  13%|█▎        | 38/291 [00:10<00:42,  5.94it/s]Loading weights:  14%|█▎        | 40/291 [00:12<01:18,  3.21it/s]Loading weights:  17%|█▋        | 49/291 [00:14<00:59,  4.08it/s]Loading weights:  18%|█▊        | 51/291 [00:14<00:53,  4.48it/s]Loading weights:  19%|█▉        | 56/291 [00:14<00:37,  6.22it/s]Loading weights:  20%|█▉        | 58/291 [00:16<01:10,  3.30it/s]Loading weights:  21%|██        | 60/291 [00:17<01:09,  3.32it/s]Loading weights:  23%|██▎       | 67/291 [00:18<00:52,  4.28it/s]Loading weights:  24%|██▎       | 69/291 [00:18<00:46,  4.80it/s]Loading weights:  25%|██▌       | 73/291 [00:18<00:33,  6.44it/s]Loading weights:  26%|██▌       | 76/291 [00:20<00:56,  3.78it/s]Loading weights:  27%|██▋       | 78/291 [00:21<01:08,  3.11it/s]Loading weights:  29%|██▉       | 85/291 [00:22<00:48,  4.28it/s]Loading weights:  30%|██▉       | 87/291 [00:24<01:05,  3.11it/s]Loading weights:  32%|███▏      | 94/291 [00:24<00:43,  4.58it/s]Loading weights:  33%|███▎      | 95/291 [00:25<00:59,  3.30it/s]Loading weights:  35%|███▌      | 103/291 [00:27<00:45,  4.16it/s]Loading weights:  36%|███▌      | 104/291 [00:27<00:43,  4.33it/s]Loading weights:  37%|███▋      | 108/291 [00:27<00:34,  5.25it/s]Loading weights:  38%|███▊      | 112/291 [00:28<00:37,  4.74it/s]Loading weights:  39%|███▉      | 113/291 [00:29<00:51,  3.45it/s]Loading weights:  42%|████▏     | 121/291 [00:30<00:31,  5.38it/s]Loading weights:  42%|████▏     | 122/291 [00:30<00:31,  5.28it/s]Loading weights:  43%|████▎     | 126/291 [00:31<00:29,  5.67it/s]Loading weights:  45%|████▍     | 130/291 [00:32<00:35,  4.53it/s]Loading weights:  45%|████▌     | 131/291 [00:32<00:34,  4.64it/s]Loading weights:  47%|████▋     | 136/291 [00:33<00:27,  5.72it/s]Loading weights:  48%|████▊     | 139/291 [00:34<00:31,  4.84it/s]Loading weights:  48%|████▊     | 141/291 [00:35<00:37,  4.00it/s]Loading weights:  51%|█████     | 148/291 [00:36<00:29,  4.82it/s]Loading weights:  53%|█████▎    | 153/291 [00:36<00:21,  6.31it/s]Loading weights:  54%|█████▍    | 157/291 [00:38<00:28,  4.68it/s]Loading weights:  56%|█████▋    | 164/291 [00:38<00:17,  7.24it/s]Loading weights:  57%|█████▋    | 166/291 [00:40<00:29,  4.17it/s]Loading weights:  59%|█████▉    | 171/291 [00:40<00:20,  5.98it/s]Loading weights:  60%|██████    | 175/291 [00:42<00:30,  3.81it/s]Loading weights:  63%|██████▎   | 182/291 [00:42<00:19,  5.67it/s]Loading weights:  63%|██████▎   | 184/291 [00:44<00:29,  3.59it/s]Loading weights:  64%|██████▍   | 186/291 [00:44<00:25,  4.12it/s]Loading weights:  66%|██████▌   | 191/291 [00:44<00:16,  5.99it/s]Loading weights:  66%|██████▋   | 193/291 [00:45<00:22,  4.26it/s]Loading weights:  67%|██████▋   | 195/291 [00:46<00:20,  4.72it/s]Loading weights:  68%|██████▊   | 198/291 [00:46<00:15,  5.90it/s]Loading weights:  69%|██████▉   | 202/291 [00:47<00:21,  4.07it/s]Loading weights:  70%|███████   | 204/291 [00:48<00:20,  4.15it/s]Loading weights:  73%|███████▎  | 211/291 [00:49<00:17,  4.49it/s]Loading weights:  73%|███████▎  | 212/291 [00:50<00:21,  3.66it/s]Loading weights:  73%|███████▎  | 213/291 [00:50<00:22,  3.41it/s]Loading weights:  76%|███████▌  | 220/291 [00:51<00:14,  4.95it/s]Loading weights:  76%|███████▌  | 221/291 [00:51<00:13,  5.09it/s]Loading weights:  76%|███████▋  | 222/291 [00:52<00:15,  4.44it/s]Loading weights:  79%|███████▊  | 229/291 [00:54<00:17,  3.57it/s]Loading weights:  82%|████████▏ | 238/291 [00:55<00:10,  4.88it/s]Loading weights:  82%|████████▏ | 240/291 [00:56<00:10,  4.68it/s]Loading weights:  85%|████████▍ | 247/291 [00:57<00:09,  4.85it/s]Loading weights:  87%|████████▋ | 254/291 [00:57<00:05,  7.24it/s]Loading weights:  88%|████████▊ | 256/291 [00:59<00:07,  4.54it/s]Loading weights:  91%|█████████ | 265/291 [01:00<00:05,  5.14it/s]Loading weights:  94%|█████████▍| 274/291 [01:03<00:03,  4.36it/s]Loading weights:  97%|█████████▋| 283/291 [01:04<00:01,  5.20it/s]Loading weights:  98%|█████████▊| 285/291 [01:04<00:01,  5.48it/s]Loading weights: 100%|██████████| 291/291 [01:04<00:00,  4.49it/s]
+[ppl] seq_len=1024: 333 non-overlapping windows (340992 tokens scored)
+[ppl]   20/333 windows  running ppl 7.3169
+[ppl]   40/333 windows  running ppl 8.1222
+[ppl]   60/333 windows  running ppl 8.1237
+[ppl]   80/333 windows  running ppl 8.1144
+[ppl]   100/333 windows  running ppl 7.7008
+[ppl]   120/333 windows  running ppl 7.8139
+[ppl]   140/333 windows  running ppl 7.5864
+[ppl]   160/333 windows  running ppl 7.5055
+[ppl]   180/333 windows  running ppl 7.4981
+[ppl]   200/333 windows  running ppl 7.4798
+[ppl]   220/333 windows  running ppl 7.7155
+[ppl]   240/333 windows  running ppl 7.7159
+[ppl]   260/333 windows  running ppl 7.6350
+[ppl]   280/333 windows  running ppl 7.6445
+[ppl]   300/333 windows  running ppl 7.6077
+[ppl]   320/333 windows  running ppl 7.5665
+[ppl] seq_len=1024  PPL 7.6082  (exact-denominator 7.6082)
+[ppl] seq_len=2048: 166 non-overlapping windows (339968 tokens scored)
+[ppl]   20/166 windows  running ppl 6.9950
+[ppl]   40/166 windows  running ppl 7.1128
+[ppl]   60/166 windows  running ppl 6.8482
+[ppl]   80/166 windows  running ppl 6.5761
+[ppl]   100/166 windows  running ppl 6.5386
+[ppl]   120/166 windows  running ppl 6.7724
+[ppl]   140/166 windows  running ppl 6.7226
+[ppl]   160/166 windows  running ppl 6.6436
+[ppl] seq_len=2048  PPL 6.6817  (exact-denominator 6.6817)
+[ppl] wrote results/wikitext2_ppl_nofinetune/cs_int3_g64_calE_c4_128x2048.json
+
+============ cs_int3_g64_calE_c4_128x2048 :: C4 validation control ============
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[ppl] model      outputs/qlora_none_cs170k_int3_ep1_span-3bit-none-gptq-eval-calE
+[ppl] data       datasets/c4_val_ppl.json split=test (wikitext-2-raw-v1 lineage protocol)
+[ppl] seq_len    [2048]
+[ppl] 1073002 tokens in the concatenated test stream
+Loading weights:   0%|          | 0/291 [00:00<?, ?it/s]Loading weights:   2%|▏         | 6/291 [00:00<00:05, 53.53it/s]Loading weights:   7%|▋         | 19/291 [00:00<00:02, 95.90it/s]Loading weights:  11%|█         | 31/291 [00:00<00:02, 102.25it/s]Loading weights:  17%|█▋        | 49/291 [00:00<00:01, 122.39it/s]Loading weights:  22%|██▏       | 63/291 [00:00<00:01, 125.84it/s]Loading weights:  26%|██▌       | 76/291 [00:00<00:01, 124.01it/s]Loading weights:  31%|███▏      | 91/291 [00:00<00:01, 126.85it/s]Loading weights:  37%|███▋      | 108/291 [00:00<00:01, 135.10it/s]Loading weights:  42%|████▏     | 122/291 [00:01<00:01, 127.11it/s]Loading weights:  47%|████▋     | 138/291 [00:01<00:01, 134.01it/s]Loading weights:  52%|█████▏    | 152/291 [00:01<00:01, 130.56it/s]Loading weights:  57%|█████▋    | 166/291 [00:01<00:01, 123.04it/s]Loading weights:  63%|██████▎   | 182/291 [00:01<00:00, 132.10it/s]Loading weights:  67%|██████▋   | 196/291 [00:01<00:00, 125.89it/s]Loading weights:  73%|███████▎  | 211/291 [00:01<00:00, 125.59it/s]Loading weights:  78%|███████▊  | 226/291 [00:01<00:00, 127.49it/s]Loading weights:  82%|████████▏ | 239/291 [00:01<00:00, 124.93it/s]Loading weights:  88%|████████▊ | 256/291 [00:02<00:00, 126.93it/s]Loading weights:  94%|█████████▍| 274/291 [00:02<00:00, 125.09it/s]Loading weights: 100%|██████████| 291/291 [00:02<00:00, 127.43it/s]
+[ppl] seq_len=2048: 523 non-overlapping windows (1071104 tokens scored)
+[ppl]   20/523 windows  running ppl 8.2682
+[ppl]   40/523 windows  running ppl 8.7533
+[ppl]   60/523 windows  running ppl 8.3695
+[ppl]   80/523 windows  running ppl 8.3517
+[ppl]   100/523 windows  running ppl 8.6031
+[ppl]   120/523 windows  running ppl 8.6944
+[ppl]   140/523 windows  running ppl 8.6440
+[ppl]   160/523 windows  running ppl 8.3669
+[ppl]   180/523 windows  running ppl 8.4688
+[ppl]   200/523 windows  running ppl 8.3957
+[ppl]   220/523 windows  running ppl 8.5133
+[ppl]   240/523 windows  running ppl 8.6200
+[ppl]   260/523 windows  running ppl 8.5962
+[ppl]   280/523 windows  running ppl 8.4517
+[ppl]   300/523 windows  running ppl 8.4999
+[ppl]   320/523 windows  running ppl 8.5307
+[ppl]   340/523 windows  running ppl 8.5192
+[ppl]   360/523 windows  running ppl 8.5534
+[ppl]   380/523 windows  running ppl 8.5865
+[ppl]   400/523 windows  running ppl 8.6019
+[ppl]   420/523 windows  running ppl 8.5980
+[ppl]   440/523 windows  running ppl 8.5440
+[ppl]   460/523 windows  running ppl 8.5824
+[ppl]   480/523 windows  running ppl 8.6166
+[ppl]   500/523 windows  running ppl 8.6140
+[ppl]   520/523 windows  running ppl 8.6196
+[ppl] seq_len=2048  PPL 8.6410  (exact-denominator 8.6410)
+[ppl] wrote results/c4_val_ppl_nofinetune/cs_int3_g64_calE_c4_128x2048.json
+
+>>> Summary
+cs_int2_g32_calD_task_balanced3500  wikitext2  seq_len_1024   ppl  19.1895
+cs_int2_g32_calD_task_balanced3500  wikitext2  seq_len_2048   ppl  16.2480
+cs_int2_g32_calE_c4_128x2048        wikitext2  seq_len_1024   ppl  15.2285
+cs_int2_g32_calE_c4_128x2048        wikitext2  seq_len_2048   ppl  12.8677
+cs_int2_merged_fp16_parent          wikitext2  seq_len_1024   ppl   6.5638
+cs_int2_merged_fp16_parent          wikitext2  seq_len_2048   ppl   5.8227
+cs_int3_g64_calD_task_balanced3500  wikitext2  seq_len_1024   ppl   7.8483
+cs_int3_g64_calD_task_balanced3500  wikitext2  seq_len_2048   ppl   6.9013
+cs_int3_g64_calE_c4_128x2048        wikitext2  seq_len_1024   ppl   7.6082
+cs_int3_g64_calE_c4_128x2048        wikitext2  seq_len_2048   ppl   6.6817
+fp16_llama2_7b_base                 wikitext2  seq_len_1024   ppl   6.0976
+fp16_llama2_7b_base                 wikitext2  seq_len_2048   ppl   5.4721
+cs_int2_g32_calD_task_balanced3500  c4_val     seq_len_2048   ppl  17.9229
+cs_int2_g32_calE_c4_128x2048        c4_val     seq_len_2048   ppl  14.7884
+cs_int2_merged_fp16_parent          c4_val     seq_len_2048   ppl   7.6159
+cs_int3_g64_calD_task_balanced3500  c4_val     seq_len_2048   ppl   8.8468
+cs_int3_g64_calE_c4_128x2048        c4_val     seq_len_2048   ppl   8.6410
+fp16_llama2_7b_base                 c4_val     seq_len_2048   ppl   7.2861
+End time: Thu Sep  3 01:28:15 +08 2026

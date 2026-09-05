@@ -1,0 +1,95 @@
+#!/bin/bash
+#PBS -N wiki2_ep1_all
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=12:00:00
+#PBS -j oe
+# =============================================================================
+# T2 Wiki2 column, 1-EPOCH cell — the capacity / regularization control.
+#
+# At 3 epochs this column ranked the arms by regularization, not by quantization quality: in
+# sample and held-out perplexity came out perfectly anti-correlated across all four trained arms
+# (diagnostic 16076252, and the QEFT arm confirms it — worst train loss 1.580, best test 6.683).
+# WikiText-2 is 2.87M tokens and the recipe passed over it three times.
+#
+# ONE VARIABLE: epochs 3 -> 1, applied to EVERY arm at once. T = 176 instead of 528, and every lr
+# is multiplied by sqrt(3) so realized displacement is unchanged (AGENTS.md's law) — that is what
+# keeps the change "epochs" and not "epochs AND step size". The configs were derived
+# mechanically from the 3-epoch ones and the parsed diff was asserted to touch nothing else.
+#
+# BASES ARE REUSED, NOT REBUILT — so the two cells share the SAME frozen codes and the same
+# permutation, and differ by the epoch count alone:
+#   SALT-Q   --permuted_base_dir / --saltq_base_dir point at the 3-epoch run's bases
+#   QA-LoRA  outputs/qalora_wiki2_int2_g32_ep1-2bit-qalora/qalora_intb_base is a SYMLINK to the
+#            3-epoch run's GPTQ base (scripts/train.py derives that path from output_dir and has
+#            no override flag; rebuilding would give the same codes but assert nothing)
+#   QEFT     qeft.base_dir is unchanged in the config, so Stage 0 skips
+#   QLoRA    NF4, nothing to reuse
+#
+# All four arms run here in sequence because the g3 queue admits one job per user at a time;
+# splitting them into four jobs would only add queue latency. The floor is chained separately
+# (jobs/wiki2_ep1_floor.pbs) because it needs this job's merged export.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/wikitext2
+echo "Start time: $(date)"
+
+SALTQ_EP3=outputs/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x
+for d in "$SALTQ_EP3/permuted_fp16_base" "$SALTQ_EP3/saltq_base_2bit_g32" \
+         outputs/qalora_wiki2_int2_g32_ep1-2bit-qalora/qalora_intb_base \
+         outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_wiki2; do
+    [ -e "$d" ] || { echo "ERROR: expected reusable base missing: $d"; exit 1; }
+done
+echo ">>> all reusable bases present"
+
+echo -e "\n########## 1/4  QLoRA (fp16 upper + the floor's parent) ##########"
+bash runs/qlora/run_qlora_wikitext2.sh \
+    --config     configs/qlora_none_wiki2_int2_g32_ep1.yaml \
+    --bits 2 --num_gpus 4 \
+    --output_dir outputs/qlora_none_wiki2_int2_g32_ep1 \
+    > logs/wikitext2/qlora_none_wiki2_int2_g32_ep1.log 2>&1
+echo "qlora rc=$?"
+
+echo -e "\n########## 2/4  QA-LoRA (reusing the 3-epoch GPTQ base) ##########"
+bash runs/qalora/run_qalora_wikitext2.sh \
+    --config     configs/qalora_wiki2_int2_g32_ep1.yaml \
+    --bits 2 --num_gpus 4 \
+    --output_dir outputs/qalora_wiki2_int2_g32_ep1 \
+    --note       "T2 Wiki2 1-epoch cell: merged INT2 artifact, same frozen codes as the 3-epoch run" \
+    > logs/wikitext2/qalora_wiki2_int2_g32_ep1.log 2>&1
+echo "qalora rc=$?"
+
+echo -e "\n########## 3/4  QEFT (Stage 0 skipped, base unchanged) ##########"
+bash runs/qeft/run_qeft_wikitext2.sh \
+    --config     baseline/QEFT/sqat/configs/qeft_wiki2_int2_g32_ep1_lr16e5.yaml \
+    --bits 2 --group_size 32 --num_gpus 4 \
+    --note       "T2 Wiki2 1-epoch cell: 2+fp16 mixed-precision artifact, same base as the 3-epoch run" \
+    > logs/wikitext2/qeft_wiki2_int2_g32_ep1.log 2>&1
+echo "qeft rc=$?"
+
+echo -e "\n########## 4/4  SALT-Q (reusing both offline bases) ##########"
+bash runs/saltq/run_saltq_wikitext2.sh \
+    --config             configs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x.yaml \
+    --bits 2 --num_gpus 4 \
+    --output_root        outputs/saltq_wiki2_int2_g32_ep1_bcal_sgptql_zp2x \
+    --permuted_base_dir  "$SALTQ_EP3/permuted_fp16_base" \
+    --saltq_base_dir     "$SALTQ_EP3/saltq_base_2bit_g32" \
+    --train_layernorms   false \
+    --note               "T2 Wiki2 1-epoch cell: deployed artifact, same frozen codes and permutation as the 3-epoch run" \
+    > logs/wikitext2/saltq_wiki2_int2_g32_ep1.log 2>&1
+echo "saltq rc=$?"
+
+echo -e "\n>>> 1-epoch cell, test-split PPL"
+python - <<'PY'
+import glob, json, os
+for p in sorted(glob.glob("results/wikitext2_ppl/*ep1*.json")):
+    r = json.load(open(p))
+    print(f"{os.path.basename(p)[:-5]:<62} " +
+          "  ".join(f"{k[8:]}: {v['ppl']:8.4f}" for k, v in sorted(r["results"].items())))
+PY
+echo "End time: $(date)"

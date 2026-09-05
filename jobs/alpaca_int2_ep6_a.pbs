@@ -1,0 +1,79 @@
+#!/bin/bash
+#PBS -N alpaca_ep6_a
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=24:00:00
+#PBS -j oe
+# =============================================================================
+# ALPACA column, INT2 g32 cell REDONE AT 6 EPOCHS — part A: SALT-Q and QEFT.
+#
+# WHY THE CELL IS BEING REDONE. On MMLU no arm learns anything from Alpaca (fine-tuning the fp16
+# model moves it by -0.13); every point above the untrained base is quantization-damage REPAIR,
+# and repair turned out to be training-limited. Measured across 1 and 3 epochs:
+#
+#              base    1 epoch   3 epoch    repair/epoch
+#     SALT-Q  26.76      28.98     32.77           +2.00
+#     QEFT    30.27      32.07     34.25           +1.33
+#     gap      3.51       3.08      1.48
+#
+# The gap closes with training and has not turned over, so the 3-epoch table is a snapshot of a
+# curve rather than a converged comparison. Doubling to 6 epochs asks where it turns. The INT3
+# cell already shows what the far end looks like: there SALT-Q (3.00 bits, 43.60) passes QEFT
+# (3.35 bits, 43.17), and QEFT's own fine-tuning is NEGATIVE (base 43.43 -> 43.17).
+#
+# ONE VARIABLE, applied to every arm of the cell: T = 3882 instead of 1941, every lr multiplied
+# by sqrt(1941/3882) = 0.7071 so realized displacement is unchanged, and BOTH BASES REUSED (same
+# frozen codes, same permutation, same weak columns):
+#   SALT-Q  --permuted_base_dir / --saltq_base_dir point at the 3-epoch run's bases
+#   QEFT    qeft.base_dir is unchanged in the config, so Stage 0 skips
+#
+# Part B (QA-LoRA + the QLoRA bounds, also at 6 epochs) is jobs/alpaca_int2_ep6_b.pbs. The three
+# UNTRAINED anchors (fp16 45.97, INT2 GPTQ 26.76, QEFT base 30.27) are epoch-independent and are
+# reused as they are.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh
+conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+mkdir -p logs/alpaca
+echo "Start time: $(date)"
+
+EP3=outputs/saltq_alpaca_int2_g32_ep3_k256_c4cal_sgptql_zp2x
+for d in "$EP3/permuted_fp16_base" "$EP3/saltq_base_2bit_g32" \
+         outputs/qeft_bases/Llama-2-7B_int2_g32_k256_asym_c4cal; do
+    [ -e "$d" ] || { echo "ERROR: expected reusable base missing: $d"; exit 1; }
+done
+echo ">>> all reusable bases present"
+
+echo -e "\n########## 1/2  SALT-Q, 6 epochs (same codes, same permutation) ##########"
+bash runs/saltq/run_saltq_alpaca.sh \
+    --config             configs/saltq_alpaca_int2_g32_ep6_k256_c4cal_sgptql_zp2x.yaml \
+    --bits 2 --num_gpus 4 \
+    --output_root        outputs/saltq_alpaca_int2_g32_ep6_k256_c4cal_sgptql_zp2x \
+    --permuted_base_dir  "$EP3/permuted_fp16_base" \
+    --saltq_base_dir     "$EP3/saltq_base_2bit_g32" \
+    --train_layernorms   false \
+    --note               "T-Alpaca 6-epoch cell: SALT-Q, same frozen codes and permutation as the 3-epoch run, lrs x0.7071" \
+    > logs/alpaca/70_saltq_ep6.log 2>&1
+echo "saltq rc=$?"
+
+echo -e "\n########## 2/2  QEFT, 6 epochs (same weak-column base) ##########"
+bash runs/qeft/run_qeft_alpaca.sh \
+    --config     baseline/QEFT/sqat/configs/qeft_alpaca_int2_g32_ep6_lr5e5.yaml \
+    --bits 2 --group_size 32 --num_gpus 4 \
+    --note       "T-Alpaca 6-epoch cell: QEFT, same mixed-precision base as the 3-epoch run, lr x0.7071" \
+    > logs/alpaca/71_qeft_ep6.log 2>&1
+echo "qeft rc=$?"
+
+echo -e "\n>>> Alpaca INT2 g32, MMLU 5-shot across the epoch sweep"
+python - <<'PY'
+import glob, json, os
+for p in sorted(glob.glob("results/alpaca_mmlu/*ep[136]*int2*.json") + glob.glob("results/alpaca_mmlu/*int2*ep[136]*.json")):
+    r = json.load(open(p)).get("results", {})
+    if "mmlu" in r:
+        print(f"{os.path.basename(p)[:-5]:<70} {100*r['mmlu']['acc,none']:6.2f}")
+PY
+echo "End time: $(date)"

@@ -1,0 +1,46 @@
+Fri Sep  4 07:12:28 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   43C    P0             53W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+Start time: Fri Sep  4 07:12:28 +08 2026
+
+########## 0/5  MMLU wiring preflight (--limit 2, NOT a result) ##########
+PREFLIGHT FAILED (rc=1) — see logs/alpaca/00_preflight_mmlu.log; nothing else runs.
+  time      : 2026-09-04_07:16:35
+  host      : x1000c1s2b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 0 (local_rank: 0)
+  exitcode  : -15 (pid: 2272127)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 2272127
+[2]:
+  time      : 2026-09-04_07:16:35
+  host      : x1000c1s2b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 1 (local_rank: 1)
+  exitcode  : -15 (pid: 2272128)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 2272128
+[3]:
+  time      : 2026-09-04_07:16:35
+  host      : x1000c1s2b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 2272130)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-09-04_07:16:35
+  host      : x1000c1s2b0n0.hostmgmt2000.cm.asp2a.nscc.sg
+  rank      : 2 (local_rank: 2)
+  exitcode  : 1 (pid: 2272129)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

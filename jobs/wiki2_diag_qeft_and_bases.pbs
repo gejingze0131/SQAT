@@ -1,0 +1,82 @@
+#!/bin/bash
+#PBS -N wiki2_diag_qeft
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=1
+#PBS -l walltime=2:00:00
+#PBS -j oe
+# =============================================================================
+# Completes the T2 Wiki2 diagnostic. Two things job 16076252 could not cover:
+#
+#   1. QEFT's train/validation PPL — its export did not exist yet when that job ran, so it is the
+#      one hole in the capacity ladder. Its training loss (1.580, the WORST of the three INT2
+#      arms) alongside its test PPL (6.683, the BEST) is what completes the anti-correlation.
+#
+#   2. THE UNTRAINED BASES, which the column needs to be readable at all:
+#
+#      pure INT2 g32   outputs/qalora_wiki2_int2_g32_ep3-2bit-qalora/qalora_intb_base
+#                      GPTQ INT2 of PRETRAINED Llama-2-7B on this task's own 0.5M-token
+#                      calibration, never fine-tuned. This is what 2 bits costs BEFORE any
+#                      method does anything, and every INT2 arm's gain should be read against it.
+#      QEFT's base     already measured at 7.538 (job 16076231, --with_base): the same thing but
+#                      with k=256 columns left in fp16, i.e. 2.75 effective bits.
+#
+#      The pair prices QEFT's extra 0.75 bit directly, which matters because QEFT's UNTRAINED
+#      base (7.538) already beats both INT2 arms' FINE-TUNED results (8.817 / 10.154). Without
+#      this anchor the QEFT row reads as a fine-tuning win when most of it is the mixed precision.
+#
+# Not rows of the T2 table. results/wikitext2_ppl_diagnostic/.
+# =============================================================================
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+nvidia-smi | head -12
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+echo "Start time: $(date)"
+
+QEFT_DIR=outputs/qeft_wiki2_int2_g32_ep3_lr9e5-2bit-qeft-dense-eval
+INT2_BASE=outputs/qalora_wiki2_int2_g32_ep3-2bit-qalora/qalora_intb_base
+
+if [ -f "$QEFT_DIR/config.json" ]; then
+  python scripts/eval_ppl.py --model_path "$QEFT_DIR" --data datasets/wikitext2 --split train \
+      --seq_len 2048 --max_windows 166 --tag "qeft__train166" \
+      --output_dir results/wikitext2_ppl_diagnostic \
+      --note "DIAGNOSTIC, not a T2 row: in-sample train-split PPL, first 166 windows"
+  python scripts/eval_ppl.py --model_path "$QEFT_DIR" --data datasets/wikitext2 --split validation \
+      --seq_len 2048 --tag "qeft__validation" \
+      --output_dir results/wikitext2_ppl_diagnostic \
+      --note "DIAGNOSTIC, not a T2 row: second held-out split, cross-check on test"
+fi
+
+if [ -f "$INT2_BASE/config.json" ]; then
+  for sp in test validation; do
+    python scripts/eval_ppl.py --model_path "$INT2_BASE" --data datasets/wikitext2 --split "$sp" \
+        --seq_len 1024 --also_seq_len 2048 --tag "int2_g32_base_untrained__${sp}" \
+        --output_dir results/wikitext2_ppl_diagnostic \
+        --note "ANCHOR: pure INT2 g32 GPTQ of PRETRAINED Llama-2-7B, wikitext-2 calibration, NEVER fine-tuned"
+  done
+fi
+
+echo -e "\n>>> Anchors and the completed ladder (test split, seq_len 2048)"
+python - <<'PY'
+import glob, json, os
+def ppl(p, L=2048):
+    if not os.path.exists(p): return None
+    r = json.load(open(p))
+    v = r["results"].get(f"seq_len_{L}")
+    return v["ppl"] if v else None
+print("  untrained anchors")
+print(f"    fp16 Llama-2-7B                     {ppl('results/wikitext2_ppl_nofinetune/fp16_llama2_7b_base.json'):8.4f}")
+b = ppl('results/wikitext2_ppl_diagnostic/int2_g32_base_untrained__test.json')
+print(f"    pure INT2 g32 GPTQ  (2.00 bit)      {b:8.4f}" if b else "    pure INT2 g32 GPTQ                  (missing)")
+q = ppl('results/wikitext2_ppl/Llama-2-7B_int2_g32_k256_asym_wiki2-2bit-qeftbase-eval.json')
+print(f"    QEFT base, k=256 fp16 (2.75 bit)    {q:8.4f}" if q else "")
+print("  trained arms (3 epoch)")
+for tag, p in (("QEFT   (2.75 bit)", "results/wikitext2_ppl/qeft_wiki2_int2_g32_ep3_lr9e5-2bit-qeft-dense-eval.json"),
+               ("QA-LoRA(2.00 bit)", "results/wikitext2_ppl/qalora_wiki2_int2_g32_ep3-2bit-qalora-dequant-eval.json"),
+               ("SALT-Q (2.00 bit)", "results/wikitext2_ppl/saltq_wiki2_int2_g32_ep3_bcal_sgptql_zp2x-2bit-saltq-deploy-eval.json"),
+               ("floor  (2.00 bit)", "results/wikitext2_ppl/qlora_none_wiki2_int2_g32_ep3-2bit-none-gptq-eval.json"),
+               ("fp16 upper       ", "results/wikitext2_ppl/qlora_none_wiki2_int2_g32_ep3-2bit-none-merged-eval.json")):
+    v = ppl(p)
+    print(f"    {tag}                   {v:8.4f}" if v else f"    {tag}  (missing)")
+PY
+echo "End time: $(date)"

@@ -1,0 +1,24 @@
+#!/bin/bash
+#PBS -N mm_qeft_math_full_eval
+#PBS -q normal
+#PBS -P personal-jingzege
+#PBS -l select=1:ngpus=4
+#PBS -l walltime=3:00:00
+#PBS -j oe
+# EVAL-ONLY rerun for the MetaMath QEFT arm (GSM8K 48.90): like the SALT-Q arm (job 16045646,
+# MATH 13.68), its training job only scored GSM8K, so the MATH-5000 half of the cell's column is
+# missing. Full math test on the existing dense export (fold cached in the -vllm dir), TP=4
+# (TP=2+bf16 crashes the vLLM sampler). Re-scores GSM8K too. No training.
+cd "$PBS_O_WORKDIR" || exit 1
+source ~/miniforge3/etc/profile.d/conda.sh; conda activate saltq
+nvidia-smi | head -12
+conda run -n vllm-eval python -c "import sqlite3, vllm; from vllm.v1.engine.core_client import EngineCoreClient" \
+  || { echo "vllm env cannot import the engine on this node"; exit 1; }
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 HF_HUB_DISABLE_XET=1
+mkdir -p logs/metamath
+echo "Start time: $(date)"
+MODEL=outputs/qeft_mm_int2_g32_ep1_span_bcal_lr5e5-2bit-qeft-dense-eval
+bash runs/eval_vllm.sh --model_path "$MODEL" --dataset math --gpus 0,1,2,3 \
+    --tag "$(basename $MODEL)" \
+    > logs/metamath/qeft_mm_lr5e5_math_full_eval.log 2>&1
+echo "full math eval rc=$?"; echo "End time: $(date)"

@@ -1,0 +1,141 @@
+Fri Sep  4 04:28:33 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   43C    P0             55W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+Start time: Fri Sep  4 04:28:33 +08 2026
+train rc=0
+mmlu rc=0
+[collect] appended 124 row(s) to results_saltq.csv
+    QA-LoRA        mmlu_abstract_algebra sample_len                   100
+    QA-LoRA        mmlu_abstract_algebra acc,none                     0.3000
+    QA-LoRA        mmlu_anatomy         sample_len                   135
+    QA-LoRA        mmlu_anatomy         acc,none                     0.3185
+    QA-LoRA        mmlu_astronomy       sample_len                   152
+    QA-LoRA        mmlu_astronomy       acc,none                     0.3026
+    QA-LoRA        mmlu_college_biology sample_len                   144
+    QA-LoRA        mmlu_college_biology acc,none                     0.3333
+    QA-LoRA        mmlu_college_chemistry sample_len                   100
+    QA-LoRA        mmlu_college_chemistry acc,none                     0.1900
+    QA-LoRA        mmlu_college_computer_science sample_len                   100
+    QA-LoRA        mmlu_college_computer_science acc,none                     0.2400
+    QA-LoRA        mmlu_college_mathematics sample_len                   100
+    QA-LoRA        mmlu_college_mathematics acc,none                     0.2300
+    QA-LoRA        mmlu_college_physics sample_len                   102
+    QA-LoRA        mmlu_college_physics acc,none                     0.1863
+    QA-LoRA        mmlu_computer_security sample_len                   100
+    QA-LoRA        mmlu_computer_security acc,none                     0.3900
+    QA-LoRA        mmlu_conceptual_physics sample_len                   235
+    QA-LoRA        mmlu_conceptual_physics acc,none                     0.2979
+    QA-LoRA        mmlu_electrical_engineering sample_len                   145
+    QA-LoRA        mmlu_electrical_engineering acc,none                     0.3310
+    QA-LoRA        mmlu_elementary_mathematics sample_len                   378
+    QA-LoRA        mmlu_elementary_mathematics acc,none                     0.2487
+    QA-LoRA        mmlu_high_school_biology sample_len                   310
+    QA-LoRA        mmlu_high_school_biology acc,none                     0.3323
+    QA-LoRA        mmlu_high_school_chemistry sample_len                   203
+    QA-LoRA        mmlu_high_school_chemistry acc,none                     0.2512
+    QA-LoRA        mmlu_high_school_computer_science sample_len                   100
+    QA-LoRA        mmlu_high_school_computer_science acc,none                     0.2700
+    QA-LoRA        mmlu_high_school_mathematics sample_len                   270
+    QA-LoRA        mmlu_high_school_mathematics acc,none                     0.2556
+    QA-LoRA        mmlu_high_school_physics sample_len                   151
+    QA-LoRA        mmlu_high_school_physics acc,none                     0.2781
+    QA-LoRA        mmlu_high_school_statistics sample_len                   216
+    QA-LoRA        mmlu_high_school_statistics acc,none                     0.2176
+    QA-LoRA        mmlu_machine_learning sample_len                   112
+    QA-LoRA        mmlu_machine_learning acc,none                     0.3214
+    QA-LoRA        mmlu_business_ethics sample_len                   100
+    QA-LoRA        mmlu_business_ethics acc,none                     0.2800
+    QA-LoRA        mmlu_clinical_knowledge sample_len                   265
+    QA-LoRA        mmlu_clinical_knowledge acc,none                     0.3623
+    QA-LoRA        mmlu_college_medicine sample_len                   173
+    QA-LoRA        mmlu_college_medicine acc,none                     0.2832
+    QA-LoRA        mmlu_global_facts    sample_len                   100
+    QA-LoRA        mmlu_global_facts    acc,none                     0.2900
+    QA-LoRA        mmlu_human_aging     sample_len                   223
+    QA-LoRA        mmlu_human_aging     acc,none                     0.3408
+    QA-LoRA        mmlu_management      sample_len                   103
+    QA-LoRA        mmlu_management      acc,none                     0.3301
+    QA-LoRA        mmlu_marketing       sample_len                   234
+    QA-LoRA        mmlu_marketing       acc,none                     0.3803
+    QA-LoRA        mmlu_medical_genetics sample_len                   100
+    QA-LoRA        mmlu_medical_genetics acc,none                     0.3700
+    QA-LoRA        mmlu_miscellaneous   sample_len                   783
+    QA-LoRA        mmlu_miscellaneous   acc,none                     0.3857
+    QA-LoRA        mmlu_nutrition       sample_len                   306
+    QA-LoRA        mmlu_nutrition       acc,none                     0.3137
+    QA-LoRA        mmlu_professional_accounting sample_len                   282
+    QA-LoRA        mmlu_professional_accounting acc,none                     0.2837
+    QA-LoRA        mmlu_professional_medicine sample_len                   272
+    QA-LoRA        mmlu_professional_medicine acc,none                     0.3088
+    QA-LoRA        mmlu_virology        sample_len                   166
+    QA-LoRA        mmlu_virology        acc,none                     0.3012
+    QA-LoRA        mmlu_econometrics    sample_len                   114
+    QA-LoRA        mmlu_econometrics    acc,none                     0.2544
+    QA-LoRA        mmlu_high_school_geography sample_len                   198
+    QA-LoRA        mmlu_high_school_geography acc,none                     0.3636
+    QA-LoRA        mmlu_high_school_government_and_politics sample_len                   193
+    QA-LoRA        mmlu_high_school_government_and_politics acc,none                     0.3523
+    QA-LoRA        mmlu_high_school_macroeconomics sample_len                   390
+    QA-LoRA        mmlu_high_school_macroeconomics acc,none                     0.2872
+    QA-LoRA        mmlu_high_school_microeconomics sample_len                   238
+    QA-LoRA        mmlu_high_school_microeconomics acc,none                     0.2647
+    QA-LoRA        mmlu_high_school_psychology sample_len                   545
+    QA-LoRA        mmlu_high_school_psychology acc,none                     0.3615
+    QA-LoRA        mmlu_human_sexuality sample_len                   131
+    QA-LoRA        mmlu_human_sexuality acc,none                     0.3359
+    QA-LoRA        mmlu_professional_psychology sample_len                   612
+    QA-LoRA        mmlu_professional_psychology acc,none                     0.3268
+    QA-LoRA        mmlu_public_relations sample_len                   110
+    QA-LoRA        mmlu_public_relations acc,none                     0.3455
+    QA-LoRA        mmlu_security_studies sample_len                   245
+    QA-LoRA        mmlu_security_studies acc,none                     0.3837
+    QA-LoRA        mmlu_sociology       sample_len                   201
+    QA-LoRA        mmlu_sociology       acc,none                     0.4080
+    QA-LoRA        mmlu_us_foreign_policy sample_len                   100
+    QA-LoRA        mmlu_us_foreign_policy acc,none                     0.4400
+    QA-LoRA        mmlu_formal_logic    sample_len                   126
+    QA-LoRA        mmlu_formal_logic    acc,none                     0.1905
+    QA-LoRA        mmlu_high_school_european_history sample_len                   165
+    QA-LoRA        mmlu_high_school_european_history acc,none                     0.3515
+    QA-LoRA        mmlu_high_school_us_history sample_len                   204
+    QA-LoRA        mmlu_high_school_us_history acc,none                     0.3775
+    QA-LoRA        mmlu_high_school_world_history sample_len                   237
+    QA-LoRA        mmlu_high_school_world_history acc,none                     0.4599
+    QA-LoRA        mmlu_international_law sample_len                   121
+    QA-LoRA        mmlu_international_law acc,none                     0.5041
+    QA-LoRA        mmlu_jurisprudence   sample_len                   108
+    QA-LoRA        mmlu_jurisprudence   acc,none                     0.3611
+    QA-LoRA        mmlu_logical_fallacies sample_len                   163
+    QA-LoRA        mmlu_logical_fallacies acc,none                     0.2638
+    QA-LoRA        mmlu_moral_disputes  sample_len                   346
+    QA-LoRA        mmlu_moral_disputes  acc,none                     0.3902
+    QA-LoRA        mmlu_moral_scenarios sample_len                   895
+    QA-LoRA        mmlu_moral_scenarios acc,none                     0.2402
+    QA-LoRA        mmlu_philosophy      sample_len                   311
+    QA-LoRA        mmlu_philosophy      acc,none                     0.3923
+    QA-LoRA        mmlu_prehistory      sample_len                   324
+    QA-LoRA        mmlu_prehistory      acc,none                     0.3580
+    QA-LoRA        mmlu_professional_law sample_len                   1534
+    QA-LoRA        mmlu_professional_law acc,none                     0.2953
+    QA-LoRA        mmlu_world_religions sample_len                   171
+    QA-LoRA        mmlu_world_religions acc,none                     0.3567
+    QA-LoRA        mmlu_stem            sample_len                   3153
+    QA-LoRA        mmlu_stem            acc,none                     0.2785
+    QA-LoRA        mmlu_other           sample_len                   3107
+    QA-LoRA        mmlu_other           acc,none                     0.3379
+    QA-LoRA        mmlu_social_sciences sample_len                   3077
+    QA-LoRA        mmlu_social_sciences acc,none                     0.3390
+    QA-LoRA        mmlu_humanities      sample_len                   4705
+    QA-LoRA        mmlu_humanities      acc,none                     0.3216
+    QA-LoRA        mmlu                 sample_len                   14042
+    QA-LoRA        mmlu                 acc,none                     0.3193
+End time: Fri Sep  4 06:37:44 +08 2026

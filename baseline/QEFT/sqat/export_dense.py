@@ -77,7 +77,13 @@ def main() -> int:
 
     # The live model, in the SAME dtype it trained and deploys in, so the check measures the
     # export rather than a cast.
-    model, _ = build_qeft_model(base_dir, dtype=dtype, device=device, weak_dtype=dtype)
+    _zp = False
+    if not bare:
+        from safetensors import safe_open as _so
+        with _so(os.path.join(args.ckpt, "qeft_weak_columns.safetensors"), "pt") as _f:
+            _zp = any(k.endswith(".zp_shift") for k in _f.keys())
+    model, _ = build_qeft_model(base_dir, dtype=dtype, device=device, weak_dtype=dtype,
+                                train_zp=_zp)
     if bare:
         print("[export] bare base: weak columns left at their quantization-time values")
     else:
@@ -101,7 +107,15 @@ def main() -> int:
         # 1) EXACT, both halves, against the base checkpoint on disk rather than against the
         #    module we just read: the quantized bulk must be untouched by a run that is only
         #    allowed to move k columns, and those k columns must be exactly what was trained.
-        frozen_drift = (base_w[:, mask] - w_cpu[:, mask]).abs().max().item()
+        if getattr(module, "train_zp", False):
+            # With a trained zp tier the non-weak columns move by a per-group-uniform shift.
+            # Recompute it exactly the way effective_weight does and demand bitwise agreement.
+            _delta = (module.zp_shift * module.zp_step).detach().float().cpu()
+            _exp = base_w.float().clone()
+            _exp[:, module.nonweak_ids.cpu()] += _delta.repeat_interleave(module.group_size, dim=1)
+            frozen_drift = (_exp.to(dtype)[:, mask] - w_cpu[:, mask]).abs().max().item()
+        else:
+            frozen_drift = (base_w[:, mask] - w_cpu[:, mask]).abs().max().item()
         weak_drift = (module.weight_weak.detach().cpu().to(dtype)
                       - w_cpu[:, ids]).abs().max().item()
         if frozen_drift != 0.0 or weak_drift != 0.0:
