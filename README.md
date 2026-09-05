@@ -28,6 +28,50 @@ rebuild under a different name: `bash scripts/setup_saltq_env.sh myenv 3.11`. Mo
 datasets must be prefetched into the HF cache on a login node before submitting jobs
 (`HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1` in every PBS script).
 
+## Running locally instead of on PBS (branch `local-a6000`)
+
+`jobs/*.pbs` is the cluster half of this repo — a scheduler script per experiment, submitted with
+`qsub`. On the local box (3x RTX 6000 Ada, 48 GB) there is no scheduler, so `jobs/local/` holds
+the same thing as plain bash: one script per experiment, backgrounded by hand. Everything a
+`#PBS` header used to carry lives in `jobs/local/_env.sh`, which every local job sources.
+
+```bash
+mkdir -p logs/commonsense_170k
+nohup bash jobs/local/cs_qlora_qwen32b_int2_g32_span.sh \
+      > logs/commonsense_170k/qlora_qwen32b_int2_g32_span.job.log 2>&1 &
+```
+
+Three differences from the cluster, all of them handled by `_env.sh`:
+
+| | cluster | local |
+|-|---------|-------|
+| conda | `source ~/miniforge3/...`, same on every node | `conda_bootstrap` (`runs/lib/common.sh`) finds miniforge / anaconda / miniconda |
+| GPUs | `accelerate_config.yaml`, 4 processes over `0,1,2,3` | `ACCEL_CONFIG=accelerate_config_local.yaml`, 3 over `0,1,2`; every pipeline honours `$ACCEL_CONFIG` |
+| eval GPUs | `--eval_gpus 0,1,2,3` | `--eval_gpus 0,1` — vLLM's tensor-parallel size has to divide the head counts, and Qwen2.5-32B has 40 heads / 8 KV heads, so TP=3 is rejected and the 65 GB fp16 export does not fit on one card |
+
+`datasets/` is gitignored and holds no data on a fresh clone; symlink or copy a pissa-dataset
+checkout into place (`datasets/commonsense -> .../pissa-dataset/commonsense`).
+
+Three changes on this branch exist because a 32B model does not fit where a 7B one did, and all
+three are placement-only — the numbers they produce are unchanged:
+
+* `gptq_quantize_model_sequential(stream_layers=True)` brings decoder layers to the GPU one at a
+  time instead of requiring the whole dense model resident (65 GB against a 48 GB card; one
+  Qwen2.5-32B layer is ~1 GB). `scripts/test_gptq_stream.py` holds it to **bitwise** agreement
+  with the resident path and to a peak that does not move with depth. `export_gptq_dequant.py`
+  uses it, and reports per-module error through `rel_err_out` rather than snapshotting every
+  target weight to fp32 up front (~124 GB of host RAM at 32B).
+* `export_vllm_ready.py` **hardlinks** a checkpoint that has no permutation to fold, instead of
+  copying it. That copy was a second identical 65 GB per export, and a cell exports three.
+* `qat.saltq.packed_wq` keeps SALT-Q's frozen codes packed in uint8 and rebuilds `wq = q*s` per
+  forward, instead of precomputing it as a dense bf16 buffer — 16 bits per rank holding a 2-bit
+  value is 58 GiB at 32B, more than QLoRA's whole NF4 base for the same model. Packing is
+  `8 // q_bits` codes per byte, so INT2 costs 7.3 GiB and INT3 14.5 (2 per byte, bits 6-7 unused;
+  a byte-spanning layout would give 10.9 but would make a row slice start at a bit offset, and
+  `_wq_tensor` rebuilds by slicing rows). `scripts/test_saltq_packed_wq.py` holds the forward,
+  the gradients and the export to **bit-identical**, and checks the codes-per-byte at each width;
+  `scripts/test_saltq_e2e.py --packed_wq --bits 3` covers the whole offline->train->export chain.
+
 ## Data
 
 Training and test data live under `datasets/<name>/{train,test}.json` (gitignored), in the
@@ -99,6 +143,8 @@ runs/                    launch scripts — one folder per method, one entry per
                          _gptq_ablation.sh / _fp16_ablation.sh + their per-task entries
   analysis/              permutation-equivalence validation and salient-channel analysis
 jobs/                    PBS submissions; each one calls a runs/ entry script
+  local/                 the same jobs as plain bash for the 3-GPU local box
+    _env.sh              conda + accelerate_config_local.yaml + offline caches + preflight
 src/
   model_loader.py        model + tokenizer loading (NF4/NF3 + LoRA)
   data.py                prompt, response-only-loss tokenization, collator
@@ -116,5 +162,6 @@ scripts/
   test_acc.py            generative eval, stage 2 — exact-match scoring
   export_vllm_ready.py   fold the residual permutation out of an export
   setup_vllm_env.sh      build the eval env
+  test_gptq_stream.py    layer-streamed GPTQ == resident GPTQ, bitwise
   test_*.py              correctness checks
 ```

@@ -45,7 +45,7 @@ DATASET_NAME="commonsense" # math or commonsense (must match the config yaml, wh
 # Empty => resolved from DATASET_NAME after parsing, so --config and
 # --dataset cannot depend on the order they were passed in.
 CONFIG=""
-ACCEL_CONFIG="accelerate_config.yaml"
+ACCEL_CONFIG="${ACCEL_CONFIG:-accelerate_config.yaml}"
 NUM_GPUS=3
 BITS=3
 

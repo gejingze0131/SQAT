@@ -115,7 +115,7 @@ def fake_cfg(out_dir):
     }
 
 
-def main():
+def main(packed_wq=False):
     print("=" * 68)
     print("  SALT-Q end-to-end pipeline (tiny Llama, CPU)")
     print("=" * 68)
@@ -160,7 +160,8 @@ def main():
         # ---- stage 3: assemble + prepare ----
         print("\n[stage 3] build_saltq_model + prepare_model")
         model, meta2 = build_saltq_model(saltq_dir, dtype=torch.float32,
-                                         gradient_checkpointing=True)
+                                         gradient_checkpointing=True,
+                                         packed_wq=packed_wq)
         handler = SALTQ()
         model = handler.prepare_model(model, fake_cfg(work), saltq_meta=meta2,
                                       saltq_base_dir=saltq_dir)
@@ -171,12 +172,22 @@ def main():
         n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
         n_frozen_float = sum(p.numel() for p in model.parameters() if not p.requires_grad)
         check(n_train > 0, f"trainable params = {n_train}")
-        check(all(m._codes_cpu.device.type == "cpu" and not m._codes_cpu.requires_grad
-                  for m in layers.values()),
-              f"codes stay on the host with no grad "
-              f"({n_frozen_float} frozen float params remain: embed/norm/head)")
-        check(all(hasattr(m, "wq") and not m.wq.requires_grad for m in layers.values()),
-              "q*s precomputed as a frozen device buffer (z-only forward, no reconstruction)")
+        if packed_wq:
+            # The host copy is deliberately absent: under DDP every rank would hold its own, and
+            # at Qwen2.5-32B that is 29 GiB per rank of int8 that only export reads.
+            check(all(m._codes_cpu is None and m.wq is None for m in layers.values()),
+                  f"packed_wq: no host code copy and no bf16 wq buffer "
+                  f"({n_frozen_float} frozen float params remain: embed/norm/head)")
+            check(all(m.wq_codes.dtype == torch.uint8 and not m.wq_codes.requires_grad
+                      for m in layers.values()),
+                  "packed_wq: codes live packed on device as uint8, no grad")
+        else:
+            check(all(m._codes_cpu.device.type == "cpu" and not m._codes_cpu.requires_grad
+                      for m in layers.values()),
+                  f"codes stay on the host with no grad "
+                  f"({n_frozen_float} frozen float params remain: embed/norm/head)")
+            check(all(hasattr(m, "wq") and not m.wq.requires_grad for m in layers.values()),
+                  "q*s precomputed as a frozen device buffer (z-only forward, no reconstruction)")
 
         # ---- stage 4: train a step ----
         print("\n[stage 4] forward / backward / optimizer step")
@@ -191,10 +202,10 @@ def main():
               f"{len(got_grad)}/{sum(1 for p in model.parameters() if p.requires_grad)} "
               f"trainable tensors received a non-zero gradient")
 
-        codes_before = {n: m._codes_cpu.clone() for n, m in layers.items()}
+        codes_before = {n: m._codes_ref().clone() for n, m in layers.items()}
         opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=1e-3)
         opt.step()
-        check(all(torch.equal(layers[n]._codes_cpu, c) for n, c in codes_before.items()),
+        check(all(torch.equal(layers[n]._codes_ref(), c) for n, c in codes_before.items()),
               "frozen codes untouched by the optimizer step")
 
         # ---- stage 5: deploy equivalence AFTER training ----
@@ -218,7 +229,8 @@ def main():
         with torch.no_grad():
             ref = model(input_ids=ids).logits.clone()
         model2, _ = build_saltq_model(saltq_dir, dtype=torch.float32,
-                                      gradient_checkpointing=False)
+                                      gradient_checkpointing=False,
+                                      packed_wq=packed_wq)
         SALTQ().prepare_model(model2, fake_cfg(work), saltq_meta=meta2, saltq_base_dir=saltq_dir)
         load_saltq_trainable(model2, ckpt)
         model2.eval()
@@ -413,4 +425,16 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import argparse
+
+    _ap = argparse.ArgumentParser()
+    _ap.add_argument("--packed_wq", action="store_true",
+                     help="run the whole pipeline with the frozen codes packed on device "
+                          "(SALTQLinear rebuilds wq per forward). Should behave identically.")
+    _ap.add_argument("--bits", type=int, default=Q_BITS,
+                     help="grid width for the whole chain (default 2). 3 is worth running "
+                          "separately: it is the one width that does not divide 8, so it takes "
+                          "the 2-codes-per-byte packing path with two bits of every byte unused.")
+    _args = _ap.parse_args()
+    Q_BITS = _args.bits
+    sys.exit(main(packed_wq=_args.packed_wq))

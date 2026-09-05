@@ -190,11 +190,23 @@ def _run_context(model_dir: str, cfg: Optional[dict]) -> Dict[str, object]:
             ctx["bits"] = (cfg.get("model", {}) or {}).get("quant_bits", "")
         if not ctx["symmetric"]:
             ctx["symmetric"] = (cfg.get("qat", {}) or {}).get("symmetric", "")
+        # group_size / group_k come from the export's sqat_permute_meta.pt, which only exists
+        # while the export does — and an export is reclaimed once its score is on disk. Fall back
+        # to the config, the same way bits and symmetric already do, so a row collected after the
+        # cleanup is not silently missing the two columns everyone filters on.
+        if not ctx["group_size"]:
+            ctx["group_size"] = (cfg.get("qat", {}) or {}).get("group_size", "")
+        if not ctx["group_k"]:
+            ctx["group_k"] = sq_cfg.get("group_k", "")
         try:
             import yaml  # noqa: F401  (already parsed; kept for the accelerate hint below)
 
             n_gpu = 1
-            acc = "accelerate_config.yaml"
+            # The pipelines pick their accelerate config through $ACCEL_CONFIG (the 3-GPU local
+            # box uses accelerate_config_local.yaml). Hardcoding the 4-process cluster file here
+            # recorded eff_batch=108 for a run whose effective batch was 81 — the one number the
+            # whole comparison is normalised on.
+            acc = os.environ.get("ACCEL_CONFIG", "accelerate_config.yaml")
             if os.path.exists(acc):
                 import yaml as _y
 

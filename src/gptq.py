@@ -26,7 +26,7 @@ the boundary gathers registered — `gptq_quantize_model_sequential` does this f
 """
 
 import math
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -296,6 +296,10 @@ def gptq_quantize_model_sequential(
     lsq_scales: Optional[dict] = None,
     obs_salient: bool = False,
     salient_ids: Optional[Dict[str, Sequence[int]]] = None,
+    stream_layers: bool = False,
+    rel_err_out: Optional[Dict[str, float]] = None,
+    collect_quantized: bool = True,
+    on_quantized: Optional[Callable[[str, torch.Tensor, torch.Tensor, torch.Tensor], None]] = None,
 ) -> Dict[str, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     """
     In-place sequential GPTQ on a dense (permuted) fp16 model. For every nn.Linear whose terminal
@@ -321,6 +325,35 @@ def gptq_quantize_model_sequential(
     PERMUTED column order, the (W_int, scale, zp) returned for such a module are in that permuted
     order too; the dense weight left in the model is in the model's own order either way. Modules
     absent from the dict (and the default None) behave exactly as before.
+
+    `stream_layers` (default False) says the model lives on CPU and only ONE decoder layer at a
+    time may be resident on `device`. Nothing about the algorithm changes — the loop below already
+    keeps every activation on CPU and touches exactly one layer per iteration; the only thing that
+    forced a fully-resident model was the caller's `model.to(device)`. It is what makes this work
+    at 32B: Qwen2.5-32B is 65 GB in fp16 against a 48 GB card, while one of its decoder layers is
+    ~1 GB and the largest per-layer working set (the down_proj Hessian, 27648² fp32) is ~3 GB.
+    Everything OUTSIDE the decoder stack — embeddings, rotary, final norm, lm_head — is moved to
+    `device` for the whole call, because the capture pass runs the model's own forward up to
+    layer 0 and needs them; ~3 GB for Qwen2.5-32B. Leave it False when the model is already
+    resident, which is what every pre-existing caller does.
+
+    `collect_quantized` (default True) controls whether the returned {name: (W_int, s, z)} dict
+    is BUILT. W_int comes back as fp32 (one float per weight), so the dict is 4 bytes per
+    quantized parameter: 26 GB for Llama-2-7B and 124 GB for Qwen2.5-32B, accumulated across the
+    whole sweep. Callers that write a dequantized dense checkpoint — the weights are replaced in
+    place, which is the whole point — never look at it, and scripts/export_gptq_dequant.py was
+    OOM-killed by the kernel at layer 39 of 64 building a dict it then discarded. Pass False there.
+
+    `on_quantized`, if given, is called with (module_name, W_int, scale, zp) — CPU tensors, the
+    same objects the dict would have held — the moment each module is done. It exists so a caller
+    can ABSORB each result and drop it instead of waiting for the whole sweep: with
+    collect_quantized=False that is the difference between 124 GB of fp32 integer levels resident
+    at Qwen2.5-32B and none. Called in sweep order, once per quantized module.
+
+    `rel_err_out` (opt-in) is filled with {module_name: ||W_orig - W_deq|| / ||W_orig||}. It is
+    recorded here, where the original weight is still in the module, so a caller does not have to
+    snapshot every target weight up front to check that quantization actually happened — at 32B
+    that snapshot is ~124 GB of host RAM for a diagnostic.
     """
     target_terminals = set(target_terminals)
     name_of = {m: n for n, m in model.named_modules()}
@@ -332,6 +365,19 @@ def gptq_quantize_model_sequential(
     model.eval()
 
     gather_hooks = register_boundary_gathers_from_meta(model, perm_meta) if perm_meta else []
+
+    # Streaming: put everything EXCEPT the decoder stack on `device` and leave it there. The
+    # capture pass below calls model.forward, which runs embed_tokens and rotary before reaching
+    # layer 0, so those have to be resident; the stack itself is what cannot be. Emptying the
+    # ModuleList's child dict for the duration of .to() is how the stack is excluded — .to()
+    # recurses through _modules, so a temporarily empty one is simply not visited.
+    if stream_layers:
+        _layer_children = dict(layers._modules)
+        layers._modules.clear()
+        try:
+            model.to(device)
+        finally:
+            layers._modules.update(_layer_children)
 
     # ---- capture layer-0 input + per-batch kwargs (attention_mask / position_embeddings / ...) ----
     inps: List[torch.Tensor] = []
@@ -389,6 +435,10 @@ def gptq_quantize_model_sequential(
                 subs[nm] = (sub, gk)
         if not subs:
             continue
+        # Resident only from here to the end of this iteration. Collecting `subs` above needs
+        # module identity, not weights, so the move waits until we know the layer has work.
+        if stream_layers:
+            layer.to(device)
 
         # 1) accumulate input Hessians for this layer's sublayers (fp16 weights)
         Hs: Dict[str, torch.Tensor] = {}
@@ -445,8 +495,22 @@ def gptq_quantize_model_sequential(
                 # bake 1/S back into the salient columns so the in-place (and exported) dense
                 # weight is the deployed value W_fq/S — matching the training fakequant.
                 W_deq[:, :gk] = W_deq[:, :gk] / awq_s.view(1, -1).to(W_deq.device)
+            if rel_err_out is not None:
+                # Here and not in the caller: mod.weight still holds the ORIGINAL weight (copy_
+                # is the next line) and W_deq is already back in the model's own column order
+                # with any 1/S baked in, so this is exactly the change the export will carry.
+                _w0 = mod.weight.data.float()
+                rel_err_out[nm] = ((_w0 - W_deq.to(_w0.dtype)).norm()
+                                   / _w0.norm().clamp_min(1e-12)).item()
+                del _w0
             mod.weight.data.copy_(W_deq.to(mod.weight.dtype))
-            quantized_layers[nm] = (W_int.cpu(), sc.cpu(), zp.cpu())
+            if collect_quantized or on_quantized is not None:
+                _entry = (W_int.cpu(), sc.cpu(), zp.cpu())
+                if collect_quantized:
+                    quantized_layers[nm] = _entry
+                if on_quantized is not None:
+                    on_quantized(nm, *_entry)
+                del _entry
             Hs[nm] = None
 
         # 3) recompute inputs for the next layer using the QUANTIZED layer
@@ -455,6 +519,9 @@ def gptq_quantize_model_sequential(
                 out = layer(inps[i].to(device), **_kw_to_dev(kwargs_list[i]))
                 out = out[0] if isinstance(out, tuple) else out
                 inps[i] = out.detach().to("cpu")
+        # Back to host with its quantized weights, before the next layer arrives.
+        if stream_layers:
+            layer.to("cpu")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -462,5 +529,11 @@ def gptq_quantize_model_sequential(
         h.remove()
     if prev_use_cache is not None:
         model.config.use_cache = prev_use_cache
+    # Hand the model back the way it arrived — wholly on CPU — so the caller can save_pretrained
+    # it without a mixed-device state_dict.
+    if stream_layers:
+        model.to("cpu")
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     return quantized_layers

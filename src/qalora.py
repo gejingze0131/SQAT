@@ -20,7 +20,7 @@ import gc
 import math
 import os
 from types import MethodType
-from typing import Sequence, Tuple
+from typing import Dict, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -67,8 +67,19 @@ def build_qalora_intb_base(
     model = AutoModelForCausalLM.from_pretrained(
         model_name, torch_dtype=dtype, low_cpu_mem_usage=True, trust_remote_code=True,
     )
-    model.to(device)
+    # Stays on the host: the sweep below streams decoder layers one at a time. The fp16 model is
+    # 61 GiB at Qwen2.5-32B against a 44.4 GiB card, and one of its layers is ~1 GiB.
     model.eval()
+
+    # Captured as the sweep produces them, then saved PACKED next to the dense checkpoint. The
+    # dense file is what export reloads; the packed file is what training loads, because a
+    # per-rank dense copy does not fit at 32B. See QALoRAPackedLinear.
+    packed_tensors: Dict[str, torch.Tensor] = {}
+
+    def _capture(name, W_int, scale, zp):
+        packed_tensors[f"{name}.codes"] = W_int.round().to(torch.int8).contiguous()
+        packed_tensors[f"{name}.scale"] = scale.float().contiguous()
+        packed_tensors[f"{name}.zero"] = zp.float().contiguous()
 
     # perm_group_k=0 + perm_meta=None → fully GPTQ every target linear (no salient slice, no
     # boundary gather). Replaces weights in-place with their INT-b quantize→dequant values.
@@ -85,10 +96,27 @@ def build_qalora_intb_base(
         percdamp=percdamp,
         blocksize=blocksize,
         nsamples=nsamples,
+        stream_layers=True,
+        collect_quantized=False,
+        on_quantized=_capture,
     )
 
     os.makedirs(save_dir, exist_ok=True)
     model.save_pretrained(save_dir)
+    from safetensors.torch import save_file
+
+    save_file(packed_tensors, os.path.join(save_dir, QALORA_PACKED_FILENAME))
+    _n = sum(v.numel() for k, v in packed_tensors.items() if k.endswith(".codes"))
+    _f = sum(v.numel() * v.element_size() for v in packed_tensors.values())
+    # Say what is true of each place separately. The FILE stores one int8 per code plus fp32
+    # scale/zero; the bit-packing happens in QALoRAPackedLinear.__init__, so it is the GPU figure
+    # that is q_bits per weight. An earlier version of this line quoted the packed size as the
+    # file size and was wrong by 2.4x.
+    print(f"[QA-LoRA] Saved packed base: {len(packed_tensors) // 3} projections, "
+          f"{_n / 1e6:.1f}M codes. On disk {_f / 1e9:.1f} GB (int8 codes + fp32 scale/zero); "
+          f"resident on each GPU as {q_bits}-bit codes, {_n * q_bits / 8 / 1e9:.1f} GB "
+          f"(dense fp16 would be {_n * 2 / 1e9:.1f} GB per rank).")
+    packed_tensors.clear()
     tokenizer.save_pretrained(save_dir)
     torch.save(
         {
@@ -107,6 +135,140 @@ def build_qalora_intb_base(
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     return save_dir
+
+
+QALORA_PACKED_FILENAME = "qalora_packed.safetensors"
+
+# Row-chunk budget for rebuilding a packed base weight, in bytes of fp32 per chunk. Same trade as
+# SALTQLinear._wq_tensor: whole-matrix dequant needs the fp32 view of the codes and the fp32
+# product live at once, 6.5x the weight it produces.
+_QALORA_CHUNK_BYTES = 16 * 1024 * 1024
+
+
+class QALoRAPackedLinear(nn.Module):
+    """Drop-in for the frozen INT-b base linear, storing PACKED codes instead of dense fp16.
+
+    WHY. QA-LoRA trains on the real GPTQ INT-b grid, and build_qalora_intb_base ships that grid as
+    a DENSE fp16 checkpoint — 61 GiB for Qwen2.5-32B, replicated on every DDP rank, against 44.4
+    GiB of usable VRAM. The grid itself is b bits per weight plus a per-group scale and zero, so
+    the dense form carries 8x the information it needs. This module keeps the codes packed
+    (7.3 GiB at INT2) and rebuilds the weight per forward, exactly as SALTQLinear does for SALT-Q.
+
+    FAITHFULNESS. The rebuild calls the SAME group_dequantize the quantizer used to produce the
+    dense checkpoint, on the same (codes, scale, zero), and casts once to the same dtype — so the
+    weight this returns is bit-identical to the one the dense path would have loaded, and the
+    QA-LoRA computation on top of it is unchanged. scripts/test_qalora_packed.py holds that.
+
+    The contract the rest of the QA-LoRA code needs from a base layer is small: in_features,
+    out_features, being callable, and a class name that does not contain "4bit" (patch_qalora_model
+    uses that to reject NF4 bases). `dequantize()` is the hook src.export._dequant_base_weight
+    already looks for.
+    """
+
+    def __init__(self, in_features, out_features, codes, scale, zero, *,
+                 group_size, q_bits, symmetric, bias=None, dtype=torch.float16):
+        super().__init__()
+        from .qat_saltq import _pack_codes
+
+        self.in_features = int(in_features)
+        self.out_features = int(out_features)
+        self.group_size = int(group_size)
+        self.q_bits = int(q_bits)
+        self.symmetric = bool(symmetric)
+        self._w_dtype = dtype
+        # Shift base for packing: the theoretical floor of the grid, so the shifted codes are
+        # non-negative and fit in q_bits regardless of which convention produced them.
+        self.qn = 0 if not self.symmetric else -(2 ** (self.q_bits - 1))
+        packed, is_packed = _pack_codes(codes.to(torch.int8), self.q_bits, self.qn)
+        self.register_buffer("codes_packed", packed, persistent=False)
+        self._is_packed = is_packed
+        self.register_buffer("qscale", scale.float().contiguous(), persistent=False)
+        self.register_buffer("qzero", zero.float().contiguous(), persistent=False)
+        if bias is None:
+            self.bias = None
+        else:
+            self.register_buffer("bias", bias.clone(), persistent=False)
+
+    def dequantize(self) -> torch.Tensor:
+        """The frozen base weight [out, in], rebuilt from the packed codes."""
+        from .qat_saltq import _unpack_codes
+        from .quant_primitives import group_dequantize
+
+        dev = self.qscale.device
+        W = torch.empty(self.out_features, self.in_features, dtype=self._w_dtype, device=dev)
+        rows = max(1, min(self.out_features,
+                          _QALORA_CHUNK_BYTES // max(self.in_features * 4, 1)))
+        for i in range(0, self.out_features, rows):
+            j = min(i + rows, self.out_features)
+            q = _unpack_codes(self.codes_packed[i:j], self.q_bits, self.qn, self._is_packed)
+            W[i:j] = group_dequantize(
+                q.to(device=dev), self.qscale[i:j], self.qzero[i:j],
+                self.group_size, self.in_features, self.symmetric,
+            ).to(self._w_dtype)
+            del q
+        return W
+
+    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        b = self.bias.to(x.dtype) if self.bias is not None else None
+        return F.linear(x, self.dequantize().to(x.dtype), b)
+
+    def extra_repr(self) -> str:
+        return (f"in_features={self.in_features}, out_features={self.out_features}, "
+                f"q_bits={self.q_bits}, group_size={self.group_size}, packed={self._is_packed}")
+
+
+def swap_in_packed_base(model: nn.Module, base_dir: str, target_terminals: Sequence[str],
+                        dtype: torch.dtype = torch.float16) -> int:
+    """Replace each target nn.Linear with a QALoRAPackedLinear built from base_dir's packed file.
+
+    Called right after from_pretrained and BEFORE the model reaches a device, so the dense fp16
+    weights are dropped while they are still host-side mmap pages. Returns the number replaced;
+    0 means the base has no packed file (a 7B base built before this existed) and the caller
+    should carry on with the dense weights, which is what every existing run did.
+    """
+    import os as _os
+
+    from safetensors.torch import load_file
+
+    path = _os.path.join(base_dir, QALORA_PACKED_FILENAME)
+    if not _os.path.isfile(path):
+        return 0
+    meta_path = _os.path.join(base_dir, "qalora_base_meta.pt")
+    meta = torch.load(meta_path, map_location="cpu", weights_only=False) if _os.path.isfile(meta_path) else {}
+    group_size = int(meta.get("group_size", 32))
+    q_bits = int(meta.get("q_bits", 2))
+    symmetric = bool(meta.get("symmetric", False))
+
+    packed = load_file(path)
+    n = 0
+    terminals = set(target_terminals)
+    # Names are matched against the PACKED FILE's keys, which were recorded on the bare model.
+    # After get_peft_model the tree carries "base_model.model." in front and ".base_layer" behind,
+    # so strip both before looking a module up — otherwise nothing matches and the dense weights
+    # stay, silently, with no error until the first OOM.
+    def _bare(n: str) -> str:
+        n = n.replace("base_model.model.", "", 1) if n.startswith("base_model.model.") else n
+        return n[: -len(".base_layer")] if n.endswith(".base_layer") else n
+
+    for name, mod in list(model.named_modules()):
+        if not isinstance(mod, nn.Linear) or name.split(".")[-1] not in (terminals | {"base_layer"}):
+            continue
+        key = _bare(name)
+        if key.split(".")[-1] not in terminals or f"{key}.codes" not in packed:
+            continue
+        parent_name, _, terminal = name.rpartition(".")
+        parent = model.get_submodule(parent_name) if parent_name else model
+        new = QALoRAPackedLinear(
+            mod.in_features, mod.out_features,
+            packed[f"{key}.codes"], packed[f"{key}.scale"], packed[f"{key}.zero"],
+            group_size=group_size, q_bits=q_bits, symmetric=symmetric,
+            bias=(mod.bias.data if mod.bias is not None else None), dtype=dtype,
+        )
+        setattr(parent, terminal, new)
+        n += 1
+    packed.clear()
+    print(f"[QA-LoRA] Packed base: replaced {n} linears; the dense fp16 weights are not resident.")
+    return n
 
 
 def _active_adapter_name(module: nn.Module) -> str:

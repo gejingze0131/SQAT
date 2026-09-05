@@ -80,3 +80,54 @@ PYCFG
     [ -n "$out" ] || { echo "ERROR: no training.output_dir in $cfg" >&2; return 1; }
     echo "$out"
 }
+
+# Put conda on PATH and make `conda activate` usable from a non-interactive shell.
+#
+# The PBS scripts this repo grew up with could say `source ~/miniforge3/etc/profile.d/conda.sh`
+# because every compute node had the same install. That path is not portable — the local
+# 3xRTX-6000-Ada box carries anaconda3 instead — and three pipelines hardcoded it, so a
+# result-collection hop died with "No such file or directory" AFTER the run had finished.
+# Search the usual roots, then fall back to whatever `conda` is already on PATH.
+conda_bootstrap() {
+    # `conda activate` is a SHELL FUNCTION that only exists after conda.sh has been sourced.
+    # Testing `command -v conda` instead finds the executable, which is present on PATH in any
+    # already-activated environment — so launching from an activated shell made this return early
+    # and the job died at once with "CommandNotFoundError: Your shell has not been properly
+    # configured to use 'conda activate'". Test for the function itself.
+    if [ "$(type -t conda 2>/dev/null)" = "function" ]; then
+        return 0        # already usable in this shell
+    fi
+    local base
+    for base in "${CONDA_ROOT:-}" ~/miniforge3 ~/anaconda3 ~/miniconda3 /opt/conda; do
+        [ -n "$base" ] || continue
+        if [ -f "$base/etc/profile.d/conda.sh" ]; then
+            # `conda activate` reads PS1 and friends, which `set -u` treats as fatal.
+            set +u; . "$base/etc/profile.d/conda.sh"; set -u
+            return 0
+        fi
+    done
+    if command -v conda >/dev/null 2>&1; then
+        set +u; . "$(conda info --base)/etc/profile.d/conda.sh"; set -u
+        return 0
+    fi
+    echo "ERROR: no conda install found. Set CONDA_ROOT to its prefix." >&2
+    return 1
+}
+
+# Read model.name out of a config, for the banner every pipeline prints.
+#
+# Each pipeline carried `MODEL_NAME="meta-llama/Llama-2-7b-hf"` as a plain default and printed
+# it, while the model that actually trains comes from the config — so a Qwen2.5-32B run logged
+# "Model: meta-llama/Llama-2-7b-hf" at the top of its own training log. Harmless for six months
+# because every config named the same model; a trap the moment one does not.
+config_model_name() {
+    local name
+    name="$(python - "$1" <<'PYMDL' 2>/dev/null
+import sys, yaml
+print(yaml.safe_load(open(sys.argv[1]))["model"]["name"])
+PYMDL
+)" || true
+    # Banner-only, so a missing python (pipeline run outside the conda env) degrades to naming
+    # the config rather than printing a blank line or a model this run is not training.
+    [ -n "$name" ] && echo "$name" || echo "(see model.name in $1)"
+}

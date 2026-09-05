@@ -659,14 +659,22 @@ def _dequant_base_weight(module: nn.Module) -> torch.Tensor:
 
     base = module.base_layer
     out_f, in_f = base.out_features, base.in_features
-    weight = base.weight
+    # getattr, and dequantize() checked FIRST. A base that stores its weight in some other form
+    # has no .weight at all — QALoRAPackedLinear keeps packed codes — and reading base.weight
+    # unconditionally raised AttributeError before the dequantize() branch below could be reached.
+    weight = getattr(base, "weight", None)
 
-    if hasattr(weight, "quant_state") and weight.quant_state is not None:
-        W = bnb.functional.dequantize_4bit(weight.data, weight.quant_state).float()
-    elif hasattr(base, "dequantize"):
+    if hasattr(base, "dequantize"):
         W = base.dequantize().float()
-    else:
+    elif weight is not None and getattr(weight, "quant_state", None) is not None:
+        W = bnb.functional.dequantize_4bit(weight.data, weight.quant_state).float()
+    elif weight is not None:
         W = weight.data.float()
+    else:
+        raise AttributeError(
+            f"{type(base).__name__} has neither a .weight nor a dequantize() — "
+            f"_dequant_base_weight cannot recover its base weight."
+        )
 
     if W.shape == (out_f, in_f):
         return W
@@ -1259,6 +1267,7 @@ def _quantize_all_layers(
     perm_group_k: Optional[int] = None,
     sqat_permute_meta: Optional[dict] = None,
     lsq_scales: Optional[Dict[str, dict]] = None,
+    keep_targets: int = 16,
 ) -> Tuple[Dict[str, Tuple], Dict[str, torch.Tensor]]:
     """
     Run PTQ on all target linear layers.
@@ -1274,6 +1283,14 @@ def _quantize_all_layers(
     Returns:
         quantized_layers: {name: (W_int, scales, zeros)}  — all on CPU
         quant_targets:    {name: W_original}               — original-space W for verification
+
+    `keep_targets` caps how many originals are RETAINED. Every consumer of quant_targets is a
+    spot check that stops early — _verify_ptq_consistency at max_layers=5,
+    _verify_sqat_salient_train_export_grid at 8, the sqat_permute grid check at 6 — and all three
+    walk this dict in insertion order, so keeping the first 16 shows them strictly more than they
+    ever read. Keeping all of them cost an fp32 CPU copy of every target weight: fine at 6.5B
+    (26 GB), and 124 GB at Qwen2.5-32B's 31.2B, which is how a 32B RTN export got OOM-killed by
+    the kernel at 51% with the merged fp16 model (65 GB) already resident.
     """
     quantized_layers = {}
     quant_targets = {}
@@ -1377,7 +1394,8 @@ def _quantize_all_layers(
                 )
 
         quantized_layers[name] = (W_int, scales, zeros)
-        quant_targets[name] = W.cpu()
+        if len(quant_targets) < keep_targets:
+            quant_targets[name] = W.cpu()
 
     return quantized_layers, quant_targets
 
@@ -1535,11 +1553,17 @@ def merge_and_export(
         # fp16, NOT NF4 (NF4 would re-quantize the INT-b grid). Its weights ARE the deployed INT-b
         # values; the group adapter is added on top (= folded into the affine zero-points). The
         # merged-only export instead points base_model_name at the ORIGINAL fp16 base (upper bound).
-        print("[Export] Loading QA-LoRA fp16 base (already on the GPTQ INT-b grid)...")
+        # ON CPU, not "auto". This base is plain fp16 and the merge below is pure tensor
+        # arithmetic — no forward pass — so it never needs a GPU. With "auto" a 62 GB base does
+        # not fit a 44 GiB card, accelerate offloads the remainder, and the offloaded weights come
+        # back as META placeholders: _dequant_base_weight then hands _merge_lora_into_dense an
+        # empty W_base and it dies with "Cannot copy out of meta tensor; no data!". The merged
+        # shell a few lines below has always been loaded device_map="cpu" for the same reason.
+        print("[Export] Loading QA-LoRA fp16 base on CPU (already on the GPTQ INT-b grid)...")
         base_model_nf4 = AutoModelForCausalLM.from_pretrained(
             base_model_name,
             torch_dtype=torch.float16,
-            device_map="auto",
+            device_map="cpu",
             trust_remote_code=True,
         )
     else:
@@ -1560,6 +1584,18 @@ def merge_and_export(
 
     print("[Export] Loading LoRA adapter...")
     peft_model = _load_adapter_for_export(base_model_nf4, adapter_path, cfg)
+
+    # QA-LoRA: drop the dense INT-b weights now that PEFT has wrapped them. The merge below needs
+    # one more full fp16 model (the shell), and two 62 GB copies do not fit in 125 GB of host RAM
+    # — the first attempt at this ran the box down to 5 GiB available. The packed codes rebuild
+    # the same weight through _dequant_base_weight's `dequantize()` branch, at 7.3 GiB instead of
+    # 62. AFTER the PEFT wrap, for the same reason as in training: peft only wraps nn.Linear.
+    # Bases with no packed file (every 7B one) replace nothing and the dense path continues.
+    if qat_mode == "qalora":
+        from .qalora import swap_in_packed_base
+
+        swap_in_packed_base(peft_model, base_model_name, target_modules, dtype=torch.float16)
+        gc.collect()
 
     # --- Merge into dense shell ---
     print("[Export] Loading dense model shell...")
@@ -1937,11 +1973,13 @@ def export_merged_only(
         # QA-LoRA never uses NF4 (the patch_qalora_model guard rejects an NF4 base). For the merged
         # upper bound load the ORIGINAL fp16 base (set by train.py export-only) — fp16 + expand_delta
         # is the true no-quant reference.
-        print("[Export] Loading QA-LoRA fp16 base (merged upper bound, no quant)...")
+        # CPU, same reasoning as the dequant path above: fp16 base, arithmetic-only merge, and
+        # "auto" turns anything that does not fit into meta tensors.
+        print("[Export] Loading QA-LoRA fp16 base on CPU (merged upper bound, no quant)...")
         base_model_nf4 = AutoModelForCausalLM.from_pretrained(
             base_model_name,
             torch_dtype=torch.float16,
-            device_map="auto",
+            device_map="cpu",
             trust_remote_code=True,
         )
     else:

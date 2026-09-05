@@ -13,6 +13,7 @@
 #   bash runs/qlora/run_qlora_math.sh --bits 3
 #   bash runs/qlora/run_qlora_math.sh --bits 2 --config configs/sqat_permute_math.yaml
 #   bash runs/qlora/run_qlora_math.sh --skip_eval
+#   bash runs/qlora/run_qlora_math.sh --skip_eval --skip_export   # train only
 # =============================================================================
 
 set -euo pipefail

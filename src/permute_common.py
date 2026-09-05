@@ -1712,6 +1712,7 @@ def build_permuted_fp16_checkpoint(
     reorder_salient: bool = False,
     rank_order: bool = False,
     legacy_topk_ratio: Optional[bool] = None,
+    shard_across_gpus: bool = False,
 ) -> dict:
     """
     Stage-2 pre-quantization step — run on ONE process only (rank 0).
@@ -1741,10 +1742,25 @@ def build_permuted_fp16_checkpoint(
     down_outlier_log_sigma = float(down_outlier_log_sigma)
 
     print(f"[SegPerm] Stage-2 pre-quant: loading {model_name} in {dtype} (no BNB) ...")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=dtype, low_cpu_mem_usage=True,
-    )
-    model.to(device)
+    if shard_across_gpus:
+        # One card cannot hold it. Unlike the GPTQ sweep, the calibration below is a real forward
+        # pass through the WHOLE model, so there is nothing to stream — accelerate's device_map
+        # spreads the layers instead (65 GB of Qwen2.5-32B over 3x46 GiB). Safe for the statistics
+        # because _collect_second_moments' hooks accumulate in fp32 ON CPU, so a per-layer
+        # accumulator never depends on which card its layer landed on. The transforms that follow
+        # are device-aware (apply_hadamard_rotation_fp32 / apply_awq_folding_fp32 move their
+        # operands to the weight's device; the permutations index with CPU long tensors, which
+        # torch accepts against CUDA weights).
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name, torch_dtype=dtype, low_cpu_mem_usage=True, device_map="auto",
+        )
+        placed = sorted({str(p.device) for p in model.parameters()})
+        print(f"[SegPerm] sharded across {len(placed)} device(s): {placed}")
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name, torch_dtype=dtype, low_cpu_mem_usage=True,
+        )
+        model.to(device)
     model.eval()
 
     d_model        = model.config.hidden_size

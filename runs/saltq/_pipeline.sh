@@ -64,12 +64,14 @@ DATASET_NAME="math"
 # Optional subset of that test set, by the records' `type` field (e.g. "boolq piqa", or
 # "gsm8k"). Empty => every task in the split. Useful when the fine-tuning target IS one task.
 EVAL_TASKS=""
-ACCEL_CONFIG="accelerate_config.yaml"
+ACCEL_CONFIG="${ACCEL_CONFIG:-accelerate_config.yaml}"
 NUM_GPUS=4                # 3 x RTX 6000 Ada (46 GB)
 BITS=2                    # first run: INT3 g64, where a Permuted-SQAT MetaMath baseline exists.
                           # INT2 (where GPTQ-only non-salient collapses) is the target regime next.
 
-MODEL_NAME="meta-llama/Llama-2-7b-hf"
+# Banner only — the model that trains is the config's model.name, so default to that and
+# resolve it after parsing (--config may still be ahead of us on the command line).
+MODEL_NAME=""
 OUTPUT_ROOT="outputs/saltq"     # must match training.output_dir in the yaml
 EVAL_GPU=0                # single GPU used for export
 EVAL_GPUS="0,1,2,3"         # GPUs vLLM evaluates on; >1 id => tensor-parallel
@@ -133,6 +135,7 @@ if [ -z "$CONFIG" ]; then
         commonsense) CONFIG="configs/saltq_cs170k_int3_g64.yaml" ;;
     esac
 fi
+[ -n "$MODEL_NAME" ] || MODEL_NAME="$(config_model_name "$CONFIG")"
 
 # Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run
 # will actually evaluate — a --skip_eval run is free to train on anything.

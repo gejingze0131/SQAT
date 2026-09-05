@@ -103,13 +103,17 @@ def main() -> int:
     cal_loader = DataLoader(cal, batch_size=args.batch_size,
                             collate_fn=build_data_collator(tokenizer), shuffle=False)
 
+    # Stays on CPU. gptq_quantize_model_sequential(stream_layers=True) moves the embeddings and
+    # the final norm/head to `device` once, then brings decoder layers over one at a time — the
+    # whole model resident is 65 GB at 32B against a 48 GB card, one layer is ~1 GB.
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path, torch_dtype=dtype, low_cpu_mem_usage=True, trust_remote_code=True)
-    model.to(device).eval()
+    model.eval()
 
-    ref = {n: p.detach().float().cpu().clone()
-           for n, p in model.named_parameters()
-           if n.endswith(".weight") and n.split(".")[-2] in targets}
+    # Filled per module by the quantizer as it goes. The previous version snapshotted every target
+    # weight to fp32 on CPU up front to diff against afterwards, which is fine for a 7B model and
+    # ~124 GB of host RAM for a 32B one — for a diagnostic.
+    rel_err: dict = {}
 
     from src.gptq import gptq_quantize_model_sequential
     gptq_quantize_model_sequential(
@@ -123,16 +127,19 @@ def main() -> int:
         percdamp=args.percdamp,
         blocksize=args.blocksize,
         nsamples=args.nsamples,
+        stream_layers=True,
+        rel_err_out=rel_err,
+        # This script saves a DEQUANTIZED DENSE checkpoint: the weights are replaced in place and
+        # the integer levels are never read back. Collecting them costs 4 bytes per quantized
+        # parameter — 124 GB at 32B — for a dict that goes straight to the garbage collector.
+        collect_quantized=False,
     )
 
     # The number that says whether this ran at all. RTN and GPTQ both "succeed"; only the error
     # separates them, and a near-zero error would mean the weights were never quantized.
-    errs = []
-    for n, p in model.named_parameters():
-        if n in ref:
-            r = ref[n]
-            errs.append((r - p.detach().float().cpu()).norm().item() / max(r.norm().item(), 1e-12))
-    errs.sort()
+    errs = sorted(rel_err.values())
+    if not errs:
+        raise RuntimeError("no target projection was quantized — check --config target_modules")
     print(f"[GPTQ-export] relative weight error over {len(errs)} projections: "
           f"p10={errs[len(errs)//10]:.4f} p50={errs[len(errs)//2]:.4f} "
           f"p90={errs[9*len(errs)//10]:.4f}")

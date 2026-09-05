@@ -51,11 +51,13 @@ DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
 # Empty => resolved from DATASET_NAME after parsing, so --config and
 # --dataset cannot depend on the order they were passed in.
 CONFIG=""
-ACCEL_CONFIG="accelerate_config.yaml"
+ACCEL_CONFIG="${ACCEL_CONFIG:-accelerate_config.yaml}"
 NUM_GPUS=2
 BITS=3
 
-MODEL_NAME="meta-llama/Llama-2-7b-hf"
+# Banner only — the model that trains is the config's model.name, so default to that and
+# resolve it after parsing (--config may still be ahead of us on the command line).
+MODEL_NAME=""
 EVAL_GPU=0                # single GPU used for EXPORT (one dense fp16 model per card)
 EVAL_GPUS="0,1,2,3"       # GPUs vLLM evaluates on; >1 id => tensor-parallel, matching
                           # runs/saltq/_pipeline.sh so the suites are run identically across methods
@@ -67,6 +69,11 @@ OUTPUT_DIR=""
 
 SKIP_TRAIN=false
 SKIP_EVAL=false
+# Stage 1b (the merged-fp16 export) is the only stage that produces a full dense model, and at
+# 32B that is 65 GB on disk and a 65 GB host-RAM merge. --skip_export lets a run TRAIN ONLY and
+# leave both exports to a later --skip_train invocation off the same final/ checkpoint, which is
+# also the recovery path src/export.py's OOM message prescribes.
+SKIP_EXPORT=false
 # CHECKPOINT_DIR="outputs/qlora-none-commonsense-4bit-none/final"
 CHECKPOINT_DIR=""
 
@@ -77,6 +84,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip_train)     SKIP_TRAIN=true;    shift ;;
         --skip_eval)      SKIP_EVAL=true;     shift ;;
+        --skip_export)    SKIP_EXPORT=true;   shift ;;
         --checkpoint_dir) CHECKPOINT_DIR="$2"; SKIP_TRAIN=true; shift 2 ;;
         --num_gpus)       NUM_GPUS="$2";      shift 2 ;;
         --config)         CONFIG="$2";        shift 2 ;;
@@ -95,6 +103,7 @@ done
 # Resolved here rather than at declaration: --config and --dataset can now be passed in either
 # order without one silently overwriting the other.
 [ -n "$CONFIG" ] || CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+[ -n "$MODEL_NAME" ] || MODEL_NAME="$(config_model_name "$CONFIG")"
 [ -n "$OUTPUT_DIR" ] || OUTPUT_DIR="outputs/qlora-none-${DATASET_NAME}"
 
 # Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run
@@ -143,6 +152,9 @@ if [ "$SKIP_TRAIN" = false ]; then
     echo ">>> Training done. Checkpoint: $CHECKPOINT_DIR"
 
     # --- Stage 1b: Export merged-only (FP16 upper bound) -------------------
+    if [ "$SKIP_EXPORT" = true ]; then
+      echo -e "\n>>> Stage 1b: skipped (--skip_export); export later with --checkpoint_dir $CHECKPOINT_DIR"
+    else
     echo -e "\n>>> Stage 1b: Export merged-only (FP16 upper bound)"
     CUDA_VISIBLE_DEVICES=$EVAL_GPU python scripts/train.py \
         --config           "$CONFIG" \
@@ -152,6 +164,7 @@ if [ "$SKIP_TRAIN" = false ]; then
         --export_merged_only \
         --checkpoint_dir   "$CHECKPOINT_DIR" \
         --merge_output_dir "$MERGED_EVAL_DIR"
+    fi
 fi
 
 # ---------------------------------------------------------------------------

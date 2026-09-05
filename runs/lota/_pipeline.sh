@@ -232,7 +232,7 @@ if [ "$SKIP_EVAL" = false ]; then
     # re-ingesting other methods' summaries; _infer_method maps "-lota-dequant-eval" to
     # "LoTA-QAF" and "-lotabase-eval" to "LoTA-QAF base (GPTQModel)".
     echo -e "\n>>> Collecting results into $RESULTS_CSV"
-    source ~/miniforge3/etc/profile.d/conda.sh
+    conda_bootstrap
     conda run -n saltq python scripts/collect_saltq_results.py \
         --results_dir results \
         --csv         "$RESULTS_CSV" \

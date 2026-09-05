@@ -109,6 +109,17 @@ def build_trainer(
     # Detect which the installed version exposes so this works on either.
     import dataclasses
     _ta_fields = {f.name for f in dataclasses.fields(TrainingArguments)}
+    # Optimizer CLASS, opt-in. Both create_optimizer overrides in this file end at
+    # Trainer.get_optimizer_cls_and_kwargs(self.args, ...), so setting training.optim picks the
+    # class while the SALT-Q per-tier param groups (salient / scales / zero-points / LoRA) are
+    # preserved exactly. "adamw_bnb_8bit" quantizes the Adam moments to 8 bit, which at 32B is
+    # worth 16.4 GiB: SALT-Q trains 2.05B parameters against QLoRA-r64's 537M.
+    # Absent from the config => do not pass it => whatever TrainingArguments defaults to for the
+    # installed transformers (5.14: adamw_torch_fused). Never hardcode that default here.
+    _optim_kwargs = {}
+    if train_cfg.get("optim"):
+        _optim_kwargs["optim"] = train_cfg["optim"]
+
     _group_by_length = train_cfg.get("group_by_length", True)
     _length_kwargs = {}
     if "group_by_length" in _ta_fields:
@@ -132,6 +143,12 @@ def build_trainer(
         fp16=train_cfg["fp16"],
         bf16=train_cfg["bf16"],
         logging_steps=train_cfg["logging_steps"],
+        # "steps" (the default, and what every 7B run used) writes a checkpoint every
+        # save_steps: the adapter plus a full Adam state, and save_total_limit rotation holds
+        # TWO of them on disk at once. At 537M trainable parameters that is ~14 GB of headroom
+        # a run has to keep free for its whole epoch. "no" writes only the final adapter, at
+        # the cost of not being able to resume a run that dies partway.
+        save_strategy=train_cfg.get("save_strategy", "steps"),
         save_steps=train_cfg["save_steps"],
         eval_strategy="steps" if eval_dataset else "no",
         eval_steps=train_cfg["eval_steps"] if eval_dataset else None,
@@ -149,6 +166,7 @@ def build_trainer(
         # Gradient checkpointing is already set in model_loader
         # Fix B: length-grouping (see _length_kwargs above; version-dependent key).
         **_length_kwargs,
+        **_optim_kwargs,
     )
 
     # Right-padding collator: input_ids padded with pad_token_id, labels with IGNORE_INDEX so
@@ -194,6 +212,36 @@ def build_trainer(
         data_collator=data_collator,
         callbacks=[QATCallback(qat_handler)],
     )
+
+    # DDP normally keeps its all-reduce buckets SEPARATE from param.grad, so the gradients exist
+    # twice. gradient_as_bucket_view makes the buckets a view of the grads: same arithmetic, same
+    # communication, one copy. At 32B SALT-Q that is 7.9 GiB of the 44.4 GiB card back (2117M
+    # trainable parameters x 4 bytes), and the run OOMs in the forward pass without it. Opt-in, so
+    # every existing config keeps the allocation pattern its numbers were produced under.
+    #
+    # Set here rather than through TrainingArguments because HF exposes only
+    # ddp_{bucket_cap_mb,broadcast_buffers,find_unused_parameters}; the accelerator is built in
+    # Trainer.__init__ and read by accelerator.prepare() later, so this lands in between.
+    if train_cfg.get("ddp_gradient_as_bucket_view", False):
+        acc = getattr(trainer, "accelerator", None)
+        if acc is None:
+            print("[Trainer] ddp_gradient_as_bucket_view requested but the Trainer has no "
+                  "accelerator — ignored.")
+        elif getattr(acc, "ddp_handler", None) is not None:
+            acc.ddp_handler.gradient_as_bucket_view = True
+            print("[Trainer] DDP gradient_as_bucket_view=True (set on the existing handler)")
+        else:
+            from accelerate import DistributedDataParallelKwargs
+
+            acc.ddp_handler = DistributedDataParallelKwargs(
+                gradient_as_bucket_view=True,
+                # Carry across the two DDP settings this file already decides, so creating the
+                # handler does not silently drop them.
+                find_unused_parameters=bool(training_args.ddp_find_unused_parameters),
+                broadcast_buffers=(False if qat_mode == "saltq" else True),
+            )
+            print("[Trainer] DDP gradient_as_bucket_view=True (new handler; "
+                  f"broadcast_buffers={acc.ddp_handler.broadcast_buffers})")
 
     # Closed-form output-mean recalibration of the non-salient zero-point (src/recalibration.py).
     # Off (0) by default: every existing config is bit-identical to before. When on, z's

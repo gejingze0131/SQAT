@@ -121,6 +121,21 @@ def load_model_and_tokenizer(cfg: dict):
         base_model_ref = model
         lora_config = _get_lora_config(cfg)
         model = get_peft_model(model, lora_config)
+        # AFTER peft, deliberately. peft only knows how to wrap torch.nn.Linear and friends, so a
+        # packed base swapped in before this raises "Target module QALoRAPackedLinear is not
+        # supported". It only needs the dense Linear at WRAP time; the wrapper's forward just calls
+        # self.base_layer(x), so the base can be replaced afterwards. Placement is unaffected: the
+        # dense weights are still host-side mmap pages here and are dropped by the swap, so what
+        # reaches the GPU is the packed form — 7.3 GiB instead of 61 GiB per rank at 32B
+        # (src.qalora.QALoRAPackedLinear; bit-identical, scripts/test_qalora_packed.py).
+        # A base with no packed file (every 7B base built before this) replaces nothing and the
+        # dense path continues exactly as before.
+        from .qalora import swap_in_packed_base
+
+        swap_in_packed_base(
+            model, model_name, cfg["lora"]["target_modules"],
+            dtype=getattr(torch, cfg["model"]["dtype"]),
+        )
         model.print_trainable_parameters()
         return model, tokenizer, base_model_ref
 

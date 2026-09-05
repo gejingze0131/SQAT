@@ -55,11 +55,13 @@ DATASET_NAME="math" # "math" or "commonsense" (must match the config yaml)
 # Empty => resolved from DATASET_NAME after parsing, so --config and
 # --dataset cannot depend on the order they were passed in.
 CONFIG=""
-ACCEL_CONFIG="accelerate_config.yaml"
+ACCEL_CONFIG="${ACCEL_CONFIG:-accelerate_config.yaml}"
 NUM_GPUS=2
 BITS=3
 
-MODEL_NAME="meta-llama/Llama-2-7b-hf"
+# Banner only — the model that trains is the config's model.name, so default to that and
+# resolve it after parsing (--config may still be ahead of us on the command line).
+MODEL_NAME=""
 EVAL_GPU=0                # single GPU used for export + evaluation
 
 # Dedicated output dir so a full-QAT run never clobbers a permuted/none run.
@@ -102,6 +104,7 @@ done
 # Resolved here rather than at declaration: --config and --dataset can now be passed in either
 # order without one silently overwriting the other.
 [ -n "$CONFIG" ] || CONFIG="configs/sqat_permute_${DATASET_NAME}.yaml"
+[ -n "$MODEL_NAME" ] || MODEL_NAME="$(config_model_name "$CONFIG")"
 [ -n "$OUTPUT_DIR" ] || OUTPUT_DIR="outputs/qlora-full-${DATASET_NAME}"
 
 # Fail in two seconds rather than after a 20-hour train + a meaningless score. Only when this run

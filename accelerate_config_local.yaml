@@ -1,0 +1,19 @@
+# 3-GPU local box (3x RTX 6000 Ada, 48 GB each) — the same DDP setup as
+# accelerate_config.yaml, minus the fourth card the PBS cluster had.
+# Selected by exporting ACCEL_CONFIG=accelerate_config_local.yaml before a runs/ pipeline,
+# which every pipeline now honours; jobs/local/*.sh do it for you.
+compute_environment: LOCAL_MACHINE
+distributed_type: MULTI_GPU
+downcast_bf16: 'no'
+gpu_ids: "0,1,2"
+machine_rank: 0
+main_training_function: main
+mixed_precision: bf16
+num_machines: 1
+num_processes: 3
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false

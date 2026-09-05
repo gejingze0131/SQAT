@@ -118,11 +118,61 @@ assert not any(f in n for f in ZEROPOINT_PARAM_FRAGMENTS + SCALE_PARAM_FRAGMENTS
                for n in ZPLORA_PARAM_FRAGMENTS), "zp-LoRA names collide with another tier"
 
 
+# Row-chunk budget for rebuilding wq (SALTQLinear._wq_tensor). 64 MiB of fp32 per chunk keeps
+# the transient far below the weight itself while staying large enough that the per-chunk kernel
+# launches are irrelevant next to the GEMM that follows.
+_WQ_CHUNK_BYTES = 8 * 1024 * 1024
+
+
 def _lsq_levels(q_bits: int, symmetric: bool) -> Tuple[int, int]:
     """LSQ grid bounds. Must match qat_base._lsq_qn_qp — the export path uses the same."""
     if symmetric:
         return -(2 ** (q_bits - 1)), 2 ** (q_bits - 1) - 1
     return 0, 2 ** q_bits - 1
+
+
+def _pack_codes(codes: torch.Tensor, q_bits: int, qn: int) -> Tuple[torch.Tensor, bool]:
+    """Pack integer quantization codes into uint8, 8 // q_bits of them per byte.
+
+    WHY. SALTQLinear precomputes `wq = q * s` as a DENSE bf16 tensor so the frozen forward is one
+    GEMM. That is 16 bits carrying a 2-bit value: 58 GiB for Qwen2.5-32B, against a 48 GB card,
+    while the same codes packed are 7.3 GiB — less than half of what QLoRA's NF4 base costs for
+    the same model. The trade this reverses (precompute once vs. dequantize per forward) was
+    correct at 7B, where wq is 12 GiB and the dequant is pure overhead.
+    (Same model at INT3: 14.5 GiB packed 2-per-byte, against 29.1 GiB as int8 and 58 GiB as bf16.)
+
+    Codes are shifted by `qn` first so they are non-negative: asymmetric grids are already
+    [0, 2^b-1], symmetric ones are [-2^(b-1), 2^(b-1)-1]. Returns (buffer, is_packed); when the
+    column count does not divide the codes-per-byte, it falls back to one uint8 per code, which
+    is still 2x smaller than bf16.
+
+    A bit width that does not divide 8 wastes the remainder of every byte — INT3 stores 2 codes
+    per byte and leaves bits 6-7 empty, so it costs 8 bits per weight rather than the 3 a
+    byte-spanning layout would give. That is still 2x better than the int8 fallback, and at 32B
+    it is the difference between 29.1 GiB of resident codes and 14.5. The unused bits are
+    deliberate: a spanning layout would make every row slice of `wq_codes` start at a bit offset
+    rather than a byte offset, and `_wq_tensor` rebuilds wq by slicing rows.
+    """
+    shifted = codes.to(torch.int16) - int(qn)
+    per = 8 // q_bits if 1 <= q_bits <= 8 else 0
+    if per <= 1 or codes.shape[-1] % per:
+        return shifted.to(torch.uint8).contiguous(), False
+    v = shifted.to(torch.uint8).reshape(*codes.shape[:-1], codes.shape[-1] // per, per)
+    out = torch.zeros(v.shape[:-1], dtype=torch.uint8, device=codes.device)
+    for k in range(per):
+        out = out | (v[..., k] << (k * q_bits))
+    return out.contiguous(), True
+
+
+def _unpack_codes(packed: torch.Tensor, q_bits: int, qn: int, is_packed: bool) -> torch.Tensor:
+    """Inverse of _pack_codes: uint8 buffer -> int8 codes in the original [qn, qp] range."""
+    if not is_packed:
+        return (packed.to(torch.int16) + int(qn)).to(torch.int8)
+    per = 8 // q_bits
+    mask = (1 << q_bits) - 1
+    cols = [((packed >> (k * q_bits)) & mask) for k in range(per)]
+    v = torch.stack(cols, dim=-1).reshape(*packed.shape[:-1], packed.shape[-1] * per)
+    return (v.to(torch.int16) + int(qn)).to(torch.int8)
 
 
 # ============================================================================
@@ -212,7 +262,8 @@ def build_saltq_base(
     model = AutoModelForCausalLM.from_pretrained(
         permuted_base_dir, torch_dtype=dtype, low_cpu_mem_usage=True,
     )
-    model.to(device)
+    # Stays on the host — the GPTQ sweep below streams decoder layers itself (stream_layers=True).
+    # The salient capture just below reads weights and copies them to CPU, so it needs no device.
     model.eval()
 
     # --- capture the salient slices BEFORE GPTQ overwrites the weights in place ---
@@ -242,30 +293,6 @@ def build_saltq_base(
               "weight — it is folded into the frozen-codes + trainable-(s,z) pool (z-only "
               "ablation).")
 
-    # --- GPTQ the permuted base (this is the frozen-code initialization) ---
-    quantized = gptq_quantize_model_sequential(
-        model,
-        calibration_dataloader,
-        target_terminals,
-        perm_group_k=max_group_k,
-        group_size=group_size,
-        q_bits=q_bits,
-        symmetric=symmetric,
-        device=device,
-        perm_meta=perm_meta,
-        percdamp=percdamp,
-        blocksize=blocksize,
-        nsamples=nsamples,
-        awq_scales=None,      # SALT-Q trains the salient weights directly; AWQ-S is redundant
-        lsq_scales=None,
-        obs_salient=(salient_init in ("gptq", "gptq_latent")),
-    )
-
-    del model
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
     # --- split into the two segments and persist ---
     os.makedirs(save_dir, exist_ok=True)
     tensors: Dict[str, torch.Tensor] = {}
@@ -276,12 +303,13 @@ def build_saltq_base(
     n_sal_codes = 0
     n_sal_moved = 0        # salient_init=gptq: codes where OBS chose differently from min-max RTN
 
-    # Drain `quantized` as we go: gptq_quantize_model_sequential hands back the integer levels as
-    # fp32 [out, in] tensors, which for a 7B model is ~27 GB of host RAM. Popping each entry right
-    # after narrowing it to int8 keeps the peak from stacking the fp32 originals on top of the
-    # int8 copies.
-    for name in list(quantized.keys()):
-        W_int, scale, zp = quantized.pop(name)
+    # ABSORB EACH MODULE AS THE SWEEP PRODUCES IT, instead of collecting the whole sweep first.
+    # gptq_quantize_model_sequential hands back the integer levels as fp32 [out, in] tensors:
+    # ~27 GB of host RAM for Llama-2-7B and 124 GB for Qwen2.5-32B, on top of the 65 GB model.
+    # Draining the dict afterwards -- what this used to do -- cannot help, because the dict is
+    # already full by the time the call returns. As a callback the peak is ONE module.
+    def _absorb(name, W_int, scale, zp):
+        nonlocal n_codes, n_salient, n_qparams, n_sal_codes, n_sal_moved
         out_f, in_f, gk = shapes[name]
 
         if not train_salient:
@@ -303,7 +331,7 @@ def build_saltq_base(
             }
             salient_fp.pop(name, None)
             del W_int, scale, zp
-            continue
+            return
 
         n_sal_g = gk // group_size
 
@@ -364,6 +392,37 @@ def build_saltq_base(
         }
         salient_fp.pop(name, None)
         del W_int, scale, zp
+
+    # --- GPTQ the permuted base (this is the frozen-code initialization) ---
+    gptq_quantize_model_sequential(
+        model,
+        calibration_dataloader,
+        target_terminals,
+        perm_group_k=max_group_k,
+        group_size=group_size,
+        q_bits=q_bits,
+        symmetric=symmetric,
+        device=device,
+        perm_meta=perm_meta,
+        percdamp=percdamp,
+        blocksize=blocksize,
+        nsamples=nsamples,
+        awq_scales=None,      # SALT-Q trains the salient weights directly; AWQ-S is redundant
+        lsq_scales=None,
+        obs_salient=(salient_init in ("gptq", "gptq_latent")),
+        # The permuted base stays on the HOST; decoder layers stream one at a time. The
+        # model is 65 GB at Qwen2.5-32B against a 46 GiB card; one of its layers is ~1 GB.
+        stream_layers=True,
+        # And the results are absorbed per module rather than collected: see _absorb.
+        collect_quantized=False,
+        on_quantized=_absorb,
+    )
+
+    del model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
 
     gc.collect()
     save_file(tensors, os.path.join(save_dir, SALTQ_BASE_FILENAME))
@@ -483,6 +542,7 @@ class SALTQLinear(nn.Module):
         train_scale: bool = False,
         continuous_z: bool = True,
         wq_dtype: torch.dtype = torch.bfloat16,
+        packed_wq: bool = False,
         zplora_rank: int = 0,
         zplora_alpha: float = 16.0,
         salient_lora: bool = False,
@@ -517,6 +577,13 @@ class SALTQLinear(nn.Module):
         # Codes stay on the host: export and verification read them, the training forward does not.
         # A plain attribute (not a buffer) so .to(device) leaves them where they are.
         self._codes_cpu = codes.to(torch.int8).contiguous().cpu()
+        # packed_wq: keep the codes PACKED ON DEVICE and rebuild wq per forward instead of
+        # materializing it once in bf16 (see _pack_codes). The host copy is then dropped — under
+        # DDP every rank holds its own, and at 32B that is 29 GiB per rank of int8 for something
+        # only export reads. _codes_ref() unpacks on demand for those callers.
+        self.packed_wq = bool(packed_wq) and not bool(train_scale)
+        self._wq_dtype = wq_dtype
+        self._wq_is_packed = False
         if self.train_scale:
             self.saltq_s = nn.Parameter(s_n.float().contiguous())
         else:
@@ -575,14 +642,21 @@ class SALTQLinear(nn.Module):
         # Precompute the frozen part of the deployed weight. Only valid while s is frozen.
         # Salient columns are left at zero: their contribution comes from weight_salient.
         if not self.train_scale:
-            wq = torch.zeros(self.out_features, self.in_features, dtype=wq_dtype)
-            q = codes.float().view(self.out_features, self.n_nonsal_g, self.group_size)
-            wq[:, self.group_k:] = (
-                (q * s_n.float().unsqueeze(-1))
-                .reshape(self.out_features, self.n_nonsalient).to(wq_dtype)
-            )
-            self.register_buffer("wq", wq, persistent=False)
-            del q
+            if self.packed_wq:
+                pk, is_pk = _pack_codes(self._codes_cpu, self.q_bits, self.Qn)
+                self.register_buffer("wq_codes", pk, persistent=False)
+                self._wq_is_packed = is_pk
+                self.register_buffer("wq", None)          # rebuilt per forward by _wq_tensor()
+                self._codes_cpu = None
+            else:
+                wq = torch.zeros(self.out_features, self.in_features, dtype=wq_dtype)
+                q = codes.float().view(self.out_features, self.n_nonsal_g, self.group_size)
+                wq[:, self.group_k:] = (
+                    (q * s_n.float().unsqueeze(-1))
+                    .reshape(self.out_features, self.n_nonsalient).to(wq_dtype)
+                )
+                self.register_buffer("wq", wq, persistent=False)
+                del q
 
         # ---- salient segment: trainable weights + trainable LSQ grid ----
         if self.group_k > 0:
@@ -720,6 +794,49 @@ class SALTQLinear(nn.Module):
         """
         return self._zplora_dC() / (self._s_eff() * self.group_size)
 
+    def _codes_ref(self) -> torch.Tensor:
+        """The frozen non-salient codes, int8. The host copy when it exists; unpacked from the
+        device buffer under packed_wq, where there deliberately is no host copy."""
+        if self._codes_cpu is not None:
+            return self._codes_cpu
+        return _unpack_codes(self.wq_codes, self.q_bits, self.Qn, self._wq_is_packed)
+
+    def _wq_tensor(self) -> torch.Tensor:
+        """q * s with the salient columns zeroed — the frozen half of the deployed weight.
+
+        Under packed_wq this is rebuilt from the packed codes on every forward, in the SAME
+        order the precompute used (unpack -> fp32 -> multiply by saltq_s in fp32 -> one cast to
+        wq_dtype), which makes it bit-identical to the buffer it replaces. Note saltq_s, NOT
+        _s_eff(): the precompute never applied _s_eff's clamp, and matching it exactly is the
+        whole point. Gradient checkpointing is what keeps the transient bounded — without it
+        autograd would hold every layer's rebuilt wq for the backward and nothing would be saved.
+        """
+        if self.wq is not None:
+            return self.wq
+        dev = self.saltq_s.device
+        wq = torch.zeros(self.out_features, self.in_features,
+                         dtype=self._wq_dtype, device=dev)
+        s_all = self.saltq_s.float()
+        # IN ROW CHUNKS. The arithmetic is per-element (unpack -> fp32 -> multiply by this row's
+        # scale -> cast), so chunking the output rows changes nothing about any result — and it is
+        # the difference between a transient the size of the weight and one 6.5x larger. Done
+        # whole-matrix, down_proj's 0.26 GiB wq costs 1.7 GiB to build: the fp32 view of the codes
+        # and the fp32 product are 4 bytes per weight each, and both are live at once. That is
+        # what the precompute this replaces never paid, because it ran once on the host at init.
+        rows = max(1, min(self.out_features,
+                          _WQ_CHUNK_BYTES // max(self.n_nonsalient * 4, 1)))
+        for i in range(0, self.out_features, rows):
+            j = min(i + rows, self.out_features)
+            q = _unpack_codes(self.wq_codes[i:j], self.q_bits, self.Qn, self._wq_is_packed) \
+                if self._codes_cpu is None else self._codes_cpu[i:j]
+            q = q.to(device=dev).float().view(j - i, self.n_nonsal_g, self.group_size)
+            wq[i:j, self.group_k:] = (
+                (q * s_all[i:j].unsqueeze(-1))
+                .reshape(j - i, self.n_nonsalient).to(self._wq_dtype)
+            )
+            del q
+        return wq
+
     def _s_eff(self) -> torch.Tensor:
         s = self.saltq_s.float().clamp(min=1e-8)
         return grad_scale(s, self._s_gfactor) if self.train_scale else s
@@ -731,7 +848,7 @@ class SALTQLinear(nn.Module):
         This is the REFERENCE definition (and the training path when train_scale=True). The
         z-only forward never calls it — see the class docstring.
         """
-        q = (self._codes_cpu if codes is None else codes)
+        q = (self._codes_ref() if codes is None else codes)
         s = self._s_eff()
         q = q.to(device=s.device, dtype=torch.float32).view(
             self.out_features, self.n_nonsal_g, self.group_size)
@@ -766,8 +883,9 @@ class SALTQLinear(nn.Module):
             # rebuilt. This is the configuration that costs the extra 2N.
             return F.linear(x, self.effective_weight(dtype=x.dtype), bias)
 
-        # Frozen main GEMM. wq holds q*s with the salient columns zeroed.
-        out = F.linear(x, self.wq, bias)
+        # Frozen main GEMM. wq holds q*s with the salient columns zeroed (rebuilt from packed
+        # codes here when packed_wq is on — same value, see _wq_tensor).
+        out = F.linear(x, self._wq_tensor(), bias)
 
         # Zero-point correction. (q - z)*s = q*s - z*s and z*s is constant within a group, so the
         # whole correction is one pooled-input GEMM instead of a full [out, in] reconstruction.
@@ -857,7 +975,7 @@ class SALTQLinear(nn.Module):
             z_n = self._z_eff().detach()
             if not self.continuous_z:
                 z_n = z_n.round().clamp(self.Qn, self.Qp)
-        codes.append(self._codes_cpu.to(device=s_n.device, dtype=torch.float32))
+        codes.append(self._codes_ref().to(device=s_n.device, dtype=torch.float32))
         scales.append(s_n)
         zeros.append(z_n)
 
@@ -927,6 +1045,7 @@ def build_saltq_model(
     dtype: torch.dtype = torch.bfloat16,
     param_dtype: torch.dtype = torch.float32,
     gradient_checkpointing: bool = True,
+    packed_wq: bool = False,
     train_layernorms: bool = False,
     train_scale: bool = False,
     continuous_z: bool = True,
@@ -992,6 +1111,7 @@ def build_saltq_model(
                 train_scale=train_scale,
                 continuous_z=continuous_z,
                 wq_dtype=dtype,
+                packed_wq=packed_wq,
                 zplora_rank=zplora_rank,
                 zplora_alpha=zplora_alpha,
                 salient_lora=salient_lora,
@@ -1051,10 +1171,17 @@ def build_saltq_model(
         f"[SALT-Q] Replaced {n_replaced} linears; trainable {n_train / 1e6:.1f}M params "
         f"({100.0 * n_train / max(total, 1):.2f}% of the fp-parameter tree)\n"
         f"[SALT-Q] affine training mode: {mode}\n"
-        f"[SALT-Q] frozen: {n_codes / 1e6:.1f}M codes (host, int8, export/verify only)"
-        + ("" if train_scale else
-           f" -> precomputed q*s on device as {dtype} "
-           f"({n_codes * torch.finfo(dtype).bits / 8 / 1e9:.1f} GB)")
+        # Describe what is ACTUALLY stored. This line used to say "host, int8" and "precomputed
+        # q*s on device" unconditionally, which under packed_wq is wrong in both halves and
+        # reported 60.2 GB for a 7.3 GB buffer -- the one number a reader would check.
+        + (f"[SALT-Q] frozen: {n_codes / 1e6:.1f}M codes"
+           + (f" PACKED on device at {q_bits}-bit "
+              f"({n_codes * q_bits / 8 / 1e9:.1f} GB); wq rebuilt per forward"
+              if packed_wq else
+              " (host, int8, export/verify only)"
+              + ("" if train_scale else
+                 f" -> precomputed q*s on device as {dtype} "
+                 f"({n_codes * torch.finfo(dtype).bits / 8 / 1e9:.1f} GB)")))
     )
     if device is not None:
         model.to(device)

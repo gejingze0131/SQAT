@@ -297,6 +297,48 @@ def load_config(config_path: str, overrides: dict) -> dict:
     return cfg
 
 
+def _qalora_base_reusable(qa_base_dir: str, cfg: dict) -> bool:
+    """True when qa_base_dir already holds a GPTQ INT-b base built under THIS config.
+
+    Without this, every non-resume launch rebuilt the base from scratch: a 64-layer GPTQ sweep
+    (one hour at Qwen2.5-32B) plus ~98 GB rewritten, discarding a byte-identical one that was
+    already there. The resume path had a reuse branch; the ordinary path did not, so the cost
+    landed on exactly the restarts that follow a failure. Matches the SALT-Q / permuted-base
+    convention: reuse only when the recorded (bits, group_size, symmetric, source model) all agree,
+    since a base built under different settings is not the base the config describes.
+    """
+    import os as _os
+
+    meta_path = _os.path.join(qa_base_dir, "qalora_base_meta.pt")
+    if not (_os.path.isdir(qa_base_dir) and _os.path.exists(meta_path)):
+        return False
+    try:
+        meta = torch.load(meta_path, map_location="cpu", weights_only=False)
+    except Exception:  # noqa: BLE001
+        return False
+    want = (
+        int(cfg["model"]["quant_bits"]),
+        int(cfg["qat"].get("group_size", 128)),
+        bool(cfg["qat"].get("symmetric", False)),
+    )
+    have = (
+        int(meta.get("q_bits", -1)),
+        int(meta.get("group_size", -1)),
+        bool(meta.get("symmetric", None)),
+    )
+    if want != have:
+        print(f"[QA-LoRA] existing base at {qa_base_dir} was built for "
+              f"(bits,g,sym)={have}, config wants {want} — rebuilding.")
+        return False
+    # A base whose weights were never written is worse than none: training would silently load a
+    # partial checkpoint.
+    import glob as _glob
+
+    if not _glob.glob(_os.path.join(qa_base_dir, "*.safetensors")):
+        return False
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description="QLoRA + QAT Training")
     parser.add_argument("--config", type=str, default="configs/default.yaml")
@@ -595,6 +637,10 @@ def main():
                 collate_fn=build_data_collator(sp_tok), shuffle=False,
             )
             build_permuted_fp16_checkpoint(
+                # Spread the fp16 base over every visible GPU for the calibration forward pass.
+                # A 32B model is 65 GB against one 46 GiB card; 7B configs leave this false and
+                # take the unchanged single-device path.
+                shard_across_gpus=bool(sp_cfg.get("shard_across_gpus", False)),
                 model_name=cfg["model"]["name"],
                 tokenizer=sp_tok,
                 calibration_dataloader=cal_dataloader,
@@ -756,6 +802,9 @@ def main():
                 )
             if accelerator.is_main_process:
                 print(f"\n[QA-LoRA][Resume] reusing existing GPTQ base: {qa_base_dir}")
+        elif _qalora_base_reusable(qa_base_dir, cfg):
+            if accelerator.is_main_process:
+                print(f"\n[QA-LoRA] 复用已有 GPTQ INT-b base（配置一致，不重新 GPTQ）: {qa_base_dir}")
         elif accelerator.is_main_process:
             print("\n[QA-LoRA] Building GPTQ INT-b base (quantize BEFORE training, no NF4)...")
             qa_tok = load_tokenizer(cfg)
@@ -799,6 +848,10 @@ def main():
             dtype=getattr(torch, cfg["model"]["dtype"]),
             param_dtype=torch.float32,
             gradient_checkpointing=True,
+            # Store the frozen non-salient codes PACKED on device and rebuild the bf16 weight per
+            # forward, instead of materializing it once. Bit-identical (scripts/test_saltq_packed_wq.py);
+            # 58.1 -> 7.3 GiB at Qwen2.5-32B, which is what makes it fit on a 48 GB card at all.
+            packed_wq=bool(cfg["qat"]["saltq"].get("packed_wq", False)),
             train_layernorms=bool(cfg["qat"]["saltq"].get("train_layernorms", False)),
             train_scale=bool(cfg["qat"]["saltq"].get("train_scale", False)),
             continuous_z=bool(cfg["qat"]["saltq"].get("continuous_z", True)),
