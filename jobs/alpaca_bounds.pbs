@@ -145,7 +145,10 @@ collect_one() {   # <model_dir substring> <config or ""> <note>
 # The two anchors were never TRAINED, so they get no --config: the lr / epochs / eff_batch
 # columns are recovered from it, and filling them in for an untrained model would describe a run
 # that did not happen.
-collect_one "llama-2-7b-hf" "" \
+# The filter is a case-SENSITIVE substring of model_dir, which for this row is the hub id
+# "meta-llama/Llama-2-7b-hf" — a lower-cased filter here matched nothing and silently left the
+# anchor out of the CSV (2026-09-04).
+collect_one "Llama-2-7b-hf" "" \
     "T-Alpaca anchor: pretrained Llama-2-7B fp16, no fine-tuning"
 collect_one "gptqbase_llama2_int2_g32_c4cal" "" \
     "T-Alpaca anchor: GPTQ INT2 g32 (C4 128x2048) of the pretrained model, no fine-tuning"
