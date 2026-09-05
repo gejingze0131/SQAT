@@ -1,0 +1,44 @@
+Fri Sep  4 07:16:46 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   43C    P0             53W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+Start time: Fri Sep  4 07:16:46 +08 2026
+rc=0
+
+>>> frozen-code base sanity (code histogram / reconstruction error / group_k structure)
+base      : outputs/saltq_alpaca_int2_g32_ep3_k256_c4cal_sgptql_zp2x/saltq_base_2bit_g32
+grid      : INT2 asym, group_size=32, levels [0, 3]
+layers    : 224
+freedom   : 314.6M full + 404.8M affine + 6161.4M frozen
+
+train_salient: True
+group_k structure: OK
+
+model.layers.0.self_attn.q_proj  group_k=256  non-salient=3840
+  codes 0..3   levels used 4/4   dist% [35, 15, 15, 35]
+  reconstruction: relative Frobenius error 171.67%  (INT2 should be tens of percent)
+  ^ PROBLEM: 171.7% >= 100% — reconstruction is worse than predicting zero. Do NOT train on this base; rebuild it.
+
+model.layers.8.self_attn.q_proj  group_k=256  non-salient=3840
+  codes 0..3   levels used 4/4   dist% [14, 36, 36, 14]
+  reconstruction: relative Frobenius error 45.97%  (INT2 should be tens of percent)
+
+model.layers.16.self_attn.q_proj  group_k=256  non-salient=3840
+  codes 0..3   levels used 4/4   dist% [14, 36, 36, 14]
+  reconstruction: relative Frobenius error 46.11%  (INT2 should be tens of percent)
+
+model.layers.24.self_attn.q_proj  group_k=256  non-salient=3840
+  codes 0..3   levels used 4/4   dist% [14, 36, 36, 14]
+  reconstruction: relative Frobenius error 45.14%  (INT2 should be tens of percent)
+
+RESULT: SOMETHING IS WRONG
+saltq_alpaca_int2_g32_ep3_k256_c4cal_sgptql_zp2x-2bit-saltq-deploy-eval mmlu 5-shot acc: 32.77
+End time: Fri Sep  4 09:51:39 +08 2026

@@ -1,0 +1,17 @@
+Fri Sep  4 10:03:28 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:03:00.0 Off |                    0 |
+| N/A   42C    P0             50W /  400W |       1MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+Start time: Fri Sep  4 10:03:28 +08 2026
+rc=0
+Llama-2-7B_int2_g32_k256_asym_c4cal-2bit-qeftbase-eval         mmlu 5-shot acc: 30.27
+qeft_alpaca_int2_g32_ep3_lr5e5-2bit-qeft-dense-eval            mmlu 5-shot acc: 34.25
+End time: Fri Sep  4 12:09:49 +08 2026
