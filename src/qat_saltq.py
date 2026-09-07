@@ -152,6 +152,40 @@ def _pack_codes(codes: torch.Tensor, q_bits: int, qn: int) -> Tuple[torch.Tensor
     it is the difference between 29.1 GiB of resident codes and 14.5. The unused bits are
     deliberate: a spanning layout would make every row slice of `wq_codes` start at a bit offset
     rather than a byte offset, and `_wq_tensor` rebuilds wq by slicing rows.
+
+    WHY NOT bitsandbytes. It already ships a fast fused 4-bit dequant kernel, and the obvious
+    question is whether SALT-Q's frozen grid can ride it instead of the unpack-multiply-cast
+    below. Checked against bitsandbytes 0.50.0, the answer is no, and the reason is not the one
+    you would guess:
+
+      * There is no 2-bit or 3-bit kernel at all. The low-width surface is `*_4bit` (nf4/fp4)
+        and `*_blockwise` (8-bit). Only the 8-bit path takes a caller-supplied `code` table —
+        the 4-bit code tables are compiled into the CUDA kernel and `quantize_4bit` rejects
+        anything but "nf4"/"fp4".
+      * The 4-bit path COULD nonetheless carry an affine INT2 grid, which is worth writing down
+        because it looks impossible and is not. bnb dequantizes as `code[idx] * absmax[block]`,
+        so SALT-Q's `q * s` needs four table entries equally spaced from zero. NF4's are normal
+        quantiles and have no such run, but FP4's table contains exactly (0, 1/3, 2/3, 1) at
+        indices [0, 4, 2, 3]; remapping q=0..3 onto those and setting absmax = 3*s gives
+        (k/3)*3s = k*s. bnb's 4-bit blocksize list also includes 32, so group_size=32 lines up
+        with its flat blocks in a row-major [out, in] tensor.
+      * It is still the wrong trade. Riding a 4-bit kernel costs 4 bits per code where this
+        packing costs 2 — 14.5 GiB against 7.3 at Qwen2.5-32B — which gives back half of the
+        entire reason wq is packed. And bnb computes `code[idx] * absmax` with absmax = 3*s
+        rounded to its own storage dtype, a different association from the `(q.float() *
+        s.float()).to(wq_dtype)` this file matches bit-for-bit; scripts/test_saltq_packed_wq.py
+        would stop passing, and every SALT-Q number produced through it would be incomparable to
+        the Llama-2-7B rows in results_saltq.csv for a reason unrelated to the method.
+      * INT3 cannot ride FP4 in any case: it would need eight entries equally spaced from zero
+        (0, 1/7, ... 1) and the table has no such run.
+
+    What WOULD pay is a small fused kernel of our own (Triton, which torch already ships): one
+    pass doing unpack -> fp32 multiply -> write wq_dtype, keeping the fp32 product in registers
+    so it rounds exactly once and stays bit-identical. _wq_tensor currently materializes an int8
+    unpack, an fp32 cast and an fp32 product before the output — for Qwen2.5-32B's down_proj
+    that is ~1.5 GB of traffic against a 283 MB floor, about 9% of a micro-step at the measured
+    2.4 s. A fused version would cut that to ~2% AND keep the equivalence guarantee, which is
+    the part bnb cannot offer.
     """
     shifted = codes.to(torch.int16) - int(qn)
     per = 8 // q_bits if 1 <= q_bits <= 8 else 0
