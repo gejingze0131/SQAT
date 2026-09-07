@@ -36,6 +36,13 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 # The dataloader forks workers off a process that already built a fast tokenizer; leaving Rust
 # parallelism on there prints a deadlock warning per worker per epoch and can actually hang.
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+# A single-process `accelerate launch` execs `python scripts/train.py` WITHOUT -u (the multi-proc
+# path adds it), so through a `| tee` pipe the trainer's stdout is block-buffered: the tqdm bar
+# (stderr) advances live while the {'loss': ...} lines sit in a 4 KB buffer and only land at
+# process exit. That made a healthy 1-GPU run look like it was logging nothing for hours
+# (2026-09-06, the seg32 ablation arm). wandb's own files/output.log captured them all along,
+# which is how it was diagnosed. Unbuffer stdout so the file on disk matches what is happening.
+export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
 # How many cards the training launch gets, and which the vLLM eval uses. They differ, and the
 # difference is not cosmetic: vLLM's tensor-parallel size must divide the model's attention-head

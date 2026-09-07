@@ -1,0 +1,27 @@
+# 2-GPU local launch (2 of the 3 RTX 6000 Ada, 48 GB each).
+#
+# WHY TWO AND NOT THREE. The effective batch of every MetaMath cell in this repo is 80
+# (4 x 5 x 4 on the cluster), and 80 is not divisible by 3 — a 3-GPU launch can only hit 78
+# or 81. Effective batch sets T (optimizer steps per epoch), T sets the displacement constant
+# c ~ 0.47*sqrt(T), and c scales every realized |Delta param| the lr table in configs/saltq*.yaml
+# was derived against. So the choice is between one idle card and re-deriving three learning
+# rates: the card idles. 2 x 8 x 5 = 80, unchanged.
+#
+# The third card (2) stays free during training and is used by the vLLM eval afterwards.
+# Selected by exporting ACCEL_CONFIG=accelerate_config_local2.yaml; jobs/local/*.sh that need
+# it do so themselves.
+compute_environment: LOCAL_MACHINE
+distributed_type: MULTI_GPU
+downcast_bf16: 'no'
+gpu_ids: "0,1"
+machine_rank: 0
+main_training_function: main
+mixed_precision: bf16
+num_machines: 1
+num_processes: 2
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false

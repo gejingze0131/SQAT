@@ -1,0 +1,29 @@
+# Single-GPU launch pinned to CARD 2 of the local 3x RTX 6000 Ada box.
+#
+# WHY IT NAMES A CARD RATHER THAN JUST ASKING FOR ONE. Cards 0 and 1 are held by the MetaMath
+# INT3 campaign (accelerate_config_local2.yaml), which runs for well over a day. A plain
+# num_processes: 1 launch would take card 0 and fight it for memory. gpu_ids: "2" is what keeps
+# the WikiText-2 column out of its way; the process sees card 2 as cuda:0.
+#
+# The WikiText-2 cell's effective batch is 16, which divides onto one card as 4 x 4 accumulation,
+# so running it here costs a longer wall clock and nothing else — T = 176 either way, and every
+# lr in those configs carries a sqrt(T) factor that would otherwise have to be re-derived.
+#
+# Selected by exporting ACCEL_CONFIG=accelerate_config_local1.yaml; jobs/local/wiki2_int3_g64_
+# ep1_all_arms.sh does it, and also points the non-accelerate stages (QEFT's torchrun, every
+# export, every eval) at the same card.
+compute_environment: LOCAL_MACHINE
+distributed_type: 'NO'
+downcast_bf16: 'no'
+gpu_ids: "2"
+machine_rank: 0
+main_training_function: main
+mixed_precision: bf16
+num_machines: 1
+num_processes: 1
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false

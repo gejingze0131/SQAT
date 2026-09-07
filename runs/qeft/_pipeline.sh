@@ -171,12 +171,15 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$SKIP_EXPORT" = false ]; then
     echo -e "\n>>> Stage 2: dense export (+ per-layer equivalence check)"
-    CUDA_VISIBLE_DEVICES=0 python "$QEFT_DIR/export_dense.py" \
+    # EXPORT_GPU, not a hardcoded 0. On a shared box card 0 can be busy with another run, and a
+    # dense 7B export that lands on top of it OOM-kills both. Defaults to BASE_GPU, which
+    # defaults to 0, so every existing caller is unaffected.
+    CUDA_VISIBLE_DEVICES="${EXPORT_GPU:-${BASE_GPU:-0}}" python "$QEFT_DIR/export_dense.py" \
         --ckpt "$FINAL_DIR" --out "$EVAL_DIR"
 
     if [ "$WITH_BASE" = true ] && [ ! -f "$BASE_EVAL_DIR/config.json" ]; then
         echo -e "\n>>> Stage 2b: dense export of the bare mixed-precision base (this row's floor)"
-        CUDA_VISIBLE_DEVICES=0 python "$QEFT_DIR/export_dense.py" \
+        CUDA_VISIBLE_DEVICES="${EXPORT_GPU:-${BASE_GPU:-0}}" python "$QEFT_DIR/export_dense.py" \
             --ckpt none --base_dir "$BASE_DIR" --out "$BASE_EVAL_DIR"
     fi
 fi
