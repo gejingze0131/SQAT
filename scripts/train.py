@@ -93,6 +93,17 @@ def _permuted_base_reusable(permuted_dir: str, cfg: dict, sp_cfg: dict):
         _have_ms = meta.get("max_segments")
         if _have_ms is not None and int(_have_ms) != int(sp_cfg.get("max_segments", 4)):
             return None
+        # force_segments changes the SPLIT, not just the search budget, so a base built without
+        # it (or with a different value) is a different permutation and must not be reused. The
+        # segment ablation lives or dies on this check: silently inheriting the default's [2, 30]
+        # base would make every arm the default arm with a different name.
+        if meta.get("force_segments") != sp_cfg.get("force_segments"):
+            return None
+        # A random-selection base and a saliency base share every recorded field except this one;
+        # without the check the control would silently inherit the real base's permutation and
+        # measure nothing.
+        if meta.get("random_salient_seed") != sp_cfg.get("random_salient_seed"):
+            return None
         want.pop("boundary_sizes")
     for key, wanted in want.items():
         have = meta.get(key)
@@ -659,6 +670,12 @@ def main():
                 awq_alpha=(sp_cfg.get("awq_scale", {}) or {}).get("alpha", 0.5),
                 awq_max=(sp_cfg.get("awq_scale", {}) or {}).get("max", 2.0),
                 max_segments=sp_cfg.get("max_segments", 4),
+                # Segment-count ablation (T7): spend EXACTLY this many residual permutations
+                # instead of the cheapest number that reaches minimum overflow. None = default.
+                force_segments=sp_cfg.get("force_segments"),
+                # Saliency control (T6): replace the chosen salient sets with random sets of the
+                # same size. None = the real E[x^2] selection.
+                random_salient_seed=sp_cfg.get("random_salient_seed"),
                 # Fold S into the weights offline (producers divided) so nothing downstream needs
                 # to know about AWQ, and order the salient block by post-fold magnitude so the
                 # channels S amplifies share a group with each other.

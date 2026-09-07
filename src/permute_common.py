@@ -630,10 +630,26 @@ def auto_segment_with_fixed_group_k(
     group_k: int,
     max_segments: int = 4,
     outlier_log_sigma: float = 3.0,
+    force_segments: Optional[int] = None,
 ) -> Tuple[List[int], List[int], Dict]:
-    """Choose contiguous residual segments while forcing every segment to use group_k."""
+    """Choose contiguous residual segments while forcing every segment to use group_k.
+
+    `force_segments` spends EXACTLY that many segments instead of the cheapest number that
+    reaches the minimum overflow. The DP, the objective and the outlier selector are untouched —
+    the split returned is still the optimal one for that budget, only the budget is fixed. This
+    is what makes the segment-count ablation single-variable: every arm differs from the default
+    in the number of residual permutations and in nothing else. num_layers segments is the
+    per-layer (oracle) end of that sweep.
+    """
     group_k = int(group_k)
     max_segments = min(int(max_segments), int(num_layers))
+    if force_segments is not None:
+        force_segments = int(force_segments)
+        if not 1 <= force_segments <= int(num_layers):
+            raise ValueError(
+                f"force_segments={force_segments} must be in [1, num_layers={num_layers}]")
+        # The DP only fills rows up to max_segments, so the forced row has to exist.
+        max_segments = max(max_segments, force_segments)
     outlier_sets = _residual_outlier_sets(second_moments, outlier_log_sigma)
 
     seg_union_count: Dict[Tuple[int, int], int] = {}
@@ -678,6 +694,12 @@ def auto_segment_with_fixed_group_k(
             best_overflow = overflow
             best_nseg = nseg
 
+    if force_segments is not None:
+        if not bool(torch.isfinite(dp[force_segments, num_layers])):
+            raise RuntimeError(
+                f"No {force_segments}-segment split of {num_layers} layers exists.")
+        best_nseg = force_segments
+        best_overflow = int(dp[force_segments, num_layers].item())
     if best_nseg < 0:
         raise RuntimeError("Fixed-group_k segment DP reconstruction failed before any candidate was found.")
 
@@ -706,6 +728,7 @@ def auto_segment_with_fixed_group_k(
         "outlier_log_sigma": float(outlier_log_sigma),
         "fixed_group_k": group_k,
         "max_segments": int(max_segments),
+        "force_segments": (None if force_segments is None else int(force_segments)),
         "overflow_outliers": int(best_overflow),
         "cost_curve": curve,
         "segments": [
@@ -943,6 +966,53 @@ def _build_segment_perm(salient_channels: List[int], total_dim: int) -> List[int
     sal_set   = set(salient_channels)
     remaining = [c for c in range(total_dim) if c not in sal_set]
     return list(salient_channels) + remaining
+
+
+def randomize_salient_selection(
+    residual_salient: Dict[int, List[int]],
+    internal_salient: Dict[Tuple[int, str], List[int]],
+    segment_group_ks: Sequence[int],
+    down_layer_group_ks: Sequence[int],
+    d_model: int,
+    seed: int,
+) -> Tuple[Dict[int, List[int]], Dict[Tuple[int, str], List[int]]]:
+    """The RANDOM-SELECTION CONTROL for the saliency criterion (tracker T6).
+
+    Replaces every selected salient set with a uniformly random set of the SAME SIZE from the
+    same index range, leaving everything else — segmentation, group_k, boundary gathers, GPTQ,
+    the quantization grid, the learning rates — untouched. It is the answer to "does it matter
+    WHICH columns get the full-freedom tier, or would any 1-2% do?", and it is the control the
+    whole saliency story rests on: if random k=256 scores like E[x^2]-chosen k=256, then the
+    permutation is buying group alignment and nothing else.
+
+    Mirrors the real selectors exactly in shape: residual sets come back index-sorted (what
+    rank_order=False produces, which is what every trained base uses), and down_proj entries stay
+    FULL permutations with the chosen block first, built through the same _build_segment_perm.
+
+    Seeded off `seed` alone, so the same seed reproduces the same control on any machine.
+    """
+    g = torch.Generator().manual_seed(int(seed))
+    rand_residual: Dict[int, List[int]] = {}
+    for k, sel in residual_salient.items():
+        n = len(sel)
+        rand_residual[k] = sorted(torch.randperm(d_model, generator=g)[:n].tolist())
+
+    rand_internal: Dict[Tuple[int, str], List[int]] = {}
+    for key, perm in internal_salient.items():
+        layer_idx = key[0]
+        total = len(perm)
+        kk = int(down_layer_group_ks[layer_idx]) if layer_idx < len(down_layer_group_ks) else 0
+        kk = min(max(kk, 0), total)
+        chosen = sorted(torch.randperm(total, generator=g)[:kk].tolist())
+        rand_internal[key] = _build_segment_perm(chosen, total)
+
+    print(
+        f"[SegPerm] RANDOM SALIENT CONTROL (seed={seed}): residual sets replaced for "
+        f"{len(rand_residual)} segment(s) (sizes {[len(v) for v in rand_residual.values()]}), "
+        f"down_proj for {len(rand_internal)} layer(s). Sizes and everything downstream are "
+        f"unchanged; only WHICH channels are salient is now random."
+    )
+    return rand_residual, rand_internal
 
 
 def reorder_salient_by_post_awq_magnitude(
@@ -1708,6 +1778,8 @@ def build_permuted_fp16_checkpoint(
     awq_alpha: float = 0.5,
     awq_max: float = 2.0,
     max_segments: int = 4,
+    force_segments: Optional[int] = None,
+    random_salient_seed: Optional[int] = None,
     fold_awq: bool = False,
     reorder_salient: bool = False,
     rank_order: bool = False,
@@ -1820,9 +1892,11 @@ def build_permuted_fp16_checkpoint(
                 group_k=fixed_group_k,
                 max_segments=max_segments,
                 outlier_log_sigma=outlier_log_sigma,
+                force_segments=force_segments,
             )
             print(
-                f"[SegPerm] Auto segments + fixed global group_k: "
+                f"[SegPerm] Auto segments + fixed global group_k"
+                + (f" (FORCED to {force_segments} segments)" if force_segments else "") + ": "
                 f"boundary_sizes={boundary_sizes}, group_k={fixed_group_k}"
             )
     else:
@@ -1953,6 +2027,17 @@ def build_permuted_fp16_checkpoint(
         down_layer_group_ks=down_layer_group_ks,
     )
 
+    # The saliency control. Applied AFTER both selectors and BEFORE the AWQ scales, so the
+    # scales are computed for the columns actually chosen and the base stays self-consistent.
+    if random_salient_seed is not None:
+        residual_salient, internal_salient = randomize_salient_selection(
+            residual_salient, internal_salient, segment_group_ks, down_layer_group_ks,
+            d_model, int(random_salient_seed),
+        )
+        segment_perms = {
+            k: _build_segment_perm(residual_salient[k], d_model) for k in range(num_segments)
+        }
+
     # ---- 2b) AWQ-style per-channel salient scales S (always computed; usage gated by config) ----
     awq_scales = compute_awq_scales(
         second_moments, residual_salient, internal_salient,
@@ -1992,6 +2077,8 @@ def build_permuted_fp16_checkpoint(
         "layer_group_ks":         list(layer_group_ks),
         "down_layer_group_ks":    list(down_layer_group_ks),
         "fixed_group_k":          fixed_group_k,
+        "force_segments":         (None if force_segments is None else int(force_segments)),
+        "random_salient_seed":    (None if random_salient_seed is None else int(random_salient_seed)),
         "legacy_topk_ratio_mode": bool(legacy_topk_ratio_mode),
         "top_k_ratio":            float(top_k_ratio),
         "fakequant_param_stats":  fakequant_param_stats,
